@@ -5,11 +5,11 @@ import Layout from './components/Layout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Inscripciones from './pages/Inscripciones';
-import Caja from './pages/Caja';  // ← AGREGAR ESTA LÍNEA
+import Caja from './pages/Caja';
+import CRM from './pages/CRM';
+import RRHH from './pages/RRHH';  // ← AGREGAR ESTA LÍNEA
 
 // Páginas temporales para los otros módulos
-const CRM = () => <div className="text-center py-10"><h1 className="text-2xl">CRM Clientes - Próximamente</h1></div>;
-const RRHH = () => <div className="text-center py-10"><h1 className="text-2xl">RRHH - Próximamente</h1></div>;
 const Reclamaciones = () => <div className="text-center py-10"><h1 className="text-2xl">Reclamaciones - Próximamente</h1></div>;
 const Reportes = () => <div className="text-center py-10"><h1 className="text-2xl">Reportes - Próximamente</h1></div>;
 
