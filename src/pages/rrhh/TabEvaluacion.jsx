@@ -34,6 +34,10 @@ function scoreBg(s) {
   return 'bg-red-50 text-red-800';
 }
 
+function getInitials(nombre, apellido) {
+  return `${nombre?.charAt(0) || ''}${apellido?.charAt(0) || ''}`.toUpperCase();
+}
+
 const MES_ACTUAL = new Date().toISOString().slice(0, 7);
 
 export default function TabEvaluacion() {
@@ -115,11 +119,21 @@ export default function TabEvaluacion() {
         <div className="bg-white border rounded-xl overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="bg-gray-50 text-xs">
+              <th className="p-3">Foto</th>
               <th className="p-3">Colaborador</th><th>Área</th><th>Tard.leves</th><th>Tard.graves</th><th>Faltas inj</th><th>Perm.s/just</th><th>Asist.perf</th><th>Punt.perf</th><th>Punt.final</th><th>Obs</th><th>Plan mejora</th><th>Acción</th>
             </tr></thead>
             <tbody>
               {datos.map(d => (
                 <tr key={d.id} className="border-t">
+                  <td className="p-3">
+                    {d.foto_url ? (
+                      <img src={d.foto_url} className="w-8 h-8 rounded-full object-cover" />
+                    ) : (
+                      <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs">
+                        {getInitials(d.nombre, d.apellido)}
+                      </div>
+                    )}
+                  </td>
                   <td className="p-3 font-medium">{d.nombre} {d.apellido?.charAt(0)}.</td>
                   <td className="p-3">{d.area}</td>
                   <td className="p-3 text-center">{d.evaluado ? d.tard_leve : '—'}</td>
@@ -143,7 +157,15 @@ export default function TabEvaluacion() {
         <div className="max-w-lg bg-white border rounded-xl">
           {ranking.map((e,i)=>(
             <div key={e.id} className="flex items-center gap-4 p-4 border-b">
-              <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-sm font-bold">{i+1}</div>
+              <div className="w-10 h-10">
+                {e.foto_url ? (
+                  <img src={e.foto_url} className="w-10 h-10 rounded-full object-cover" />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-sm font-bold">
+                    {getInitials(e.nombre, e.apellido)}
+                  </div>
+                )}
+              </div>
               <div className="flex-1"><div className="font-medium">{e.nombre} {e.apellido?.charAt(0)}.</div><div className="text-xs text-gray-400">{e.area}</div></div>
               <div className={`text-xl font-bold ${scoreColor(e.punt_final)}`}>{e.punt_final}</div>
             </div>

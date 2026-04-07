@@ -19,6 +19,8 @@ export default function TabContratos() {
     return { bg: 'bg-green-500', text: 'text-white', label: 'Vigente' };
   };
 
+  const getInitials = (nombre, apellido) => `${nombre?.charAt(0) || ''}${apellido?.charAt(0) || ''}`.toUpperCase();
+
   return (
     <div>
       <div className="flex gap-3 mb-4 text-xs">
@@ -29,14 +31,32 @@ export default function TabContratos() {
       </div>
       <div className="bg-white border rounded-xl overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="bg-gray-50"><tr><th className="p-3 text-left">Colaborador</th><th>Cargo</th><th>Vencimiento</th><th>Días rest.</th><th>Acción</th></tr></thead>
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="p-3">Foto</th>
+              <th className="p-3 text-left">Colaborador</th>
+              <th className="p-3">Cargo</th>
+              <th className="p-3">Vencimiento</th>
+              <th className="p-3">Días rest.</th>
+              <th className="p-3">Acción</th>
+            </tr>
+          </thead>
           <tbody>
             {empleados.map(e => {
               const dias = diasParaVencer(e.fecha_vence_contrato);
               const s = semaforo(dias);
               return (
                 <tr key={e.id} className="border-t">
-                  <td className="p-3">{e.nombre} {e.apellido}</td>
+                  <td className="p-3">
+                    {e.foto_url ? (
+                      <img src={e.foto_url} className="w-8 h-8 rounded-full object-cover" />
+                    ) : (
+                      <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs">
+                        {getInitials(e.nombre, e.apellido)}
+                      </div>
+                    )}
+                  </td>
+                  <td className="p-3 font-medium">{e.nombre} {e.apellido}</td>
                   <td className="p-3">{e.cargo}</td>
                   <td className="p-3">{e.fecha_vence_contrato || '—'}</td>
                   <td className="p-3"><span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${s.bg} ${s.text}`}>{dias} días</span></td>
