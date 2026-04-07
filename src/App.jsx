@@ -4,10 +4,10 @@ import { supabase } from './lib/supabase';
 import Layout from './components/Layout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
-import Inscripciones from './pages/Inscripciones';  // ← IMPORT del módulo Inscripciones
+import Inscripciones from './pages/Inscripciones';
+import Caja from './pages/Caja';  // ← AGREGAR ESTA LÍNEA
 
 // Páginas temporales para los otros módulos
-const Caja = () => <div className="text-center py-10"><h1 className="text-2xl">Caja y Pagos - Próximamente</h1></div>;
 const CRM = () => <div className="text-center py-10"><h1 className="text-2xl">CRM Clientes - Próximamente</h1></div>;
 const RRHH = () => <div className="text-center py-10"><h1 className="text-2xl">RRHH - Próximamente</h1></div>;
 const Reclamaciones = () => <div className="text-center py-10"><h1 className="text-2xl">Reclamaciones - Próximamente</h1></div>;
