@@ -15,7 +15,8 @@ import TabReclutamiento from './rrhh/TabReclutamiento';
 import TabCeses from './rrhh/TabCeses';
 import TabLiquidacion from './rrhh/TabLiquidacion';
 import TabLocadores from './rrhh/TabLocadores';
-import TabPlanillaPagos from './rrhh/TabPlanillaPagos'; // <-- NUEVO IMPORT
+import TabPlanillaPagos from './rrhh/TabPlanillaPagos';
+import TabHorarios from './rrhh/TabHorarios'; // <-- NUEVO IMPORT
 import TabSimple from './rrhh/TabSimple';
 
 const MENU_ITEMS = [
@@ -24,12 +25,13 @@ const MENU_ITEMS = [
   { id: 'directorio',   icon: '🎂', label: 'Directorio' },
   { id: 'contratos',    icon: '🔔', label: 'Alertas contratos' },
   { id: 'planilla',     icon: '📋', label: 'Novedades planilla' },
+  { id: 'horarios',     icon: '⏰', label: 'Horarios' }, // <-- NUEVO ÍTEM
   { id: 'vacaciones',   icon: '📅', label: 'Vacaciones' },
   { id: 'descansos',    icon: '🏥', label: 'Descansos médicos' },
   { id: 'evaluacion',   icon: '⭐', label: 'Evaluación' },
   { id: 'reclutamiento', icon: '🎯', label: 'Reclutamiento' },
   { id: 'locadores',    icon: '📁', label: 'Locadores' },
-  { id: 'planillapagos', icon: '💰', label: 'Planilla y Pagos' }, // <-- NUEVO ÍTEM
+  { id: 'planillapagos', icon: '💰', label: 'Planilla y Pagos' }, 
   { id: 'historico',    icon: '📈', label: 'Histórico anual' },
   { id: 'gratif',       icon: '💰', label: 'Gratificaciones' },
   { id: 'cts',          icon: '💳', label: 'CTS' },
@@ -46,12 +48,13 @@ const componentMap = {
   directorio: TabDirectorio,
   contratos: TabContratos,
   planilla: TabPlanilla,
+  horarios: TabHorarios, // <-- NUEVO MAPEO
   vacaciones: TabVacaciones,
   descansos: TabDescansos,
   evaluacion: TabEvaluacion,
   reclutamiento: TabReclutamiento,
   locadores: TabLocadores,
-  planillapagos: TabPlanillaPagos, // <-- NUEVO MAPEO
+  planillapagos: TabPlanillaPagos, 
   ceses: TabCeses,
   liquidacion: TabLiquidacion,
 };
@@ -126,7 +129,7 @@ export default function RRHH() {
 
       <div className="flex flex-1 overflow-hidden">
         {/* Menú Lateral (Desktop) */}
-        <aside className="w-64 bg-white border-r border-gray-200 overflow-y-auto hidden md:block">
+        <aside className="w-64 bg-white border-r border-gray-200 overflow-y-auto hidden md:block custom-scrollbar">
           <nav className="p-3 space-y-1">
             {MENU_ITEMS.map(item => (
               <button
@@ -170,7 +173,6 @@ export default function RRHH() {
             className="flex-1 overflow-y-auto p-6"
           >
             <div className="max-w-7xl mx-auto">
-              {/* Pasamos tabId por si el componente necesita filtrar algo internamente */}
               <ActiveComp tabId={activeTab} />
             </div>
           </div>

@@ -7,7 +7,8 @@ import Dashboard from './pages/Dashboard';
 import Inscripciones from './pages/Inscripciones';
 import Caja from './pages/Caja';
 import CRM from './pages/CRM';
-import RRHH from './pages/RRHH';  // ← AGREGAR ESTA LÍNEA
+import RRHH from './pages/RRHH';
+import Logistica from './pages/Logistica'; // <-- AGREGAR ESTA LÍNEA
 
 // Páginas temporales para los otros módulos
 const Reclamaciones = () => <div className="text-center py-10"><h1 className="text-2xl">Reclamaciones - Próximamente</h1></div>;
@@ -70,6 +71,11 @@ function App() {
         <Route path="/rrhh" element={
           <ProtectedRoute>
             <Layout><RRHH /></Layout>
+          </ProtectedRoute>
+        } />
+        <Route path="/logistica" element={
+          <ProtectedRoute>
+            <Layout><Logistica /></Layout>
           </ProtectedRoute>
         } />
         <Route path="/reclamaciones" element={

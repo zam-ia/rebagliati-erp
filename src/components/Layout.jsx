@@ -1,32 +1,82 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import Notificaciones from './Notificaciones';
 
-const menuItems = [
-  { path: '/dashboard', nombre: 'Dashboard', icono: '📊' },
-  { path: '/inscripciones', nombre: 'Inscripciones', icono: '📝' },
-  { path: '/caja', nombre: 'Caja y Pagos', icono: '💰' },
-  { path: '/crm', nombre: 'CRM Clientes', icono: '👥' },
-  { path: '/rrhh', nombre: 'RRHH', icono: '👔' },
-  { path: '/reclamaciones', nombre: 'Reclamaciones', icono: '📋' },
-  { path: '/reportes', nombre: 'Reportes', icono: '📈' },
+const NAV_GRUPOS = [
+  {
+    label: 'Principal',
+    items: [
+      { path: '/dashboard',     nombre: 'Dashboard', icon: '📊' },
+      { path: '/inscripciones', nombre: 'Inscripciones', icon: '📝' },
+      { path: '/caja',          nombre: 'Caja y Pagos', icon: '💰' },
+    ],
+  },
+  {
+    label: 'Gestión',
+    items: [
+      { path: '/crm',           nombre: 'CRM Clientes', icon: '👥' },
+      { path: '/rrhh',          nombre: 'RRHH', icon: '👔' },
+      { path: '/reclamaciones', nombre: 'Reclamaciones', icon: '📋' },
+      { path: '/reportes',      nombre: 'Reportes', icon: '📈' },
+    ],
+  },
 ];
 
-function Layout({ children }) {
-  const location = useLocation();
-  const navigate = useNavigate();
-  const [sidebarAbierto, setSidebarAbierto] = useState(() => {
-    const saved = localStorage.getItem('sidebarAbierto');
-    return saved !== null ? saved === 'true' : true;
+function UserIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="8" r="4"/>
+      <path d="M6 20v-2a6 6 0 0 1 12 0v2"/>
+    </svg>
+  );
+}
+
+function MenuIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="3" y1="6"  x2="21" y2="6"/>
+      <line x1="3" y1="12" x2="21" y2="12"/>
+      <line x1="3" y1="18" x2="21" y2="18"/>
+    </svg>
+  );
+}
+
+export default function Layout({ children }) {
+  const location  = useLocation();
+  const navigate  = useNavigate();
+
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('sidebarOpen');
+      return saved !== null ? saved === 'true' : true;
+    }
+    return true;
   });
-  
-  // Corregido: getUser es asíncrono, pero para el estado inicial podemos dejarlo así o usar un useEffect
-  const [usuario] = useState('Usuario'); 
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [usuario, setUsuario]       = useState('');
+  const [fechaHoy, setFechaHoy]     = useState('');
+
+  useEffect(() => {
+    const d = new Date();
+    setFechaHoy(d.toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' }));
+  }, []);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      const email = data?.user?.email || '';
+      setUsuario(email ? email.split('@')[0] : 'Usuario');
+    });
+  }, []);
 
   const toggleSidebar = () => {
-    const nuevoEstado = !sidebarAbierto;
-    setSidebarAbierto(nuevoEstado);
-    localStorage.setItem('sidebarAbierto', nuevoEstado);
+    setSidebarOpen(prev => {
+      const newState = !prev;
+      localStorage.setItem('sidebarOpen', newState);
+      return newState;
+    });
   };
 
   const handleLogout = async () => {
@@ -34,100 +84,174 @@ function Layout({ children }) {
     navigate('/login');
   };
 
-  return (
-    <div className="flex min-h-screen bg-[#F8FAFC]">
-      {/* Sidebar con estilo minimalista */}
-      <aside
-        className={`bg-[#185FA5] text-white flex flex-col transition-all duration-500 ease-in-out shadow-xl z-20 ${
-          sidebarAbierto ? 'w-64' : 'w-20'
-        }`}
-      >
-        {/* Header del Sidebar con las 3 líneas */}
-        <div className="h-20 flex items-center justify-between px-6 border-b border-white/10">
-          {sidebarAbierto && (
-            <span className="text-2xl font-black tracking-tighter transition-opacity duration-300">
-              RD<span className="text-blue-300">.</span>
-            </span>
-          )}
-          <button
-            onClick={toggleSidebar}
-            className="p-2 rounded-xl hover:bg-white/10 transition-all active:scale-90"
-            title="Menú"
-          >
-            {/* Icono de 3 líneas (Hamburguesa) */}
-            <div className="space-y-1.5">
-              <div className={`h-0.5 bg-white transition-all ${sidebarAbierto ? 'w-6' : 'w-5'}`}></div>
-              <div className="h-0.5 w-6 bg-white"></div>
-              <div className={`h-0.5 bg-white transition-all ${sidebarAbierto ? 'w-6' : 'w-4'}`}></div>
+  const initials = usuario.slice(0, 2).toUpperCase();
+  const moduloActivo = NAV_GRUPOS
+    .flatMap(g => g.items)
+    .find(i => i.path === location.pathname)?.nombre || 'Panel de Control';
+
+  // Sidebar content reutilizable
+  const SidebarContent = ({ onItemClick, isMobile = false }) => (
+    <>
+      <div className="flex items-center gap-3 px-5 py-5 border-b" style={{ borderColor: 'rgba(255,255,255,0.07)' }}>
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: '#1e4280' }}>
+          <span className="text-xs font-bold" style={{ color: '#7eb3f5' }}>RD</span>
+        </div>
+        {(sidebarOpen || isMobile) && (
+          <div className="flex-1">
+            <div className="text-white text-sm font-semibold leading-tight">Rebagliati</div>
+            <div className="text-xs uppercase tracking-widest" style={{ color: 'rgba(255,255,255,.3)', fontSize: 9 }}>
+              Diplomados
             </div>
-          </button>
-        </div>
+          </div>
+        )}
+      </div>
 
-        {/* Navegación */}
-        <nav className="flex-1 py-6 space-y-2 px-3">
-          {menuItems.map((item) => {
-            const isActive = location.pathname === item.path;
-            return (
-              <Link
-                key={item.path}
-                to={item.path}
-                className={`flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-200 group ${
-                  isActive 
-                    ? 'bg-white text-[#185FA5] shadow-lg font-bold' 
-                    : 'text-blue-100 hover:bg-white/10'
-                } ${!sidebarAbierto && 'justify-center px-0'}`}
-                title={!sidebarAbierto ? item.nombre : ''}
-              >
-                <span className={`text-xl transition-transform duration-300 group-hover:scale-110 ${isActive ? 'scale-110' : ''}`}>
-                  {item.icono}
-                </span>
-                {sidebarAbierto && (
-                  <span className="text-sm tracking-wide transition-opacity duration-300">
-                    {item.nombre}
-                  </span>
-                )}
-              </Link>
-            );
-          })}
-        </nav>
+      <div className="flex-1 overflow-y-auto py-4 space-y-5">
+        {NAV_GRUPOS.map(grupo => (
+          <div key={grupo.label}>
+            {(sidebarOpen || isMobile) && (
+              <p className="px-5 mb-1 text-xs font-semibold uppercase tracking-widest"
+                style={{ color: 'rgba(255,255,255,.25)', fontSize: 9 }}>
+                {grupo.label}
+              </p>
+            )}
+            <div className="px-3 space-y-0.5">
+              {grupo.items.map(item => {
+                const isActive = location.pathname === item.path;
+                return (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    onClick={onItemClick}
+                    title={(!sidebarOpen && !isMobile) ? item.nombre : ''}
+                    className="flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-150 group"
+                    style={{
+                      background: isActive ? 'rgba(255,255,255,0.1)' : 'transparent',
+                      color: isActive ? '#fff' : 'rgba(255,255,255,0.5)',
+                    }}
+                  >
+                    <span className="text-base flex-shrink-0">{item.icon}</span>
+                    {(sidebarOpen || isMobile) && (
+                      <span className="text-sm font-medium transition-colors"
+                        style={{ color: isActive ? '#fff' : 'rgba(255,255,255,0.55)', fontWeight: isActive ? 500 : 400 }}>
+                        {item.nombre}
+                      </span>
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
 
-        {/* Logout más estético abajo */}
-        <div className="p-4 border-t border-white/10">
-           <button 
-             onClick={handleLogout}
-             className={`flex items-center gap-4 w-full p-3 rounded-xl hover:bg-red-500/20 text-red-100 transition-colors ${!sidebarAbierto && 'justify-center'}`}
-           >
-             <span className="text-xl">🚪</span>
-             {sidebarAbierto && <span className="text-xs font-bold uppercase tracking-widest">Salir</span>}
-           </button>
+      <div className="px-3 pb-4 border-t" style={{ borderColor: 'rgba(255,255,255,0.07)', paddingTop: 12 }}>
+        <div className="flex items-center gap-3 px-3 py-2 rounded-lg">
+          <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-semibold"
+            style={{ background: '#1e4280', color: '#7eb3f5' }}>
+            {initials}
+          </div>
+          {(sidebarOpen || isMobile) && (
+            <>
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-medium truncate" style={{ color: 'rgba(255,255,255,0.75)' }}>
+                  {usuario}
+                </div>
+                <div className="text-xs" style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10 }}>En línea</div>
+              </div>
+              <button onClick={handleLogout}
+                className="text-xs px-2 py-1 rounded-md transition-colors"
+                style={{ color: 'rgba(255,255,255,0.3)', background: 'rgba(255,255,255,0.06)' }}>
+                Salir
+              </button>
+            </>
+          )}
         </div>
+      </div>
+    </>
+  );
+
+  return (
+    <div className="flex min-h-screen" style={{ background: '#f0f2f5' }}>
+
+      {/* Overlay móvil */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-30 md:hidden"
+          style={{ background: 'rgba(0,0,0,0.4)' }}
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+
+      {/* Sidebar móvil (drawer) */}
+      <aside
+        className="fixed inset-y-0 left-0 z-40 flex flex-col w-64 md:hidden transition-transform duration-300"
+        style={{
+          background: '#11284e',
+          transform: mobileOpen ? 'translateX(0)' : 'translateX(-100%)',
+        }}
+      >
+        <SidebarContent onItemClick={() => setMobileOpen(false)} isMobile={true} />
       </aside>
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col h-screen overflow-hidden">
-        {/* Header Superior Moderno */}
-        <header className="h-20 bg-white border-b border-gray-100 px-8 flex justify-between items-center shadow-sm z-10">
-          <div>
-            <h2 className="text-xs font-bold text-blue-500 uppercase tracking-[0.2em] mb-0.5">Módulo Actual</h2>
-            <p className="text-xl font-bold text-gray-800 tracking-tight">
-              {menuItems.find(item => item.path === location.pathname)?.nombre || 'Panel de Control'}
-            </p>
-          </div>
+      {/* Sidebar desktop (colapsable) */}
+      <aside
+        className="hidden md:flex flex-col flex-shrink-0 transition-all duration-300"
+        style={{
+          background: '#11284e',
+          width: sidebarOpen ? 220 : 64,
+          minHeight: '100vh',
+        }}
+      >
+        <SidebarContent onItemClick={() => {}} isMobile={false} />
+      </aside>
+
+      {/* Área principal */}
+      <div className="flex flex-col flex-1 min-w-0 h-screen overflow-hidden">
+
+        {/* Topbar */}
+        <header className="flex-shrink-0 flex items-center gap-4 px-5 md:px-7 bg-white border-b" style={{ height: 56, borderColor: '#e8ecf0' }}>
           
-          <div className="flex items-center gap-6">
-            <div className="flex flex-col text-right hidden sm:block">
-              <span className="text-sm font-bold text-gray-800">{usuario}</span>
-              <span className="text-[10px] text-green-500 font-bold uppercase">En línea</span>
-            </div>
-            <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center border-2 border-blue-50">
-              👤
+          {/* Botón de hamburguesa */}
+          <button
+            className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+            style={{ color: '#11284e' }}
+            onClick={() => {
+              if (window.innerWidth < 768) {
+                setMobileOpen(true);
+              } else {
+                toggleSidebar();
+              }
+            }}
+            title={window.innerWidth < 768 ? "Abrir menú" : (sidebarOpen ? "Ocultar menú" : "Mostrar menú")}
+          >
+            <MenuIcon />
+          </button>
+
+          <div className="flex items-center gap-2 text-xs" style={{ color: '#94a3b8' }}>
+            <span>ERP</span>
+            <span style={{ color: '#d1d5db' }}>/</span>
+            <span className="font-semibold text-sm" style={{ color: '#11284e' }}>{moduloActivo}</span>
+          </div>
+
+          <div className="ml-auto flex items-center gap-3">
+            <span className="hidden sm:block text-xs px-3 py-1.5 rounded-lg border"
+              style={{ color: '#94a3b8', background: '#f8fafc', borderColor: '#e8ecf0', fontSize: 11 }}>
+              {fechaHoy}
+            </span>
+
+            {/* Componente de notificaciones */}
+            <Notificaciones />
+
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-semibold"
+              style={{ background: '#f0f2f5', color: '#11284e' }}>
+              {initials || <UserIcon />}
             </div>
           </div>
         </header>
 
-        {/* Contenedor de las páginas */}
-        <main className="flex-1 overflow-y-auto p-8 custom-scrollbar">
-          <div className="max-w-[1600px] mx-auto">
+        <main className="flex-1 overflow-y-auto" style={{ padding: '24px 20px', paddingLeft: 24, paddingRight: 24 }}>
+          <div style={{ maxWidth: 1600, margin: '0 auto' }}>
             {children}
           </div>
         </main>
@@ -135,5 +259,3 @@ function Layout({ children }) {
     </div>
   );
 }
-
-export default Layout;

@@ -1,6 +1,21 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 
+// Listas predefinidas (puedes editarlas según tu empresa)
+const AREAS_PREDEFINIDAS = [
+  'Administración', 'Ventas', 'Académico', 'Marketing', 'Recursos Humanos', 'Tecnología', 'Operaciones', 'Finanzas'
+];
+const CARGOS_PREDEFINIDOS = [
+  'Ejecutivo de ventas', 'Coordinador académico', 'Cajera', 'Analista', 'Supervisor', 'Gerente', 'Asistente', 'Practicante'
+];
+const TIPOS_CONTRATO = ['Indeterminado', 'Plazo fijo', 'Por demanda', 'Prácticas', 'Locación de servicios'];
+const SITUACIONES_LABORALES = ['Activo', 'Inactivo', 'Vacaciones', 'Licencia'];
+const MODALIDADES = ['Presencial', 'Remoto', 'Híbrido'];
+const TURNOS = ['Mañana', 'Tarde', 'Noche', 'Rotativo'];
+const TIPOS_SEGURO = ['Essalud', 'EPS (Seleccionar EPS)', 'Seguro privado'];
+const SISTEMAS_PENSIONARIOS = ['ONP', 'AFP (Seleccionar AFP)', 'No aplica'];
+const AFP_LIST = ['Prima', 'Habitat', 'Integra', 'Profuturo'];
+
 export default function TabBase() {
   const [empleados, setEmpleados] = useState([]);
   const [empleadoSeleccionado, setEmpleadoSeleccionado] = useState(null);
@@ -9,6 +24,102 @@ export default function TabBase() {
   const [busqueda, setBusqueda] = useState('');
   const [form, setForm] = useState({});
   const [subiendoFoto, setSubiendoFoto] = useState(false);
+  
+  // Listas dinámicas (se cargan desde localStorage o usan las predefinidas)
+  const [areasList, setAreasList] = useState([]);
+  const [cargosList, setCargosList] = useState([]);
+  
+  // Lista de horarios activos (para asignar en el formulario)
+  const [horariosList, setHorariosList] = useState([]);
+
+  // Cargar listas desde localStorage al inicio
+  useEffect(() => {
+    const storedAreas = localStorage.getItem('areasList');
+    const storedCargos = localStorage.getItem('cargosList');
+    setAreasList(storedAreas ? JSON.parse(storedAreas) : AREAS_PREDEFINIDAS);
+    setCargosList(storedCargos ? JSON.parse(storedCargos) : CARGOS_PREDEFINIDOS);
+  }, []);
+
+  // Guardar listas en localStorage cuando cambien
+  useEffect(() => {
+    if (areasList.length) localStorage.setItem('areasList', JSON.stringify(areasList));
+  }, [areasList]);
+  useEffect(() => {
+    if (cargosList.length) localStorage.setItem('cargosList', JSON.stringify(cargosList));
+  }, [cargosList]);
+
+  // Cargar horarios activos para el selector
+  useEffect(() => {
+    supabase.from('horarios').select('id, nombre, tipo').eq('activo', true).then(({ data }) => {
+      setHorariosList(data || []);
+    });
+  }, []);
+
+  // Calcular antigüedad automáticamente (solo para mostrar, no se guarda)
+  const calcularAntiguedad = (fechaInicio) => {
+    if (!fechaInicio) return '';
+    const inicio = new Date(fechaInicio);
+    const ahora = new Date();
+    let años = ahora.getFullYear() - inicio.getFullYear();
+    let meses = ahora.getMonth() - inicio.getMonth();
+    if (meses < 0) {
+      años--;
+      meses += 12;
+    }
+    let dias = ahora.getDate() - inicio.getDate();
+    if (dias < 0) {
+      meses--;
+      const ultimoDiaMesAnterior = new Date(ahora.getFullYear(), ahora.getMonth(), 0).getDate();
+      dias += ultimoDiaMesAnterior;
+      if (meses < 0) {
+        años--;
+        meses += 12;
+      }
+    }
+    return `${años} años, ${meses} meses, ${dias} días`;
+  };
+
+  // Actualizar antigüedad cuando cambie fecha_inicio (solo para mostrar)
+  useEffect(() => {
+    if (form.fecha_inicio) {
+      setForm(prev => ({ ...prev, antiguedad: calcularAntiguedad(prev.fecha_inicio) }));
+    } else {
+      setForm(prev => ({ ...prev, antiguedad: '' }));
+    }
+  }, [form.fecha_inicio]);
+
+  const handleCargoChange = (cargo) => {
+    setForm(prev => ({ ...prev, cargo }));
+    // Sugerir descripción por defecto (opcional)
+    const descripciones = {
+      'Ejecutivo de ventas': 'Responsable de ventas y atención al cliente.',
+      'Coordinador académico': 'Coordinar programas académicos y docentes.',
+      'Cajera': 'Manejo de caja y pagos.',
+    };
+    if (descripciones[cargo] && !form.descripcion_cargo) {
+      setForm(prev => ({ ...prev, descripcion_cargo: descripciones[cargo] }));
+    }
+  };
+
+  // Agregar nueva área
+  const agregarArea = () => {
+    const nombre = prompt('Nueva área:');
+    if (nombre && !areasList.includes(nombre)) {
+      const nuevasAreas = [...areasList, nombre];
+      setAreasList(nuevasAreas);
+      setForm(prev => ({ ...prev, area: nombre }));
+    } else if (nombre) alert('El área ya existe');
+  };
+
+  // Agregar nuevo cargo
+  const agregarCargo = () => {
+    const nombre = prompt('Nuevo cargo:');
+    if (nombre && !cargosList.includes(nombre)) {
+      const nuevosCargos = [...cargosList, nombre];
+      setCargosList(nuevosCargos);
+      setForm(prev => ({ ...prev, cargo: nombre }));
+    } else if (nombre) alert('El cargo ya existe');
+  };
 
   const cargar = async () => {
     const { data } = await supabase.from('empleados').select('*').order('apellido');
@@ -34,13 +145,13 @@ export default function TabBase() {
     setEmpleadoSeleccionado(null);
     setForm({
       nombre: '', apellido: '', cargo: '', area: '', dni: '', correo: '', telefono: '',
-      tipo_contrato: '', situacion_laboral: '', fecha_nacimiento: '', tiene_hijos: false,
+      tipo_contrato: '', situacion_laboral: 'Activo', fecha_nacimiento: '', tiene_hijos: false,
       direccion: '', referencia_direccion: '', distrito: '', tipo_seguro: '',
       sistema_pensionario: '', sueldo_bruto: 0, comodato: 0, asignacion_familiar: 0,
-      fecha_inicio: '', fecha_ingreso_planilla: '', modalidad_trabajo: '',
+      fecha_inicio: '', fecha_ingreso_planilla: '', modalidad_trabajo: 'Presencial',
       turno: '', banco_nombre: '', numero_cuenta: '', cci: '',
       talla_uniforme: '', datos_familiares_contacto: '', descripcion_cargo: '',
-      inicio_contrato: '', fin_contrato: '', foto_url: ''
+      inicio_contrato: '', fin_contrato: '', foto_url: '', antiguedad: '', horario_id: ''
     });
     setModoEdicion(true);
     setModalAbierto(true);
@@ -73,12 +184,31 @@ export default function TabBase() {
       return;
     }
 
-    const s_bruto = Number(form.sueldo_bruto) || 0;
-    const s_comodato = Number(form.comodato) || 0;
-    const s_asig = form.tiene_hijos ? (Number(form.asignacion_familiar) || 102.5) : 0;
-    const sueldo_total = s_bruto + s_comodato + s_asig;
+    // Copia del formulario para enviar
+    const datosEnvio = { ...form };
+    
+    // ELIMINAR campos calculados que no existen en la BD
+    delete datosEnvio.antiguedad;   // ← CRUCIAL: eliminar antiguedad
+    
+    // Convertir fechas vacías a null
+    const fechaCampos = ['fecha_nacimiento', 'fecha_inicio', 'fecha_ingreso_planilla', 'inicio_contrato', 'fin_contrato'];
+    fechaCampos.forEach(campo => {
+      if (datosEnvio[campo] === '') datosEnvio[campo] = null;
+    });
 
-    const datosEnvio = { ...form, sueldo_total, asignacion_familiar: s_asig };
+    // Si tipo de contrato es Indeterminado, fin_contrato debe ser null
+    if (datosEnvio.tipo_contrato === 'Indeterminado') {
+      datosEnvio.fin_contrato = null;
+    }
+
+    // Calcular sueldo total y asignación familiar
+    const s_bruto = Number(datosEnvio.sueldo_bruto) || 0;
+    const s_comodato = Number(datosEnvio.comodato) || 0;
+    const s_asig = datosEnvio.tiene_hijos ? (Number(datosEnvio.asignacion_familiar) || 102.5) : 0;
+    datosEnvio.sueldo_total = s_bruto + s_comodato + s_asig;
+    datosEnvio.asignacion_familiar = s_asig;
+    
+    // Eliminar id si existe (para nuevos registros)
     delete datosEnvio.id;
 
     try {
@@ -133,6 +263,34 @@ export default function TabBase() {
       if (url) setForm({ ...form, foto_url: url });
     }
   };
+
+  // Componente Campo para selects dinámicos
+  const CampoSelect = ({ label, value, options, edit, setForm, field, onAddNew }) => (
+    <div>
+      <label className="block text-xs text-gray-500 mb-1">{label}</label>
+      <div className="flex gap-2">
+        <select
+          value={value || ''}
+          onChange={(e) => setForm(prev => ({ ...prev, [field]: e.target.value }))}
+          disabled={!edit}
+          className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#185FA5] disabled:bg-gray-100"
+        >
+          <option value="">Seleccionar...</option>
+          {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+        </select>
+        {edit && onAddNew && (
+          <button
+            type="button"
+            onClick={onAddNew}
+            className="px-2 bg-gray-200 rounded-lg text-sm hover:bg-gray-300"
+            title="Agregar nuevo"
+          >
+            +
+          </button>
+        )}
+      </div>
+    </div>
+  );
 
   return (
     <div className="p-4">
@@ -280,18 +438,72 @@ export default function TabBase() {
               <div className="border-b pb-3">
                 <h4 className="font-bold text-[#185FA5] mb-3">💼 Datos Laborales</h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <Campo label="Área" value={form.area} edit={modoEdicion} setForm={setForm} field="area" />
-                  <Campo label="Cargo" value={form.cargo} edit={modoEdicion} setForm={setForm} field="cargo" />
+                  <CampoSelect
+                    label="Área"
+                    value={form.area}
+                    options={areasList}
+                    edit={modoEdicion}
+                    setForm={setForm}
+                    field="area"
+                    onAddNew={agregarArea}
+                  />
+                  <CampoSelect
+                    label="Cargo"
+                    value={form.cargo}
+                    options={cargosList}
+                    edit={modoEdicion}
+                    setForm={setForm}
+                    field="cargo"
+                    onAddNew={agregarCargo}
+                  />
                   <Campo label="Descripción del cargo" value={form.descripcion_cargo} edit={modoEdicion} setForm={setForm} field="descripcion_cargo" />
-                  <Campo label="Tipo de contrato" value={form.tipo_contrato} edit={modoEdicion} setForm={setForm} field="tipo_contrato" />
-                  <Campo label="Situación laboral" value={form.situacion_laboral} edit={modoEdicion} setForm={setForm} field="situacion_laboral" />
-                  <Campo label="Modalidad" value={form.modalidad_trabajo} edit={modoEdicion} setForm={setForm} field="modalidad_trabajo" />
-                  <Campo label="Turno" value={form.turno} edit={modoEdicion} setForm={setForm} field="turno" />
+                  <CampoSelect
+                    label="Tipo de contrato"
+                    value={form.tipo_contrato}
+                    options={TIPOS_CONTRATO}
+                    edit={modoEdicion}
+                    setForm={setForm}
+                    field="tipo_contrato"
+                  />
+                  <CampoSelect
+                    label="Situación laboral"
+                    value={form.situacion_laboral}
+                    options={SITUACIONES_LABORALES}
+                    edit={modoEdicion}
+                    setForm={setForm}
+                    field="situacion_laboral"
+                  />
+                  <CampoSelect
+                    label="Modalidad"
+                    value={form.modalidad_trabajo}
+                    options={MODALIDADES}
+                    edit={modoEdicion}
+                    setForm={setForm}
+                    field="modalidad_trabajo"
+                  />
+                  <CampoSelect
+                    label="Turno"
+                    value={form.turno}
+                    options={TURNOS}
+                    edit={modoEdicion}
+                    setForm={setForm}
+                    field="turno"
+                  />
                   <Campo label="Fecha ingreso" value={form.fecha_inicio} type="date" edit={modoEdicion} setForm={setForm} field="fecha_inicio" />
                   <Campo label="Fecha ingreso planilla" value={form.fecha_ingreso_planilla} type="date" edit={modoEdicion} setForm={setForm} field="fecha_ingreso_planilla" />
                   <Campo label="Inicio contrato" value={form.inicio_contrato} type="date" edit={modoEdicion} setForm={setForm} field="inicio_contrato" />
-                  <Campo label="Fin contrato" value={form.fin_contrato} type="date" edit={modoEdicion} setForm={setForm} field="fin_contrato" />
-                  <Campo label="Tiempo de antigüedad" value={form.antiguedad} edit={modoEdicion} setForm={setForm} field="antiguedad" />
+                  <Campo label="Fin contrato" value={form.fin_contrato} type="date" edit={modoEdicion && form.tipo_contrato !== 'Indeterminado'} setForm={setForm} field="fin_contrato" />
+                  <Campo label="Tiempo de antigüedad" value={form.antiguedad} edit={false} />
+                  
+                  {/* NUEVO: Selector de Horario */}
+                  <CampoSelect
+                    label="Horario"
+                    value={form.horario_id}
+                    options={horariosList.map(h => ({ value: h.id, label: `${h.nombre} (${h.tipo})` }))}
+                    edit={modoEdicion}
+                    setForm={setForm}
+                    field="horario_id"
+                  />
                 </div>
               </div>
 
@@ -303,8 +515,32 @@ export default function TabBase() {
                   <Campo label="Comodato (S/)" value={form.comodato} type="number" edit={modoEdicion} setForm={setForm} field="comodato" />
                   <Campo label="Asignación Familiar (S/)" value={form.asignacion_familiar} type="number" edit={modoEdicion} setForm={setForm} field="asignacion_familiar" />
                   <Campo label="Sueldo Total (S/)" value={form.sueldo_total} type="number" edit={false} />
-                  <Campo label="Tipo de seguro" value={form.tipo_seguro} edit={modoEdicion} setForm={setForm} field="tipo_seguro" />
-                  <Campo label="Sistema pensionario" value={form.sistema_pensionario} edit={modoEdicion} setForm={setForm} field="sistema_pensionario" />
+                  <CampoSelect
+                    label="Tipo de seguro"
+                    value={form.tipo_seguro}
+                    options={TIPOS_SEGURO}
+                    edit={modoEdicion}
+                    setForm={setForm}
+                    field="tipo_seguro"
+                  />
+                  <CampoSelect
+                    label="Sistema pensionario"
+                    value={form.sistema_pensionario}
+                    options={SISTEMAS_PENSIONARIOS}
+                    edit={modoEdicion}
+                    setForm={setForm}
+                    field="sistema_pensionario"
+                  />
+                  {form.sistema_pensionario === 'AFP (Seleccionar AFP)' && modoEdicion && (
+                    <CampoSelect
+                      label="AFP específica"
+                      value={form.afp_entidad}
+                      options={AFP_LIST}
+                      edit={modoEdicion}
+                      setForm={setForm}
+                      field="afp_entidad"
+                    />
+                  )}
                 </div>
               </div>
 
@@ -341,6 +577,7 @@ export default function TabBase() {
   );
 }
 
+// Componente Campo básico (reutilizado)
 function Campo({ label, value, type = 'text', edit = false, setForm, field }) {
   if (!edit) {
     if (type === 'checkbox') {
@@ -389,6 +626,7 @@ function Campo({ label, value, type = 'text', edit = false, setForm, field }) {
         value={value || ''}
         onChange={(e) => setForm(prev => ({ ...prev, [field]: e.target.value }))}
         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#185FA5]"
+        disabled={edit === false}
       />
     </div>
   );
