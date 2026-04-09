@@ -8,11 +8,12 @@ import Inscripciones from './pages/Inscripciones';
 import Caja from './pages/Caja';
 import CRM from './pages/CRM';
 import RRHH from './pages/RRHH';
-import Logistica from './pages/Logistica'; // <-- AGREGAR ESTA LÍNEA
+import Logistica from './pages/Logistica';
+import Reclamaciones from './pages/Reclamaciones';
+import Reportes from './pages/Reportes'; // <-- AGREGAR ESTA LÍNEA
 
 // Páginas temporales para los otros módulos
-const Reclamaciones = () => <div className="text-center py-10"><h1 className="text-2xl">Reclamaciones - Próximamente</h1></div>;
-const Reportes = () => <div className="text-center py-10"><h1 className="text-2xl">Reportes - Próximamente</h1></div>;
+
 
 function ProtectedRoute({ children }) {
   const [session, setSession] = useState(null);

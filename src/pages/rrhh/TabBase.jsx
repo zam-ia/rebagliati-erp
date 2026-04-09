@@ -264,7 +264,7 @@ export default function TabBase() {
     }
   };
 
-  // Componente Campo para selects dinámicos
+  // Componente Campo para selects dinámicos (CORREGIDO para aceptar objetos)
   const CampoSelect = ({ label, value, options, edit, setForm, field, onAddNew }) => (
     <div>
       <label className="block text-xs text-gray-500 mb-1">{label}</label>
@@ -276,7 +276,14 @@ export default function TabBase() {
           className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#185FA5] disabled:bg-gray-100"
         >
           <option value="">Seleccionar...</option>
-          {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+          {options.map((opt, idx) => {
+            // Si opt es un objeto con value y label
+            if (typeof opt === 'object' && opt !== null && 'value' in opt && 'label' in opt) {
+              return <option key={opt.value || idx} value={opt.value}>{opt.label}</option>;
+            }
+            // Si es string o número
+            return <option key={opt || idx} value={opt}>{opt}</option>;
+          })}
         </select>
         {edit && onAddNew && (
           <button
@@ -495,7 +502,7 @@ export default function TabBase() {
                   <Campo label="Fin contrato" value={form.fin_contrato} type="date" edit={modoEdicion && form.tipo_contrato !== 'Indeterminado'} setForm={setForm} field="fin_contrato" />
                   <Campo label="Tiempo de antigüedad" value={form.antiguedad} edit={false} />
                   
-                  {/* NUEVO: Selector de Horario */}
+                  {/* Selector de Horario */}
                   <CampoSelect
                     label="Horario"
                     value={form.horario_id}
