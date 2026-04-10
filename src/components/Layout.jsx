@@ -1,3 +1,4 @@
+// src/components/Layout.jsx
 import { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
@@ -76,13 +77,13 @@ export default function Layout({ children }) {
     .flatMap(g => g.items)
     .find(i => i.path === location.pathname)?.nombre || 'Panel de Control';
 
-  // Componente interno del Sidebar (para móvil y desktop)
+  // Componente interno del Sidebar
   const SidebarContent = ({ onItemClick, isMobile = false }) => {
     const showText = sidebarOpen || isMobile;
     return (
       <div className="flex flex-col h-full bg-[#11284e] text-white font-sans">
         
-        {/* HEADER con LOGO + BOTÓN HAMBURGUESA */}
+        {/* HEADER con LOGO */}
         <div className="flex items-center justify-between gap-2 px-3 h-14 border-b border-white/5 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-7 h-7 rounded-md flex items-center justify-center shrink-0 bg-[#185FA5]/30 text-[#7eb3f5]">
@@ -95,12 +96,10 @@ export default function Layout({ children }) {
               </div>
             )}
           </div>
-          {/* Botón de menú (hamburguesa) – solo en desktop, porque en móvil el drawer se abre con otro botón (ver más abajo) */}
           {!isMobile && (
             <button
               onClick={toggleSidebar}
               className="p-1.5 rounded-md text-white/40 hover:text-white hover:bg-white/10 transition-colors"
-              title={sidebarOpen ? "Colapsar menú" : "Expandir menú"}
             >
               {sidebarOpen ? <ChevronLeft size={16} /> : <Menu size={16} />}
             </button>
@@ -125,7 +124,6 @@ export default function Layout({ children }) {
                       key={item.path}
                       to={item.path}
                       onClick={onItemClick}
-                      title={(!showText) ? item.nombre : ''}
                       className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 group
                         ${isActive 
                           ? 'bg-[#185FA5] text-white shadow-md' 
@@ -159,14 +157,13 @@ export default function Layout({ children }) {
                     {usuario || 'Usuario'}
                   </div>
                   <div className="text-[10px] text-emerald-400/80 flex items-center gap-1.5 mt-0.5">
-                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-400"></div>
+                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></div>
                     En línea
                   </div>
                 </div>
                 <button 
                   onClick={handleLogout}
                   className="p-1.5 rounded-md text-white/40 hover:text-white hover:bg-white/10 transition-colors"
-                  title="Cerrar sesión"
                 >
                   <LogOut size={14} />
                 </button>
@@ -180,7 +177,6 @@ export default function Layout({ children }) {
 
   return (
     <div className="flex min-h-screen bg-[#f0f2f5] font-sans">
-
       {/* Overlay móvil */}
       {mobileOpen && (
         <div
@@ -189,7 +185,7 @@ export default function Layout({ children }) {
         />
       )}
 
-      {/* Sidebar móvil (drawer) */}
+      {/* Sidebar móvil */}
       <aside
         className="fixed inset-y-0 left-0 z-40 flex flex-col w-64 md:hidden transition-transform duration-300 shadow-2xl"
         style={{ transform: mobileOpen ? 'translateX(0)' : 'translateX(-100%)' }}
@@ -197,7 +193,7 @@ export default function Layout({ children }) {
         <SidebarContent onItemClick={() => setMobileOpen(false)} isMobile={true} />
       </aside>
 
-      {/* Sidebar desktop (colapsable) */}
+      {/* Sidebar desktop */}
       <aside
         className="hidden md:flex flex-col flex-shrink-0 transition-all duration-300 shadow-lg relative z-20"
         style={{ width: sidebarOpen ? 220 : 72 }}
@@ -207,36 +203,34 @@ export default function Layout({ children }) {
 
       {/* Área principal */}
       <div className="flex flex-col flex-1 min-w-0 h-screen overflow-hidden">
-
-        {/* Topbar más limpio (sin botón de menú) */}
         <header className="shrink-0 flex items-center justify-between px-5 md:px-6 h-14 bg-white border-b border-[#e8ecf0] z-10">
-          {/* Breadcrumb (solo visible en escritorio) */}
-          <div className="hidden sm:flex items-center gap-2 text-[13px]">
-            <span className="text-slate-400 font-medium">ERP</span>
-            <ChevronRight size={14} className="text-slate-300" />
-            <span className="font-semibold text-[#11284e]">{moduloActivo}</span>
+          <div className="flex items-center gap-4">
+            {/* Botón menú móvil */}
+            <button onClick={() => setMobileOpen(true)} className="md:hidden p-2 text-slate-600">
+              <Menu size={20} />
+            </button>
+            <div className="hidden sm:flex items-center gap-2 text-[13px]">
+              <span className="text-slate-400 font-medium">ERP</span>
+              <ChevronRight size={14} className="text-slate-300" />
+              <span className="font-semibold text-[#11284e] uppercase tracking-tight">{moduloActivo}</span>
+            </div>
           </div>
 
-          <div className="flex items-center gap-4 ml-auto">
+          <div className="flex items-center gap-4">
             <span className="hidden sm:block text-[11px] font-medium px-2.5 py-1 rounded-md text-slate-500 bg-slate-50 border border-slate-200">
               {fechaHoy}
             </span>
-            <div className="text-slate-500 hover:text-[#185FA5] transition-colors flex items-center">
-              <Notificaciones />
-            </div>
+            <Notificaciones />
           </div>
         </header>
 
-        {/* Main content */}
-        <main className="flex-1 overflow-y-auto p-4 md:p-6">
-          <div className="max-w-[1600px] mx-auto h-full">
+        <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-[#f0f2f5]">
+          <div className="max-w-[1600px] mx-auto">
             {children}
           </div>
         </main>
-
       </div>
 
-      {/* Estilo scrollbar */}
       <style dangerouslySetInnerHTML={{ __html: `
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
