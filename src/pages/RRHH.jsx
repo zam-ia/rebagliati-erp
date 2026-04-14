@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { supabase } from '../lib/supabase';
 import { 
   UserCircle, Users, Cake, Bell, FileText, 
   Clock, Calendar, HeartPulse, Star, Target, 
@@ -24,15 +25,16 @@ import TabLocadores from './rrhh/TabLocadores';
 import TabPlanillaPagos from './rrhh/TabPlanillaPagos';
 import TabHorarios from './rrhh/TabHorarios';
 import TabSimple from './rrhh/TabSimple';
+import TabAsistenciaLocadores from './rrhh/TabAsistenciaLocadores'; // <-- IMPORTADO
 
 const SECCIONES = [
   {
     titulo: 'Talento',
     items: [
-      { id: 'perfil',       icon: UserCircle, label: 'Perfil 360°' },
-      { id: 'base',         icon: Users,      label: 'Base de datos' },
-      { id: 'directorio',   icon: Cake,       label: 'Directorio' },
-      { id: 'reclutamiento', icon: Target,    label: 'Reclutamiento' },
+      { id: 'perfil',        icon: UserCircle, label: 'Perfil 360°' },
+      { id: 'base',          icon: Users,      label: 'Base de datos' },
+      { id: 'directorio',    icon: Cake,       label: 'Directorio' },
+      { id: 'reclutamiento', icon: Target,     label: 'Reclutamiento' },
     ]
   },
   {
@@ -48,8 +50,10 @@ const SECCIONES = [
     titulo: 'Nómina y Legal',
     items: [
       { id: 'planillapagos', icon: CircleDollarSign, label: 'Planilla y Pagos' },
+      { id: 'planilla',      icon: FileText,         label: 'Novedades Planilla' },
       { id: 'contratos',     icon: Bell,             label: 'Alertas contratos' },
       { id: 'locadores',     icon: FolderOpen,       label: 'Locadores' },
+      { id: 'asistencia_locadores', icon: FolderOpen, label: 'Asistencia Locadores' }, // <-- AGREGADO
       { id: 'ceses',         icon: BarChart3,        label: 'Ceses' },
       { id: 'liquidacion',   icon: FileText,         label: 'Liquidaciones' },
       { id: 'sunafil',       icon: Search,           label: 'SUNAFIL' },
@@ -72,12 +76,46 @@ const componentMap = {
   planillapagos: TabPlanillaPagos, 
   ceses: TabCeses,
   liquidacion: TabLiquidacion,
+  asistencia_locadores: TabAsistenciaLocadores, // <-- VINCULADO
 };
 
 export default function RRHH() {
   const [activeTab, setActiveTab] = useState('perfil');
   const contentRef = useRef(null);
   const ActiveComp = componentMap[activeTab] || TabSimple;
+
+  /**
+   * FUNCIÓN CENTRAL PARA REGISTRAR EGRESOS
+   * Ahora retorna el objeto { error } para depuración detallada en los componentes hijos
+   */
+  const registrarEgresoDesdeRRHH = async (datos) => {
+    try {
+      const { data, error: egresoError } = await supabase
+        .from('egresos')
+        .insert([{
+          fecha: datos.fecha_pago || new Date().toISOString().split('T')[0],
+          concepto: datos.concepto,
+          area: 'RRHH',
+          categoria: datos.categoria || 'Planilla', 
+          proveedor: datos.proveedor || 'Colaboradores',
+          monto: datos.monto,
+          estado: 'Pendiente',
+          origen: datos.origen, 
+          origen_id: datos.id
+        }])
+        .select();
+
+      if (egresoError) {
+        console.error('Error en inserción Supabase:', egresoError);
+        return { data: null, error: egresoError };
+      }
+      
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error crítico al registrar egreso:', error);
+      return { data: null, error };
+    }
+  };
 
   const exportarPDF = () => {
     if (!contentRef.current) return;
@@ -88,14 +126,19 @@ export default function RRHH() {
     }
     const doc = new jsPDF();
     const label = SECCIONES.flatMap(s => s.items).find(i => i.id === activeTab)?.label || activeTab;
+    
+    doc.setFontSize(16);
     doc.text(`Reporte RRHH - ${label}`, 14, 15);
+    
     autoTable(doc, { 
       html: tabla, 
       startY: 25,
       styles: { fontSize: 8 },
-      headStyles: { fillStyle: [17, 40, 78] }
+      headStyles: { fillColor: [17, 40, 78] },
+      alternateRowStyles: { fillColor: [245, 247, 250] }
     });
-    doc.save(`rrhh_${activeTab}.pdf`);
+    
+    doc.save(`rrhh_${activeTab}_${new Date().getTime()}.pdf`);
   };
 
   const handleNuevoRegistro = () => {
@@ -104,14 +147,17 @@ export default function RRHH() {
                   Array.from(contentRef.current.querySelectorAll('button')).find(b => 
                     b.innerText.toLowerCase().includes('nuevo') || b.innerText.includes('+')
                   );
-    if (boton) boton.click();
-    else alert('Usa los botones dentro de la pestaña activa.');
+    if (boton) {
+      boton.click();
+    } else {
+      alert('Esta sección no tiene un formulario de nuevo registro rápido o el botón no está disponible.');
+    }
   };
 
   return (
     <div className="flex flex-col h-full bg-[#f8fafc]">
       
-      {/* Top Header VIP */}
+      {/* Header de la Página */}
       <header className="flex items-center justify-between px-8 py-4 bg-white border-b border-slate-200 shrink-0">
         <div>
           <h1 className="text-lg font-bold text-slate-800 tracking-tight">Gestión de Capital Humano</h1>
@@ -140,7 +186,7 @@ export default function RRHH() {
 
       <div className="flex flex-1 overflow-hidden">
         
-        {/* Menú Lateral Estilizado */}
+        {/* Menú Lateral de RRHH */}
         <aside className="w-64 bg-white border-r border-slate-200 overflow-y-auto hidden md:block custom-scrollbar">
           <nav className="p-4 space-y-7">
             {SECCIONES.map((seccion) => (
@@ -176,9 +222,9 @@ export default function RRHH() {
           </nav>
         </aside>
 
-        {/* Contenido Principal */}
+        {/* Contenido Dinámico */}
         <main className="flex-1 flex flex-col min-w-0 bg-[#f8fafc]">
-          {/* Mobile Selector */}
+          {/* Selector móvil */}
           <div className="md:hidden p-4 bg-white border-b border-slate-200">
             <select
               value={activeTab}
@@ -191,13 +237,14 @@ export default function RRHH() {
             </select>
           </div>
 
-          {/* Viewport de Componentes */}
           <div 
             ref={contentRef} 
-            className="flex-1 overflow-y-auto p-6 md:p-8"
+            className="flex-1 overflow-y-auto p-4 md:p-6"
           >
             <div className="max-w-[1400px] mx-auto animate-in fade-in duration-500">
-              <ActiveComp tabId={activeTab} />
+              <ActiveComp 
+                onRegistrarEgreso={registrarEgresoDesdeRRHH} 
+              />
             </div>
           </div>
         </main>

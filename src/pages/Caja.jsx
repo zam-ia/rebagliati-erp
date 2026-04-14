@@ -5,6 +5,7 @@ function Caja() {
   const [pagos, setPagos] = useState([]);
   const [inscripciones, setInscripciones] = useState([]);
   const [totalDia, setTotalDia] = useState(0);
+  const [totalEgresos, setTotalEgresos] = useState(0); // Nuevo estado
   const [mostrarForm, setMostrarForm] = useState(false);
   const [cargando, setCargando] = useState(false);
   
@@ -18,9 +19,25 @@ function Caja() {
     cajera: ''
   });
 
+  // Cálculo del saldo real
+  const saldoReal = totalDia - totalEgresos;
+
   useEffect(() => {
     cargarDatos();
+    cargarEgresosPagados(); // Carga inicial de egresos
   }, []);
+
+  const cargarEgresosPagados = async () => {
+    const { data, error } = await supabase
+      .from('egresos')
+      .select('monto')
+      .eq('estado', 'Pagado');
+    
+    if (!error && data) {
+      const total = data.reduce((sum, e) => sum + e.monto, 0);
+      setTotalEgresos(total);
+    }
+  };
 
   const cargarDatos = async () => {
     setCargando(true);
@@ -94,13 +111,23 @@ function Caja() {
         </button>
       </div>
 
-      {/* Tarjeta de cuadre */}
+      {/* Tarjeta de cuadre actualizada */}
       <div className="bg-white rounded-lg shadow-md p-6 mb-6">
         <h2 className="text-lg font-semibold mb-2">Cuadre de caja - Turno actual</h2>
         <div className="text-3xl font-bold text-primary" style={{ color: '#185FA5' }}>
           S/ {totalDia.toFixed(2)}
         </div>
-        <p className="text-gray-500 text-sm mt-2">Total recaudado hoy</p>
+        <p className="text-gray-500 text-sm mt-1">Total recaudado hoy</p>
+        
+        {/* Sección de Saldo Real e Integración con Egresos */}
+        <div className="mt-4 pt-4 border-t border-gray-100">
+          <div className="text-sm text-gray-500">
+            Egresos pagados: S/ {totalEgresos.toFixed(2)}<br/>
+            Saldo real en caja: <span className="font-bold" style={{ color: saldoReal >= 0 ? '#10b981' : '#ef4444' }}>
+              S/ {saldoReal.toFixed(2)}
+            </span>
+          </div>
+        </div>
       </div>
 
       {/* Formulario */}

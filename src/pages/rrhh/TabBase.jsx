@@ -1,7 +1,9 @@
+// src/pages/rrhh/TabBase.jsx
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import { FileText, Upload, Trash2, Eye } from 'lucide-react';
 
-// Listas predefinidas (puedes editarlas según tu empresa)
+// Listas predefinidas (igual que antes)
 const AREAS_PREDEFINIDAS = [
   'Administración', 'Ventas', 'Académico', 'Marketing', 'Recursos Humanos', 'Tecnología', 'Operaciones', 'Finanzas'
 ];
@@ -25,14 +27,23 @@ export default function TabBase() {
   const [form, setForm] = useState({});
   const [subiendoFoto, setSubiendoFoto] = useState(false);
   
-  // Listas dinámicas (se cargan desde localStorage o usan las predefinidas)
+  // Estados para documentos
+  const [documentos, setDocumentos] = useState([]);
+  const [subiendoDoc, setSubiendoDoc] = useState(false);
+  const [mostrarSubirDoc, setMostrarSubirDoc] = useState(false);
+  const [nuevoDoc, setNuevoDoc] = useState({
+    tipo: 'memorandum',
+    titulo: '',
+    descripcion: '',
+    archivo: null
+  });
+
+  // Listas dinámicas
   const [areasList, setAreasList] = useState([]);
   const [cargosList, setCargosList] = useState([]);
-  
-  // Lista de horarios activos (para asignar en el formulario)
   const [horariosList, setHorariosList] = useState([]);
 
-  // Cargar listas desde localStorage al inicio
+  // Cargar listas desde localStorage
   useEffect(() => {
     const storedAreas = localStorage.getItem('areasList');
     const storedCargos = localStorage.getItem('cargosList');
@@ -40,7 +51,6 @@ export default function TabBase() {
     setCargosList(storedCargos ? JSON.parse(storedCargos) : CARGOS_PREDEFINIDOS);
   }, []);
 
-  // Guardar listas en localStorage cuando cambien
   useEffect(() => {
     if (areasList.length) localStorage.setItem('areasList', JSON.stringify(areasList));
   }, [areasList]);
@@ -48,14 +58,12 @@ export default function TabBase() {
     if (cargosList.length) localStorage.setItem('cargosList', JSON.stringify(cargosList));
   }, [cargosList]);
 
-  // Cargar horarios activos para el selector
   useEffect(() => {
     supabase.from('horarios').select('id, nombre, tipo').eq('activo', true).then(({ data }) => {
       setHorariosList(data || []);
     });
   }, []);
 
-  // Calcular antigüedad automáticamente (solo para mostrar, no se guarda)
   const calcularAntiguedad = (fechaInicio) => {
     if (!fechaInicio) return '';
     const inicio = new Date(fechaInicio);
@@ -79,7 +87,6 @@ export default function TabBase() {
     return `${años} años, ${meses} meses, ${dias} días`;
   };
 
-  // Actualizar antigüedad cuando cambie fecha_inicio (solo para mostrar)
   useEffect(() => {
     if (form.fecha_inicio) {
       setForm(prev => ({ ...prev, antiguedad: calcularAntiguedad(prev.fecha_inicio) }));
@@ -90,7 +97,6 @@ export default function TabBase() {
 
   const handleCargoChange = (cargo) => {
     setForm(prev => ({ ...prev, cargo }));
-    // Sugerir descripción por defecto (opcional)
     const descripciones = {
       'Ejecutivo de ventas': 'Responsable de ventas y atención al cliente.',
       'Coordinador académico': 'Coordinar programas académicos y docentes.',
@@ -101,7 +107,6 @@ export default function TabBase() {
     }
   };
 
-  // Agregar nueva área
   const agregarArea = () => {
     const nombre = prompt('Nueva área:');
     if (nombre && !areasList.includes(nombre)) {
@@ -111,7 +116,6 @@ export default function TabBase() {
     } else if (nombre) alert('El área ya existe');
   };
 
-  // Agregar nuevo cargo
   const agregarCargo = () => {
     const nombre = prompt('Nuevo cargo:');
     if (nombre && !cargosList.includes(nombre)) {
@@ -128,17 +132,22 @@ export default function TabBase() {
 
   useEffect(() => { cargar(); }, []);
 
-  const empleadosFiltrados = empleados.filter(emp =>
-    `${emp.nombre} ${emp.apellido} ${emp.dni} ${emp.cargo}`
-      .toLowerCase()
-      .includes(busqueda.toLowerCase())
-  );
+  const cargarDocumentos = async (empleadoId) => {
+    if (!empleadoId) return;
+    const { data, error } = await supabase
+      .from('documentos_empleados')
+      .select('*')
+      .eq('empleado_id', empleadoId)
+      .order('fecha_subida', { ascending: false });
+    if (!error) setDocumentos(data || []);
+  };
 
   const verDetalle = (emp) => {
     setEmpleadoSeleccionado(emp);
     setForm({ ...emp });
     setModoEdicion(false);
     setModalAbierto(true);
+    cargarDocumentos(emp.id);
   };
 
   const nuevoRegistro = () => {
@@ -153,6 +162,7 @@ export default function TabBase() {
       talla_uniforme: '', datos_familiares_contacto: '', descripcion_cargo: '',
       inicio_contrato: '', fin_contrato: '', foto_url: '', antiguedad: '', horario_id: ''
     });
+    setDocumentos([]);
     setModoEdicion(true);
     setModalAbierto(true);
   };
@@ -184,31 +194,20 @@ export default function TabBase() {
       return;
     }
 
-    // Copia del formulario para enviar
     const datosEnvio = { ...form };
-    
-    // ELIMINAR campos calculados que no existen en la BD
-    delete datosEnvio.antiguedad;   // ← CRUCIAL: eliminar antiguedad
-    
-    // Convertir fechas vacías a null
+    delete datosEnvio.antiguedad;
     const fechaCampos = ['fecha_nacimiento', 'fecha_inicio', 'fecha_ingreso_planilla', 'inicio_contrato', 'fin_contrato'];
     fechaCampos.forEach(campo => {
       if (datosEnvio[campo] === '') datosEnvio[campo] = null;
     });
-
-    // Si tipo de contrato es Indeterminado, fin_contrato debe ser null
     if (datosEnvio.tipo_contrato === 'Indeterminado') {
       datosEnvio.fin_contrato = null;
     }
-
-    // Calcular sueldo total y asignación familiar
     const s_bruto = Number(datosEnvio.sueldo_bruto) || 0;
     const s_comodato = Number(datosEnvio.comodato) || 0;
     const s_asig = datosEnvio.tiene_hijos ? (Number(datosEnvio.asignacion_familiar) || 102.5) : 0;
     datosEnvio.sueldo_total = s_bruto + s_comodato + s_asig;
     datosEnvio.asignacion_familiar = s_asig;
-    
-    // Eliminar id si existe (para nuevos registros)
     delete datosEnvio.id;
 
     try {
@@ -247,6 +246,55 @@ export default function TabBase() {
     }
   };
 
+  const subirDocumento = async () => {
+    if (!nuevoDoc.archivo || !nuevoDoc.titulo) {
+      alert('Selecciona un archivo y escribe un título');
+      return;
+    }
+    setSubiendoDoc(true);
+    const file = nuevoDoc.archivo;
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${empleadoSeleccionado.id}_${Date.now()}.${fileExt}`;
+    const filePath = `documentos/${fileName}`;
+    const { error: uploadError } = await supabase.storage
+      .from('documentos-empleados')
+      .upload(filePath, file);
+    if (uploadError) {
+      alert('Error al subir archivo: ' + uploadError.message);
+      setSubiendoDoc(false);
+      return;
+    }
+    const { data: { publicUrl } } = supabase.storage
+      .from('documentos-empleados')
+      .getPublicUrl(filePath);
+    const { error: dbError } = await supabase.from('documentos_empleados').insert({
+      empleado_id: empleadoSeleccionado.id,
+      tipo_documento: nuevoDoc.tipo,
+      titulo: nuevoDoc.titulo,
+      descripcion: nuevoDoc.descripcion,
+      archivo_url: publicUrl,
+    });
+    if (dbError) alert('Error al guardar metadata: ' + dbError.message);
+    else {
+      alert('Documento subido correctamente');
+      cargarDocumentos(empleadoSeleccionado.id);
+      setMostrarSubirDoc(false);
+      setNuevoDoc({ tipo: 'memorandum', titulo: '', descripcion: '', archivo: null });
+    }
+    setSubiendoDoc(false);
+  };
+
+  const eliminarDocumento = async (doc) => {
+    if (!confirm('¿Eliminar este documento?')) return;
+    const path = doc.archivo_url.split('/public/')[1];
+    if (path) await supabase.storage.from('documentos-empleados').remove([path]);
+    const { error } = await supabase.from('documentos_empleados').delete().eq('id', doc.id);
+    if (!error) {
+      alert('Documento eliminado');
+      cargarDocumentos(empleadoSeleccionado.id);
+    } else alert('Error: ' + error.message);
+  };
+
   const getInitials = (nombre, apellido) => {
     return `${nombre?.charAt(0) || ''}${apellido?.charAt(0) || ''}`.toUpperCase();
   };
@@ -264,7 +312,6 @@ export default function TabBase() {
     }
   };
 
-  // Componente Campo para selects dinámicos (CORREGIDO para aceptar objetos)
   const CampoSelect = ({ label, value, options, edit, setForm, field, onAddNew }) => (
     <div>
       <label className="block text-xs text-gray-500 mb-1">{label}</label>
@@ -277,26 +324,21 @@ export default function TabBase() {
         >
           <option value="">Seleccionar...</option>
           {options.map((opt, idx) => {
-            // Si opt es un objeto con value y label
             if (typeof opt === 'object' && opt !== null && 'value' in opt && 'label' in opt) {
               return <option key={opt.value || idx} value={opt.value}>{opt.label}</option>;
             }
-            // Si es string o número
             return <option key={opt || idx} value={opt}>{opt}</option>;
           })}
         </select>
         {edit && onAddNew && (
-          <button
-            type="button"
-            onClick={onAddNew}
-            className="px-2 bg-gray-200 rounded-lg text-sm hover:bg-gray-300"
-            title="Agregar nuevo"
-          >
-            +
-          </button>
+          <button type="button" onClick={onAddNew} className="px-2 bg-gray-200 rounded-lg text-sm hover:bg-gray-300" title="Agregar nuevo">+</button>
         )}
       </div>
     </div>
+  );
+
+  const empleadosFiltrados = empleados.filter(emp =>
+    `${emp.nombre} ${emp.apellido} ${emp.dni} ${emp.cargo}`.toLowerCase().includes(busqueda.toLowerCase())
   );
 
   return (
@@ -311,10 +353,7 @@ export default function TabBase() {
             onChange={(e) => setBusqueda(e.target.value)}
             className="flex-1 md:w-64 border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#185FA5]"
           />
-          <button
-            onClick={nuevoRegistro}
-            className="bg-[#185FA5] text-white px-5 py-2 rounded-lg font-bold text-sm whitespace-nowrap hover:bg-blue-700"
-          >
+          <button onClick={nuevoRegistro} className="bg-[#185FA5] text-white px-5 py-2 rounded-lg font-bold text-sm whitespace-nowrap hover:bg-blue-700">
             + Nuevo Registro
           </button>
         </div>
@@ -322,11 +361,7 @@ export default function TabBase() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
         {empleadosFiltrados.map((emp, idx) => (
-          <div
-            key={emp.id}
-            onClick={() => verDetalle(emp)}
-            className="bg-white rounded-2xl shadow-md hover:shadow-xl transition-all cursor-pointer border border-gray-100 overflow-hidden"
-          >
+          <div key={emp.id} onClick={() => verDetalle(emp)} className="bg-white rounded-2xl shadow-md hover:shadow-xl transition-all cursor-pointer border border-gray-100 overflow-hidden">
             <div className="p-5">
               <div className="flex items-start gap-3">
                 {emp.foto_url ? (
@@ -352,9 +387,7 @@ export default function TabBase() {
           </div>
         ))}
         {empleadosFiltrados.length === 0 && (
-          <div className="col-span-full text-center py-10 text-gray-400">
-            No se encontraron colaboradores
-          </div>
+          <div className="col-span-full text-center py-10 text-gray-400">No se encontraron colaboradores</div>
         )}
       </div>
 
@@ -366,41 +399,15 @@ export default function TabBase() {
                 {modoEdicion ? (empleadoSeleccionado ? 'Editar Colaborador' : 'Nuevo Colaborador') : 'Ficha del Colaborador'}
               </h3>
               <div className="flex gap-2">
-                {!modoEdicion && (
-                  <button
-                    onClick={() => setModoEdicion(true)}
-                    className="bg-white text-[#185FA5] px-4 py-1 rounded-lg text-sm font-bold hover:bg-gray-100"
-                  >
-                    Editar
-                  </button>
-                )}
-                {modoEdicion && (
-                  <button
-                    onClick={guardar}
-                    className="bg-green-600 text-white px-4 py-1 rounded-lg text-sm font-bold hover:bg-green-700"
-                  >
-                    Guardar
-                  </button>
-                )}
-                {empleadoSeleccionado && (
-                  <button
-                    onClick={eliminar}
-                    className="bg-red-600 text-white px-4 py-1 rounded-lg text-sm font-bold hover:bg-red-700"
-                  >
-                    Eliminar
-                  </button>
-                )}
-                <button
-                  onClick={() => setModalAbierto(false)}
-                  className="bg-gray-300 text-gray-800 px-3 py-1 rounded-lg text-sm"
-                >
-                  Cerrar
-                </button>
+                {!modoEdicion && <button onClick={() => setModoEdicion(true)} className="bg-white text-[#185FA5] px-4 py-1 rounded-lg text-sm font-bold hover:bg-gray-100">Editar</button>}
+                {modoEdicion && <button onClick={guardar} className="bg-green-600 text-white px-4 py-1 rounded-lg text-sm font-bold hover:bg-green-700">Guardar</button>}
+                {empleadoSeleccionado && <button onClick={eliminar} className="bg-red-600 text-white px-4 py-1 rounded-lg text-sm font-bold hover:bg-red-700">Eliminar</button>}
+                <button onClick={() => setModalAbierto(false)} className="bg-gray-300 text-gray-800 px-3 py-1 rounded-lg text-sm">Cerrar</button>
               </div>
             </div>
 
             <div className="p-6 space-y-6">
-              {/* Foto de perfil (solo en modo edición) */}
+              {/* Foto de perfil */}
               {modoEdicion && (
                 <div className="flex justify-center mb-4">
                   <div className="relative">
@@ -412,8 +419,7 @@ export default function TabBase() {
                       </div>
                     )}
                     <label className="absolute bottom-0 right-0 bg-[#185FA5] text-white p-1 rounded-full cursor-pointer text-xs">
-                      📷
-                      <input type="file" accept="image/*" onChange={manejarArchivo} className="hidden" disabled={subiendoFoto} />
+                      📷 <input type="file" accept="image/*" onChange={manejarArchivo} className="hidden" disabled={subiendoFoto} />
                     </label>
                   </div>
                 </div>
@@ -445,72 +451,19 @@ export default function TabBase() {
               <div className="border-b pb-3">
                 <h4 className="font-bold text-[#185FA5] mb-3">💼 Datos Laborales</h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <CampoSelect
-                    label="Área"
-                    value={form.area}
-                    options={areasList}
-                    edit={modoEdicion}
-                    setForm={setForm}
-                    field="area"
-                    onAddNew={agregarArea}
-                  />
-                  <CampoSelect
-                    label="Cargo"
-                    value={form.cargo}
-                    options={cargosList}
-                    edit={modoEdicion}
-                    setForm={setForm}
-                    field="cargo"
-                    onAddNew={agregarCargo}
-                  />
+                  <CampoSelect label="Área" value={form.area} options={areasList} edit={modoEdicion} setForm={setForm} field="area" onAddNew={agregarArea} />
+                  <CampoSelect label="Cargo" value={form.cargo} options={cargosList} edit={modoEdicion} setForm={setForm} field="cargo" onAddNew={agregarCargo} />
                   <Campo label="Descripción del cargo" value={form.descripcion_cargo} edit={modoEdicion} setForm={setForm} field="descripcion_cargo" />
-                  <CampoSelect
-                    label="Tipo de contrato"
-                    value={form.tipo_contrato}
-                    options={TIPOS_CONTRATO}
-                    edit={modoEdicion}
-                    setForm={setForm}
-                    field="tipo_contrato"
-                  />
-                  <CampoSelect
-                    label="Situación laboral"
-                    value={form.situacion_laboral}
-                    options={SITUACIONES_LABORALES}
-                    edit={modoEdicion}
-                    setForm={setForm}
-                    field="situacion_laboral"
-                  />
-                  <CampoSelect
-                    label="Modalidad"
-                    value={form.modalidad_trabajo}
-                    options={MODALIDADES}
-                    edit={modoEdicion}
-                    setForm={setForm}
-                    field="modalidad_trabajo"
-                  />
-                  <CampoSelect
-                    label="Turno"
-                    value={form.turno}
-                    options={TURNOS}
-                    edit={modoEdicion}
-                    setForm={setForm}
-                    field="turno"
-                  />
+                  <CampoSelect label="Tipo de contrato" value={form.tipo_contrato} options={TIPOS_CONTRATO} edit={modoEdicion} setForm={setForm} field="tipo_contrato" />
+                  <CampoSelect label="Situación laboral" value={form.situacion_laboral} options={SITUACIONES_LABORALES} edit={modoEdicion} setForm={setForm} field="situacion_laboral" />
+                  <CampoSelect label="Modalidad" value={form.modalidad_trabajo} options={MODALIDADES} edit={modoEdicion} setForm={setForm} field="modalidad_trabajo" />
+                  <CampoSelect label="Turno" value={form.turno} options={TURNOS} edit={modoEdicion} setForm={setForm} field="turno" />
                   <Campo label="Fecha ingreso" value={form.fecha_inicio} type="date" edit={modoEdicion} setForm={setForm} field="fecha_inicio" />
                   <Campo label="Fecha ingreso planilla" value={form.fecha_ingreso_planilla} type="date" edit={modoEdicion} setForm={setForm} field="fecha_ingreso_planilla" />
                   <Campo label="Inicio contrato" value={form.inicio_contrato} type="date" edit={modoEdicion} setForm={setForm} field="inicio_contrato" />
                   <Campo label="Fin contrato" value={form.fin_contrato} type="date" edit={modoEdicion && form.tipo_contrato !== 'Indeterminado'} setForm={setForm} field="fin_contrato" />
                   <Campo label="Tiempo de antigüedad" value={form.antiguedad} edit={false} />
-                  
-                  {/* Selector de Horario */}
-                  <CampoSelect
-                    label="Horario"
-                    value={form.horario_id}
-                    options={horariosList.map(h => ({ value: h.id, label: `${h.nombre} (${h.tipo})` }))}
-                    edit={modoEdicion}
-                    setForm={setForm}
-                    field="horario_id"
-                  />
+                  <CampoSelect label="Horario" value={form.horario_id} options={horariosList.map(h => ({ value: h.id, label: `${h.nombre} (${h.tipo})` }))} edit={modoEdicion} setForm={setForm} field="horario_id" />
                 </div>
               </div>
 
@@ -522,31 +475,10 @@ export default function TabBase() {
                   <Campo label="Comodato (S/)" value={form.comodato} type="number" edit={modoEdicion} setForm={setForm} field="comodato" />
                   <Campo label="Asignación Familiar (S/)" value={form.asignacion_familiar} type="number" edit={modoEdicion} setForm={setForm} field="asignacion_familiar" />
                   <Campo label="Sueldo Total (S/)" value={form.sueldo_total} type="number" edit={false} />
-                  <CampoSelect
-                    label="Tipo de seguro"
-                    value={form.tipo_seguro}
-                    options={TIPOS_SEGURO}
-                    edit={modoEdicion}
-                    setForm={setForm}
-                    field="tipo_seguro"
-                  />
-                  <CampoSelect
-                    label="Sistema pensionario"
-                    value={form.sistema_pensionario}
-                    options={SISTEMAS_PENSIONARIOS}
-                    edit={modoEdicion}
-                    setForm={setForm}
-                    field="sistema_pensionario"
-                  />
+                  <CampoSelect label="Tipo de seguro" value={form.tipo_seguro} options={TIPOS_SEGURO} edit={modoEdicion} setForm={setForm} field="tipo_seguro" />
+                  <CampoSelect label="Sistema pensionario" value={form.sistema_pensionario} options={SISTEMAS_PENSIONARIOS} edit={modoEdicion} setForm={setForm} field="sistema_pensionario" />
                   {form.sistema_pensionario === 'AFP (Seleccionar AFP)' && modoEdicion && (
-                    <CampoSelect
-                      label="AFP específica"
-                      value={form.afp_entidad}
-                      options={AFP_LIST}
-                      edit={modoEdicion}
-                      setForm={setForm}
-                      field="afp_entidad"
-                    />
+                    <CampoSelect label="AFP específica" value={form.afp_entidad} options={AFP_LIST} edit={modoEdicion} setForm={setForm} field="afp_entidad" />
                   )}
                 </div>
               </div>
@@ -562,12 +494,48 @@ export default function TabBase() {
               </div>
 
               {/* Uniformes y Datos Familiares */}
-              <div>
+              <div className="border-b pb-3">
                 <h4 className="font-bold text-[#185FA5] mb-3">👕 Uniformes y Datos Familiares</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <Campo label="Talla de uniforme" value={form.talla_uniforme} edit={modoEdicion} setForm={setForm} field="talla_uniforme" />
                   <Campo label="Datos familiares (contacto emergencia)" value={form.datos_familiares_contacto} edit={modoEdicion} setForm={setForm} field="datos_familiares_contacto" />
                 </div>
+              </div>
+
+              {/* 📄 DOCUMENTOS ADJUNTOS (MEMORÁNDUMS) */}
+              <div>
+                <div className="flex justify-between items-center mb-3">
+                  <h4 className="font-bold text-[#185FA5]">📄 Documentos adjuntos</h4>
+                  {modoEdicion && (
+                    <button onClick={() => setMostrarSubirDoc(true)} className="bg-green-600 text-white px-3 py-1 rounded-lg text-xs font-black flex items-center gap-1">
+                      <Upload size={14} /> Subir documento
+                    </button>
+                  )}
+                </div>
+                {documentos.length === 0 ? (
+                  <p className="text-gray-400 text-sm italic">No hay documentos asociados</p>
+                ) : (
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {documentos.map(doc => (
+                      <div key={doc.id} className="flex items-center justify-between bg-gray-50 p-3 rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <FileText size={18} className="text-blue-600" />
+                          <div>
+                            <p className="text-sm font-bold">{doc.titulo}</p>
+                            <p className="text-xs text-gray-500">{doc.descripcion}</p>
+                            <p className="text-[10px] text-gray-400">{new Date(doc.fecha_subida).toLocaleDateString()} · {doc.tipo_documento}</p>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <a href={doc.archivo_url} target="_blank" rel="noopener noreferrer" className="p-1 text-blue-600 hover:bg-blue-100 rounded" title="Ver"><Eye size={16} /></a>
+                          {modoEdicion && (
+                            <button onClick={() => eliminarDocumento(doc)} className="p-1 text-red-500 hover:bg-red-100 rounded" title="Eliminar"><Trash2 size={16} /></button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -580,11 +548,70 @@ export default function TabBase() {
           </div>
         </div>
       )}
+
+      {/* Modal para subir documento */}
+      {mostrarSubirDoc && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6">
+            <h3 className="text-xl font-black text-gray-800 mb-4">Subir documento</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-gray-500 mb-1">Tipo</label>
+                <select
+                  value={nuevoDoc.tipo}
+                  onChange={(e) => setNuevoDoc({...nuevoDoc, tipo: e.target.value})}
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                >
+                  <option value="memorandum">Memorándum</option>
+                  <option value="contrato">Contrato</option>
+                  <option value="incidencia_planilla">Incidencia de planilla</option>
+                  <option value="otro">Otro</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-500 mb-1">Título *</label>
+                <input
+                  type="text"
+                  value={nuevoDoc.titulo}
+                  onChange={(e) => setNuevoDoc({...nuevoDoc, titulo: e.target.value})}
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                  placeholder="Ej: Memorandum por tardanzas"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-500 mb-1">Descripción</label>
+                <textarea
+                  rows="2"
+                  value={nuevoDoc.descripcion}
+                  onChange={(e) => setNuevoDoc({...nuevoDoc, descripcion: e.target.value})}
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                  placeholder="Detalles adicionales..."
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-500 mb-1">Archivo (PDF, imagen)</label>
+                <input
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png"
+                  onChange={(e) => setNuevoDoc({...nuevoDoc, archivo: e.target.files[0]})}
+                  className="w-full text-sm"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-5">
+              <button onClick={() => setMostrarSubirDoc(false)} className="px-4 py-2 text-sm text-gray-600">Cancelar</button>
+              <button onClick={subirDocumento} disabled={subiendoDoc} className="bg-[#185FA5] text-white px-4 py-2 rounded-lg text-sm font-bold">
+                {subiendoDoc ? 'Subiendo...' : 'Subir'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-// Componente Campo básico (reutilizado)
+// Componente Campo (igual que antes)
 function Campo({ label, value, type = 'text', edit = false, setForm, field }) {
   if (!edit) {
     if (type === 'checkbox') {
@@ -614,13 +641,7 @@ function Campo({ label, value, type = 'text', edit = false, setForm, field }) {
   if (type === 'checkbox') {
     return (
       <div className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          id={field}
-          checked={value || false}
-          onChange={(e) => setForm(prev => ({ ...prev, [field]: e.target.checked }))}
-          className="w-4 h-4"
-        />
+        <input type="checkbox" id={field} checked={value || false} onChange={(e) => setForm(prev => ({ ...prev, [field]: e.target.checked }))} className="w-4 h-4" />
         <label htmlFor={field} className="text-sm text-gray-700">{label}</label>
       </div>
     );
@@ -628,13 +649,7 @@ function Campo({ label, value, type = 'text', edit = false, setForm, field }) {
   return (
     <div>
       <label className="block text-xs text-gray-500 mb-1">{label}</label>
-      <input
-        type={type}
-        value={value || ''}
-        onChange={(e) => setForm(prev => ({ ...prev, [field]: e.target.value }))}
-        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#185FA5]"
-        disabled={edit === false}
-      />
+      <input type={type} value={value || ''} onChange={(e) => setForm(prev => ({ ...prev, [field]: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#185FA5]" />
     </div>
   );
 }

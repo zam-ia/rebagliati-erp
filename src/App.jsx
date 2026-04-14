@@ -14,20 +14,20 @@ import RRHH from './pages/RRHH';
 import Logistica from './pages/Logistica';
 import Reclamaciones from './pages/Reclamaciones';
 import Reportes from './pages/Reportes';
-import GestionEstrategica from './pages/GestionEstrategica'; // <-- Nueva página añadida
+import GestionEstrategica from './pages/GestionEstrategica';
+import AdminUsuarios from './pages/AdminUsuarios';
+import Finanzas from './pages/finanzas';   // <-- NUEVA IMPORTACIÓN (estructura carpetas)
 
 function ProtectedRoute({ children }) {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Obtener sesión inicial
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setLoading(false);
     });
 
-    // Escuchar cambios en la autenticación
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
     });
@@ -38,8 +38,8 @@ function ProtectedRoute({ children }) {
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#f0f2f5]">
-        <div className="w-12 h-12 border-4 border-[#185FA5] border-t-transparent rounded-full animate-spin mb-4"></div>
-        <span className="text-[#11284e] font-bold animate-pulse">Cargando sistema...</span>
+        <div className="w-10 h-10 border-4 border-[#185FA5] border-t-transparent rounded-full animate-spin mb-4"></div>
+        <p className="text-[#11284e] font-bold text-sm uppercase tracking-widest">Iniciando ERP...</p>
       </div>
     );
   }
@@ -52,39 +52,42 @@ function ProtectedRoute({ children }) {
 }
 
 function App() {
+  // Array de configuración de rutas privadas
+  const rutasPrivadas = [
+    { path: '/dashboard', component: <Dashboard /> },
+    { path: '/inscripciones', component: <Inscripciones /> },
+    { path: '/caja', component: <Caja /> },
+    { path: '/crm', component: <CRM /> },
+    { path: '/rrhh', component: <RRHH /> },
+    { path: '/logistica', component: <Logistica /> },
+    { path: '/reclamaciones', component: <Reclamaciones /> },
+    { path: '/reportes', component: <Reportes /> },
+    { path: '/gestion', component: <GestionEstrategica /> },
+    { path: '/admin/usuarios', component: <AdminUsuarios /> },
+    { path: '/finanzas', component: <Finanzas /> },  // <-- NUEVA RUTA FINANZAS
+  ];
+
   return (
     <BrowserRouter>
       <Routes>
-        {/* Ruta Pública */}
+        {/* Rutas Públicas */}
         <Route path="/login" element={<Login />} />
-
-        {/* Redirección inicial */}
         <Route path="/" element={<Navigate to="/dashboard" />} />
 
-        {/* Rutas Protegidas */}
-        {[
-          { path: '/dashboard', component: <Dashboard /> },
-          { path: '/inscripciones', component: <Inscripciones /> },
-          { path: '/caja', component: <Caja /> },
-          { path: '/crm', component: <CRM /> },
-          { path: '/rrhh', component: <RRHH /> },
-          { path: '/logistica', component: <Logistica /> },
-          { path: '/reclamaciones', component: <Reclamaciones /> },
-          { path: '/reportes', component: <Reportes /> },
-          { path: '/gestion', component: <GestionEstrategica /> }, // <-- Ruta habilitada
-        ].map((route) => (
+        {/* Renderizado Dinámico de Rutas Protegidas */}
+        {rutasPrivadas.map((ruta) => (
           <Route
-            key={route.path}
-            path={route.path}
+            key={ruta.path}
+            path={ruta.path}
             element={
               <ProtectedRoute>
-                <Layout>{route.component}</Layout>
+                <Layout>{ruta.component}</Layout>
               </ProtectedRoute>
             }
           />
         ))}
 
-        {/* Fallback para rutas no encontradas */}
+        {/* Redirección por defecto */}
         <Route path="*" element={<Navigate to="/dashboard" />} />
       </Routes>
     </BrowserRouter>

@@ -4,11 +4,11 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import Notificaciones from './Notificaciones';
 
-// Iconos premium y minimalistas
 import { 
   LayoutDashboard, FileEdit, Wallet, Users, 
   Briefcase, Package, ClipboardList, TrendingUp, 
-  Menu, ChevronRight, LogOut, ChevronLeft
+  Menu, ChevronRight, LogOut, ChevronLeft,
+  ShieldCheck, DollarSign 
 } from 'lucide-react';
 
 const NAV_GRUPOS = [
@@ -17,7 +17,7 @@ const NAV_GRUPOS = [
     items: [
       { path: '/dashboard',     nombre: 'Dashboard', icon: LayoutDashboard },
       { path: '/inscripciones', nombre: 'Inscripciones', icon: FileEdit },
-      { path: '/caja',          nombre: 'Caja y Pagos', icon: Wallet },
+      { path: '/caja',           nombre: 'Caja y Pagos', icon: Wallet },
     ],
   },
   {
@@ -25,9 +25,17 @@ const NAV_GRUPOS = [
     items: [
       { path: '/crm',           nombre: 'CRM Clientes', icon: Users },
       { path: '/rrhh',          nombre: 'RRHH', icon: Briefcase },
+      { path: '/finanzas',      nombre: 'Finanzas', icon: DollarSign },
       { path: '/logistica',     nombre: 'Logística', icon: Package },
+      { path: '/gestion',       nombre: 'Gestión Estratégica', icon: TrendingUp },
       { path: '/reclamaciones', nombre: 'Reclamaciones', icon: ClipboardList },
       { path: '/reportes',      nombre: 'Reportes', icon: TrendingUp },
+    ],
+  },
+  {
+    label: 'Sistema',
+    items: [
+      { path: '/admin/usuarios', nombre: 'Administrar Usuarios', icon: ShieldCheck },
     ],
   },
 ];
@@ -43,9 +51,12 @@ export default function Layout({ children }) {
     }
     return true;
   });
+  
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [usuario, setUsuario]       = useState('');
+  const [usuarioEmail, setUsuarioEmail] = useState('');
   const [fechaHoy, setFechaHoy]     = useState('');
+  const [permisos, setPermisos] = useState({});
+  const [menuItems, setMenuItems] = useState([]);
 
   useEffect(() => {
     const d = new Date();
@@ -53,11 +64,43 @@ export default function Layout({ children }) {
   }, []);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      const email = data?.user?.email || '';
-      setUsuario(email ? email.split('@')[0] : 'Usuario');
-    });
+    const cargarDatosYPermisos = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      setUsuarioEmail(user.email || '');
+
+      const { data: permisosData } = await supabase
+        .from('permisos_usuarios')
+        .select('modulo, puede_ver')
+        .eq('user_id', user.id);
+
+      const permisosObj = {};
+      permisosData?.forEach(p => { 
+        permisosObj[p.modulo] = p.puede_ver; 
+      });
+      setPermisos(permisosObj);
+    };
+
+    cargarDatosYPermisos();
   }, []);
+
+  useEffect(() => {
+    const esAdmin = usuarioEmail === 'admin@rebagliati.com';
+
+    const gruposFiltrados = NAV_GRUPOS.map(grupo => ({
+      ...grupo,
+      items: grupo.items.filter(item => {
+        if (esAdmin) return true;
+        if (item.nombre === 'Administrar Usuarios') {
+          return permisos['Administrar Usuarios'] === true;
+        }
+        return permisos[item.nombre] === true;
+      })
+    })).filter(grupo => grupo.items.length > 0);
+
+    setMenuItems(gruposFiltrados);
+  }, [permisos, usuarioEmail]);
 
   const toggleSidebar = () => {
     setSidebarOpen(prev => {
@@ -72,18 +115,17 @@ export default function Layout({ children }) {
     navigate('/login');
   };
 
-  const initials = usuario.slice(0, 2).toUpperCase() || 'US';
+  const usuarioNombre = usuarioEmail ? usuarioEmail.split('@')[0] : 'Usuario';
+  const initials = usuarioNombre.slice(0, 2).toUpperCase() || 'US';
+  
   const moduloActivo = NAV_GRUPOS
     .flatMap(g => g.items)
     .find(i => i.path === location.pathname)?.nombre || 'Panel de Control';
 
-  // Componente interno del Sidebar
   const SidebarContent = ({ onItemClick, isMobile = false }) => {
     const showText = sidebarOpen || isMobile;
     return (
       <div className="flex flex-col h-full bg-[#11284e] text-white font-sans">
-        
-        {/* HEADER con LOGO */}
         <div className="flex items-center justify-between gap-2 px-3 h-14 border-b border-white/5 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-7 h-7 rounded-md flex items-center justify-center shrink-0 bg-[#185FA5]/30 text-[#7eb3f5]">
@@ -97,18 +139,14 @@ export default function Layout({ children }) {
             )}
           </div>
           {!isMobile && (
-            <button
-              onClick={toggleSidebar}
-              className="p-1.5 rounded-md text-white/40 hover:text-white hover:bg-white/10 transition-colors"
-            >
+            <button onClick={toggleSidebar} className="p-1.5 rounded-md text-white/40 hover:text-white hover:bg-white/10 transition-colors">
               {sidebarOpen ? <ChevronLeft size={16} /> : <Menu size={16} />}
             </button>
           )}
         </div>
 
-        {/* NAV ITEMS */}
         <div className="flex-1 overflow-y-auto py-5 space-y-6 custom-scrollbar">
-          {NAV_GRUPOS.map(grupo => (
+          {menuItems.map(grupo => (
             <div key={grupo.label} className="px-3">
               {showText && (
                 <p className="px-2 mb-2 text-[10px] font-semibold uppercase tracking-widest text-white/30">
@@ -125,10 +163,7 @@ export default function Layout({ children }) {
                       to={item.path}
                       onClick={onItemClick}
                       className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 group
-                        ${isActive 
-                          ? 'bg-[#185FA5] text-white shadow-md' 
-                          : 'text-white/60 hover:bg-white/5 hover:text-white'
-                        }`}
+                        ${isActive ? 'bg-[#185FA5] text-white shadow-md' : 'text-white/60 hover:bg-white/5 hover:text-white'}`}
                     >
                       <Icon size={16} strokeWidth={isActive ? 2.5 : 2} className="shrink-0" />
                       {showText && (
@@ -144,7 +179,6 @@ export default function Layout({ children }) {
           ))}
         </div>
 
-        {/* FOOTER USUARIO */}
         <div className="p-3 border-t border-white/5 shrink-0">
           <div className="flex items-center gap-3 px-2 py-2 rounded-xl bg-white/5 border border-white/5">
             <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-[#185FA5] text-white text-[11px] font-bold shadow-inner">
@@ -153,18 +187,13 @@ export default function Layout({ children }) {
             {showText && (
               <>
                 <div className="flex-1 min-w-0">
-                  <div className="text-[12px] font-medium truncate text-white/90">
-                    {usuario || 'Usuario'}
-                  </div>
+                  <div className="text-[12px] font-medium truncate text-white/90">{usuarioNombre}</div>
                   <div className="text-[10px] text-emerald-400/80 flex items-center gap-1.5 mt-0.5">
                     <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></div>
                     En línea
                   </div>
                 </div>
-                <button 
-                  onClick={handleLogout}
-                  className="p-1.5 rounded-md text-white/40 hover:text-white hover:bg-white/10 transition-colors"
-                >
+                <button onClick={handleLogout} className="p-1.5 rounded-md text-white/40 hover:text-white hover:bg-white/10 transition-colors">
                   <LogOut size={14} />
                 </button>
               </>
@@ -177,35 +206,22 @@ export default function Layout({ children }) {
 
   return (
     <div className="flex min-h-screen bg-[#f0f2f5] font-sans">
-      {/* Overlay móvil */}
       {mobileOpen && (
-        <div
-          className="fixed inset-0 z-30 md:hidden bg-slate-900/40 backdrop-blur-sm transition-opacity"
-          onClick={() => setMobileOpen(false)}
-        />
+        <div className="fixed inset-0 z-30 md:hidden bg-slate-900/40 backdrop-blur-sm transition-opacity" onClick={() => setMobileOpen(false)} />
       )}
-
-      {/* Sidebar móvil */}
-      <aside
-        className="fixed inset-y-0 left-0 z-40 flex flex-col w-64 md:hidden transition-transform duration-300 shadow-2xl"
-        style={{ transform: mobileOpen ? 'translateX(0)' : 'translateX(-100%)' }}
-      >
+      <aside className="fixed inset-y-0 left-0 z-40 flex flex-col w-64 md:hidden transition-transform duration-300 shadow-2xl"
+             style={{ transform: mobileOpen ? 'translateX(0)' : 'translateX(-100%)' }}>
         <SidebarContent onItemClick={() => setMobileOpen(false)} isMobile={true} />
       </aside>
 
-      {/* Sidebar desktop */}
-      <aside
-        className="hidden md:flex flex-col flex-shrink-0 transition-all duration-300 shadow-lg relative z-20"
-        style={{ width: sidebarOpen ? 220 : 72 }}
-      >
+      <aside className="hidden md:flex flex-col flex-shrink-0 transition-all duration-300 shadow-lg relative z-20"
+             style={{ width: sidebarOpen ? 220 : 72 }}>
         <SidebarContent onItemClick={() => {}} isMobile={false} />
       </aside>
 
-      {/* Área principal */}
       <div className="flex flex-col flex-1 min-w-0 h-screen overflow-hidden">
         <header className="shrink-0 flex items-center justify-between px-5 md:px-6 h-14 bg-white border-b border-[#e8ecf0] z-10">
           <div className="flex items-center gap-4">
-            {/* Botón menú móvil */}
             <button onClick={() => setMobileOpen(true)} className="md:hidden p-2 text-slate-600">
               <Menu size={20} />
             </button>
@@ -215,7 +231,6 @@ export default function Layout({ children }) {
               <span className="font-semibold text-[#11284e] uppercase tracking-tight">{moduloActivo}</span>
             </div>
           </div>
-
           <div className="flex items-center gap-4">
             <span className="hidden sm:block text-[11px] font-medium px-2.5 py-1 rounded-md text-slate-500 bg-slate-50 border border-slate-200">
               {fechaHoy}
@@ -224,7 +239,8 @@ export default function Layout({ children }) {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-[#f0f2f5]">
+        {/* CAMBIO REALIZADO AQUÍ: p-3 md:p-4 */}
+        <main className="flex-1 overflow-y-auto p-3 md:p-4 bg-[#f0f2f5]">
           <div className="max-w-[1600px] mx-auto">
             {children}
           </div>
