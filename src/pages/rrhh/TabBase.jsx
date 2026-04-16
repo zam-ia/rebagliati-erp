@@ -18,6 +18,9 @@ const TIPOS_SEGURO = ['Essalud', 'EPS (Seleccionar EPS)', 'Seguro privado'];
 const SISTEMAS_PENSIONARIOS = ['ONP', 'AFP (Seleccionar AFP)', 'No aplica'];
 const AFP_LIST = ['Prima', 'Habitat', 'Integra', 'Profuturo'];
 
+// Opciones para estado civil
+const ESTADOS_CIVILES = ['Soltero(a)', 'Casado(a)', 'Viudo(a)', 'Divorciado(a)'];
+
 export default function TabBase() {
   const [empleados, setEmpleados] = useState([]);
   const [empleadoSeleccionado, setEmpleadoSeleccionado] = useState(null);
@@ -42,6 +45,9 @@ export default function TabBase() {
   const [areasList, setAreasList] = useState([]);
   const [cargosList, setCargosList] = useState([]);
   const [horariosList, setHorariosList] = useState([]);
+  
+  // Locadores para migración
+  const [locadores, setLocadores] = useState([]);
 
   // Cargar listas desde localStorage
   useEffect(() => {
@@ -62,6 +68,16 @@ export default function TabBase() {
     supabase.from('horarios').select('id, nombre, tipo').eq('activo', true).then(({ data }) => {
       setHorariosList(data || []);
     });
+  }, []);
+
+  // Cargar locadores activos para migración
+  useEffect(() => {
+    supabase
+      .from('locadores')
+      .select('*')
+      .eq('estado', 'activo')
+      .order('apellido', { ascending: true })
+      .then(({ data }) => setLocadores(data || []));
   }, []);
 
   const calcularAntiguedad = (fechaInicio) => {
@@ -160,7 +176,11 @@ export default function TabBase() {
       fecha_inicio: '', fecha_ingreso_planilla: '', modalidad_trabajo: 'Presencial',
       turno: '', banco_nombre: '', numero_cuenta: '', cci: '',
       talla_uniforme: '', datos_familiares_contacto: '', descripcion_cargo: '',
-      inicio_contrato: '', fin_contrato: '', foto_url: '', antiguedad: '', horario_id: ''
+      inicio_contrato: '', fin_contrato: '', foto_url: '', antiguedad: '', horario_id: '',
+      locador_id: null,
+      profesion: '',
+      estado_civil: '',
+      numero_hijos: 0
     });
     setDocumentos([]);
     setModoEdicion(true);
@@ -220,6 +240,14 @@ export default function TabBase() {
       } else {
         const { error } = await supabase.from('empleados').insert([datosEnvio]);
         if (error) throw error;
+
+        // Si se migró desde un locador, cambiar su estado a 'migrado'
+        if (datosEnvio.locador_id) {
+          await supabase
+            .from('locadores')
+            .update({ estado: 'migrado' })
+            .eq('id', datosEnvio.locador_id);
+        }
       }
       await cargar();
       setModalAbierto(false);
@@ -407,6 +435,55 @@ export default function TabBase() {
             </div>
 
             <div className="p-6 space-y-6">
+              {/* Selector de migración desde locador (solo en nuevo registro) */}
+              {!empleadoSeleccionado && modoEdicion && (
+                <div className="bg-blue-50 p-4 rounded-xl border border-blue-200">
+                  <label className="block text-xs font-bold text-blue-700 mb-2">
+                    🚀 Migrar desde Locador existente
+                  </label>
+                  <select
+                    onChange={async (e) => {
+                      const id = e.target.value;
+                      if (!id) return;
+                      const { data: loc } = await supabase
+                        .from('locadores')
+                        .select('*')
+                        .eq('id', id)
+                        .single();
+                      if (loc) {
+                        setForm(prev => ({
+                          ...prev,
+                          nombre: loc.nombre || '',
+                          apellido: loc.apellido || '',
+                          dni: loc.dni || '',
+                          correo: loc.correo || '',
+                          telefono: loc.telefono || '',
+                          direccion: loc.direccion || '',
+                          distrito: loc.distrito || '',
+                          fecha_nacimiento: loc.fecha_nacimiento || '',
+                          profesion: loc.profesion || '',
+                          estado_civil: loc.estado_civil || '',
+                          tiene_hijos: loc.tiene_hijos || false,
+                          numero_hijos: loc.numero_hijos || 0,
+                          banco_nombre: loc.banco || '',
+                          numero_cuenta: loc.numero_cuenta || '',
+                          cci: loc.cci || '',
+                          locador_id: loc.id,
+                        }));
+                      }
+                    }}
+                    className="w-full border border-gray-300 rounded-lg p-2.5 text-sm"
+                  >
+                    <option value="">Seleccionar locador...</option>
+                    {locadores.map(loc => (
+                      <option key={loc.id} value={loc.id}>
+                        {loc.nombre} {loc.apellido} - {loc.dni}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               {/* Foto de perfil */}
               {modoEdicion && (
                 <div className="flex justify-center mb-4">
@@ -438,7 +515,12 @@ export default function TabBase() {
                   <Campo label="Apellidos" value={form.apellido} edit={modoEdicion} setForm={setForm} field="apellido" />
                   <Campo label="DNI" value={form.dni} edit={modoEdicion} setForm={setForm} field="dni" />
                   <Campo label="Fecha nacimiento" value={form.fecha_nacimiento} type="date" edit={modoEdicion} setForm={setForm} field="fecha_nacimiento" />
+                  <CampoSelect label="Estado civil" value={form.estado_civil} options={ESTADOS_CIVILES} edit={modoEdicion} setForm={setForm} field="estado_civil" />
                   <Campo label="¿Tiene hijos?" value={form.tiene_hijos} type="checkbox" edit={modoEdicion} setForm={setForm} field="tiene_hijos" />
+                  {form.tiene_hijos && (
+                    <Campo label="Número de hijos" value={form.numero_hijos} type="number" edit={modoEdicion} setForm={setForm} field="numero_hijos" />
+                  )}
+                  <Campo label="Profesión" value={form.profesion} edit={modoEdicion} setForm={setForm} field="profesion" />
                   <Campo label="Dirección" value={form.direccion} edit={modoEdicion} setForm={setForm} field="direccion" />
                   <Campo label="Referencia" value={form.referencia_direccion} edit={modoEdicion} setForm={setForm} field="referencia_direccion" />
                   <Campo label="Distrito" value={form.distrito} edit={modoEdicion} setForm={setForm} field="distrito" />
@@ -611,7 +693,7 @@ export default function TabBase() {
   );
 }
 
-// Componente Campo (igual que antes)
+// Componente Campo (mejorado para manejar el tipo number)
 function Campo({ label, value, type = 'text', edit = false, setForm, field }) {
   if (!edit) {
     if (type === 'checkbox') {
@@ -641,15 +723,42 @@ function Campo({ label, value, type = 'text', edit = false, setForm, field }) {
   if (type === 'checkbox') {
     return (
       <div className="flex items-center gap-2">
-        <input type="checkbox" id={field} checked={value || false} onChange={(e) => setForm(prev => ({ ...prev, [field]: e.target.checked }))} className="w-4 h-4" />
+        <input
+          type="checkbox"
+          id={field}
+          checked={value || false}
+          onChange={(e) => setForm(prev => ({ ...prev, [field]: e.target.checked }))}
+          className="w-4 h-4"
+        />
         <label htmlFor={field} className="text-sm text-gray-700">{label}</label>
       </div>
     );
   }
+
+  if (type === 'number') {
+    return (
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">{label}</label>
+        <input
+          type="number"
+          min="0"
+          value={value || ''}
+          onChange={(e) => setForm(prev => ({ ...prev, [field]: e.target.value }))}
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#185FA5]"
+        />
+      </div>
+    );
+  }
+
   return (
     <div>
       <label className="block text-xs text-gray-500 mb-1">{label}</label>
-      <input type={type} value={value || ''} onChange={(e) => setForm(prev => ({ ...prev, [field]: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#185FA5]" />
+      <input
+        type={type}
+        value={value || ''}
+        onChange={(e) => setForm(prev => ({ ...prev, [field]: e.target.value }))}
+        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#185FA5]"
+      />
     </div>
   );
 }

@@ -1,175 +1,223 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { Mail, Lock, Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react';
 
 export default function Login() {
-  const [correo,     setCorreo]     = useState('');
+  const [correo, setCorreo] = useState('');
   const [contrasena, setContrasena] = useState('');
-  const [error,      setError]      = useState('');
-  const [cargando,   setCargando]   = useState(false);
-  const [showPass,   setShowPass]   = useState(false);
+  const [error, setError] = useState('');
+  const [cargando, setCargando] = useState(false);
+  const [showPass, setShowPass] = useState(false);
   const navigate = useNavigate();
+
+  // EFECTO: Si ya hay sesión activa, saltar el login
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) navigate('/');
+    };
+    checkUser();
+  }, [navigate]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
     setCargando(true);
-    const { error: err } = await supabase.auth.signInWithPassword({
-      email: correo,
-      password: contrasena,
-    });
-    if (err) {
-      setError('Correo o contraseña incorrectos.');
-    } else {
-      navigate('/dashboard');
+
+    try {
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
+        email: correo,
+        password: contrasena,
+      });
+
+      if (authError) throw new Error('Las credenciales ingresadas no son válidas.');
+      
+      // Redirección exitosa al Dashboard
+      navigate('/'); 
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setCargando(false);
     }
-    setCargando(false);
   };
 
   return (
-    <div className="min-h-screen flex" style={{ background: '#f0f2f5' }}>
-
-      {/* Panel izquierdo — marca */}
+    <div className="min-h-screen flex font-sans bg-gradient-to-br from-slate-950 to-zinc-950 overflow-hidden">
+      
+      {/* PANEL IZQUIERDO: Identidad de Marca - Diseño VIP */}
       <div
-        className="hidden lg:flex flex-col justify-between w-[420px] flex-shrink-0 p-12"
-        style={{ background: '#11284e' }}>
-        <div>
-          <div className="flex items-center gap-3 mb-16">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center"
-              style={{ background: '#1e4280' }}>
-              <span className="text-sm font-bold" style={{ color: '#7eb3f5' }}>RD</span>
+        className="hidden lg:flex flex-col justify-between w-[460px] flex-shrink-0 p-16 relative overflow-hidden"
+        style={{ 
+          backgroundImage: `linear-gradient(to bottom, rgba(10, 25, 48, 0.92), rgba(10, 25, 48, 0.96)), url('/fondo.jpg')`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat'
+        }}
+      >
+        {/* Efectos de luz premium */}
+        <div className="absolute inset-0 bg-[radial-gradient(at_top_right,#185FA5_0%,transparent_60%)] opacity-30" />
+        <div className="absolute top-12 -right-20 w-96 h-96 bg-[#185FA5] opacity-10 blur-[120px] rounded-full" />
+        
+        <div className="relative z-10">
+          {/* Logo y Marca */}
+          <div className="flex items-center gap-4 mb-16">
+            <div 
+              className="w-14 h-14 rounded-3xl flex items-center justify-center shadow-2xl shadow-blue-950/50"
+              style={{ 
+                background: 'linear-gradient(135deg, #185FA5 0%, #0a1930 100%)',
+                border: '2px solid rgba(255,255,255,0.15)'
+              }}
+            >
+              <span className="text-2xl font-black text-white tracking-tighter">RD</span>
             </div>
             <div>
-              <div className="text-white font-semibold text-base leading-tight">Rebagliati</div>
-              <div className="text-xs uppercase tracking-widest" style={{ color: 'rgba(255,255,255,.3)', fontSize: 9 }}>
-                Diplomados
-              </div>
+              <div className="text-white font-black text-3xl tracking-[-0.02em] leading-none">REBAGLIATI</div>
+              <div className="text-xs uppercase tracking-[0.125em] text-[#7eb3f5] font-medium mt-1">Diplomados</div>
             </div>
           </div>
 
-          <h1 className="text-3xl font-bold text-white leading-snug mb-4">
-            Sistema de<br />Gestión ERP
-          </h1>
-          <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.45)' }}>
-            Plataforma integral para la administración académica, comercial y operativa de Rebagliati Diplomados SAC.
+          {/* Título principal */}
+          <div className="mb-8">
+            <h1 className="text-5xl font-black text-white leading-[1.05] tracking-tighter">
+              Sistema ERP
+            </h1>
+            <p className="text-[#7eb3f5] text-4xl font-semibold tracking-tight mt-1">Rebagliati</p>
+          </div>
+
+          <p className="text-lg leading-relaxed max-w-[340px] text-white/80">
+            Plataforma integral de gestión para inscripciones, finanzas, RRHH y operaciones.
           </p>
         </div>
 
-        {/* Módulos como lista */}
-        <div className="space-y-3">
-          {['Inscripciones y pagos','CRM de clientes','RRHH y planilla','Reportes en tiempo real'].map(m => (
-            <div key={m} className="flex items-center gap-3">
-              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: '#7eb3f5' }} />
-              <span className="text-xs" style={{ color: 'rgba(255,255,255,0.45)' }}>{m}</span>
-            </div>
-          ))}
+        {/* Capacidades del sistema */}
+        <div className="relative z-10 mt-auto">
+          <div className="uppercase text-xs tracking-[0.1em] text-white/50 font-medium mb-6">Capacidades del sistema</div>
+          <div className="space-y-6">
+            {[
+              'Gestión completa de inscripciones y pagos',
+              'CRM avanzado y seguimiento de prospectos',
+              'Administración profesional de RRHH y planillas',
+              'Analítica en tiempo real y reportes ejecutivos'
+            ].map((item, idx) => (
+              <div key={idx} className="flex items-start gap-4 group">
+                <div className="mt-1.5 w-2 h-2 rounded-full bg-[#7eb3f5] group-hover:scale-125 transition-transform" />
+                <span className="text-white/90 text-[15px] leading-tight">
+                  {item}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Footer sutil */}
+        <div className="relative z-10 pt-12 border-t border-white/10 text-[10px] text-white/40 tracking-widest">
+          Rebagliati Diplomados SAC • 2026
         </div>
       </div>
 
-      {/* Panel derecho — formulario */}
-      <div className="flex-1 flex items-center justify-center p-6">
-        <div className="w-full max-w-sm">
+      {/* PANEL DERECHO: Formulario de Login - Diseño VIP */}
+      <div className="flex-1 flex items-center justify-center p-6 lg:p-12 bg-white relative">
+        {/* Decoración sutil en el fondo */}
+        <div className="absolute inset-0 bg-[radial-gradient(at_bottom_right,#185FA5_0%,transparent_70%)] opacity-[0.015]" />
 
-          {/* Logo móvil */}
-          <div className="flex items-center gap-3 mb-10 lg:hidden">
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center"
-              style={{ background: '#11284e' }}>
-              <span className="text-xs font-bold text-white">RD</span>
+        <div className="w-full max-w-[420px] relative">
+          {/* Cabecera del formulario */}
+          <div className="mb-12 text-center">
+            <div className="mx-auto mb-6 flex justify-center">
+              <div className="w-20 h-20 bg-gradient-to-br from-[#185FA5] to-blue-800 rounded-3xl flex items-center justify-center shadow-xl shadow-blue-900/30">
+                <ShieldCheck size={42} className="text-white" />
+              </div>
             </div>
-            <div>
-              <div className="font-semibold text-sm" style={{ color: '#11284e' }}>Rebagliati Diplomados</div>
-              <div className="text-xs" style={{ color: '#94a3b8' }}>Sistema ERP</div>
-            </div>
+            
+            <h2 className="text-4xl font-semibold text-gray-900 tracking-tight">Iniciar Sesión</h2>
+            <p className="mt-3 text-gray-500 text-[15px]">
+              Accede al sistema de gestión empresarial
+            </p>
           </div>
 
-          <h2 className="text-2xl font-bold mb-1" style={{ color: '#11284e' }}>Bienvenido</h2>
-          <p className="text-sm mb-8" style={{ color: '#94a3b8' }}>
-            Ingresa tus credenciales para continuar
-          </p>
-
-          <form onSubmit={handleLogin} className="space-y-5">
-            {/* Correo */}
+          <form onSubmit={handleLogin} className="space-y-7">
+            {/* Campo Correo */}
             <div>
-              <label className="block text-xs font-semibold mb-2 uppercase tracking-wider"
-                style={{ color: '#64748b' }}>
-                Correo electrónico
+              <label className="block text-xs font-semibold text-gray-500 mb-2.5 tracking-widest uppercase">
+                Correo Institucional
               </label>
-              <input
-                type="email"
-                value={correo}
-                onChange={e => setCorreo(e.target.value)}
-                placeholder="ejecutiva@rebagliati.com"
-                required
-                className="w-full text-sm rounded-xl border outline-none transition-all"
-                style={{
-                  padding: '11px 14px',
-                  borderColor: '#e2e8f0',
-                  background: '#fff',
-                  color: '#11284e',
-                }}
-                onFocus={e => e.target.style.borderColor = '#11284e'}
-                onBlur={e  => e.target.style.borderColor = '#e2e8f0'}
-              />
+              <div className="relative group">
+                <Mail 
+                  className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#185FA5] transition-colors" 
+                  size={20} 
+                />
+                <input
+                  type="email"
+                  value={correo}
+                  onChange={e => setCorreo(e.target.value)}
+                  placeholder="tu.correo@rebagliati.com"
+                  required
+                  className="w-full bg-white border border-gray-200 rounded-3xl pl-14 pr-6 py-4 text-base outline-none transition-all focus:border-[#185FA5] focus:ring-4 focus:ring-blue-500/10 placeholder:text-gray-400"
+                />
+              </div>
             </div>
 
-            {/* Contraseña */}
+            {/* Campo Contraseña */}
             <div>
-              <label className="block text-xs font-semibold mb-2 uppercase tracking-wider"
-                style={{ color: '#64748b' }}>
+              <label className="block text-xs font-semibold text-gray-500 mb-2.5 tracking-widest uppercase">
                 Contraseña
               </label>
-              <div className="relative">
+              <div className="relative group">
+                <Lock 
+                  className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#185FA5] transition-colors" 
+                  size={20} 
+                />
                 <input
                   type={showPass ? 'text' : 'password'}
                   value={contrasena}
                   onChange={e => setContrasena(e.target.value)}
-                  placeholder="••••••••"
+                  placeholder="••••••••••••"
                   required
-                  className="w-full text-sm rounded-xl border outline-none transition-all pr-10"
-                  style={{
-                    padding: '11px 14px',
-                    borderColor: '#e2e8f0',
-                    background: '#fff',
-                    color: '#11284e',
-                  }}
-                  onFocus={e => e.target.style.borderColor = '#11284e'}
-                  onBlur={e  => e.target.style.borderColor = '#e2e8f0'}
+                  className="w-full bg-white border border-gray-200 rounded-3xl pl-14 pr-14 py-4 text-base outline-none transition-all focus:border-[#185FA5] focus:ring-4 focus:ring-blue-500/10 placeholder:text-gray-400"
                 />
                 <button
                   type="button"
-                  onClick={() => setShowPass(p => !p)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-xs"
-                  style={{ color: '#94a3b8' }}>
-                  {showPass ? 'Ocultar' : 'Ver'}
+                  onClick={() => setShowPass(!showPass)}
+                  className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  {showPass ? <EyeOff size={20} /> : <Eye size={20} />}
                 </button>
               </div>
             </div>
 
-            {/* Error */}
+            {/* Mensaje de Error */}
             {error && (
-              <div className="text-sm px-4 py-3 rounded-xl"
-                style={{ background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca' }}>
-                {error}
+              <div className="bg-red-50 border border-red-100 text-red-700 text-sm px-5 py-4 rounded-2xl flex items-center gap-3">
+                <div className="w-2 h-2 bg-red-600 rounded-full flex-shrink-0" />
+                <span>{error}</span>
               </div>
             )}
 
-            {/* Botón */}
+            {/* Botón de Ingreso */}
             <button
               type="submit"
               disabled={cargando}
-              className="w-full text-sm font-semibold rounded-xl py-3 transition-all"
-              style={{
-                background: cargando ? '#64748b' : '#11284e',
-                color: '#fff',
-                letterSpacing: '.02em',
-              }}>
-              {cargando ? 'Verificando...' : 'Ingresar al sistema'}
+              className="w-full mt-4 bg-gradient-to-r from-[#0a1930] via-[#185FA5] to-[#0a1930] hover:from-[#185FA5] hover:via-[#0a1930] hover:to-[#185FA5] text-white font-semibold text-base py-4.5 rounded-3xl transition-all duration-300 flex items-center justify-center gap-3 shadow-xl shadow-blue-900/30 active:scale-[0.985] disabled:opacity-70"
+            >
+              {cargando ? (
+                <>
+                  <Loader2 className="animate-spin" size={22} />
+                  <span>Verificando credenciales...</span>
+                </>
+              ) : (
+                'Iniciar Sesión'
+              )}
             </button>
           </form>
 
-          <p className="text-center text-xs mt-8" style={{ color: '#cbd5e1' }}>
-            Rebagliati Diplomados SAC · Lima, Perú
-          </p>
+          {/* Pie de página */}
+          <div className="mt-16 text-center">
+            <p className="text-xs text-gray-400 tracking-widest">
+              Rebagliati Diplomados SAC • 2026
+            </p>
+            <p className="text-[10px] text-gray-300 mt-1">Sistema de Gestión Empresarial v2.0</p>
+          </div>
         </div>
       </div>
     </div>
