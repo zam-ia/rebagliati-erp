@@ -3,7 +3,9 @@ import { useEffect, useState } from 'react';
 import { supabase } from './lib/supabase';
 import Layout from './components/Layout';
 
-// Páginas
+// ==========================================
+// PÁGINAS Y MÓDULOS
+// ==========================================
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Inscripciones from './pages/Inscripciones';
@@ -17,7 +19,10 @@ import GestionEstrategica from './pages/GestionEstrategica';
 import AdminUsuarios from './pages/AdminUsuarios';
 import Finanzas from './pages/finanzas';
 
-// Mapa para redirección inteligente
+// ==========================================
+// CONFIGURACIÓN DE ENRUTAMIENTO
+// ==========================================
+// Mapa para redirección inteligente según permisos
 const MAPA_RUTAS = {
   'Dashboard': '/dashboard',
   'Inscripciones': '/inscripciones',
@@ -32,14 +37,18 @@ const MAPA_RUTAS = {
   'Administrar Usuarios': '/admin/usuarios',
 };
 
-// Componente de Carga Estilizado
+// ==========================================
+// COMPONENTES DE INFRAESTRUCTURA
+// ==========================================
+
+// Componente de Carga Estilizado (VIP)
 function LoadingScreen({ subtext = "Iniciando Módulos" }) {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-white">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-white animate-in fade-in duration-500">
       <div className="w-10 h-10 border-4 border-[#0a1930]/10 border-t-[#185FA5] rounded-full animate-spin mb-4" />
       <div className="text-center">
         <p className="text-[#0a1930] font-black text-[10px] uppercase tracking-[0.4em]">Rebagliati ERP</p>
-        <p className="text-gray-300 text-[9px] font-bold uppercase mt-2 tracking-widest animate-pulse">{subtext}</p>
+        <p className="text-slate-400 text-[9px] font-bold uppercase mt-2 tracking-widest animate-pulse">{subtext}</p>
       </div>
     </div>
   );
@@ -52,21 +61,29 @@ function SmartHome() {
   useEffect(() => {
     const resolverRuta = async () => {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { setDestino('/login'); return; }
+      
+      // Si no hay sesión, al Login
+      if (!session) { 
+        setDestino('/login'); 
+        return; 
+      }
 
+      // Si es el Super Admin, acceso directo al Dashboard
+      if (session.user.email === 'admin@rebagliati.com') {
+        setDestino('/dashboard');
+        return;
+      }
+
+      // Buscar permisos del usuario
       const { data: permisos } = await supabase
         .from('permisos_usuarios')
         .select('modulo')
         .eq('user_id', session.user.id)
         .eq('puede_ver', true);
 
-      if (session.user.email === 'admin@rebagliati.com') {
-        setDestino('/dashboard');
-        return;
-      }
-
+      // Si no tiene permisos configurados, mandarlo al Dashboard por defecto
       if (!permisos || permisos.length === 0) {
-        setDestino('/dashboard'); // Fallback
+        setDestino('/dashboard'); 
         return;
       }
 
@@ -77,16 +94,19 @@ function SmartHome() {
           return;
         }
       }
+      
+      // Fallback de seguridad
       setDestino('/dashboard');
     };
+
     resolverRuta();
   }, []);
 
-  if (!destino) return <LoadingScreen subtext="Validando Seguridad" />;
+  if (!destino) return <LoadingScreen subtext="Validando Seguridad y Permisos" />;
   return <Navigate to={destino} replace />;
 }
 
-// Protector de Rutas
+// Protector de Rutas: Evita accesos no autorizados por URL
 function ProtectedRoute({ children }) {
   const [session, setSession] = useState(undefined);
 
@@ -96,32 +116,39 @@ function ProtectedRoute({ children }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  if (session === undefined) return <LoadingScreen />;
+  if (session === undefined) return <LoadingScreen subtext="Verificando Sesión Activa" />;
   if (!session) return <Navigate to="/login" replace />;
+  
   return children;
 }
 
+// ==========================================
+// APLICACIÓN PRINCIPAL
+// ==========================================
 export default function App() {
+  // Matriz de Rutas Protegidas
   const rutasPrivadas = [
-    { path: '/dashboard',     component: <Dashboard /> },
-    { path: '/inscripciones', component: <Inscripciones /> },
-    { path: '/caja',          component: <Caja /> },
-    { path: '/crm',           component: <CRM /> },
-    { path: '/rrhh',          component: <RRHH /> },
-    { path: '/finanzas',      component: <Finanzas /> },
-    { path: '/logistica',     component: <Logistica /> },
-    { path: '/reclamaciones', component: <Reclamaciones /> },
-    { path: '/reportes',      component: <Reportes /> },
-    { path: '/gestion',       component: <GestionEstrategica /> },
-    { path: '/admin/usuarios',component: <AdminUsuarios /> },
+    { path: '/dashboard',       component: <Dashboard /> },
+    { path: '/inscripciones',   component: <Inscripciones /> },
+    { path: '/caja',            component: <Caja /> },
+    { path: '/crm',             component: <CRM /> },
+    { path: '/rrhh/*',          component: <RRHH /> }, // <-- Modificación VIP: Permite sub-rutas dentro de RRHH
+    { path: '/finanzas',        component: <Finanzas /> },
+    { path: '/logistica',       component: <Logistica /> },
+    { path: '/reclamaciones',   component: <Reclamaciones /> },
+    { path: '/reportes',        component: <Reportes /> },
+    { path: '/gestion',         component: <GestionEstrategica /> },
+    { path: '/admin/usuarios',  component: <AdminUsuarios /> },
   ];
 
   return (
     <BrowserRouter>
       <Routes>
+        {/* Rutas Públicas */}
         <Route path="/login" element={<Login />} />
         <Route path="/" element={<SmartHome />} />
         
+        {/* Generador Dinámico de Rutas Protegidas */}
         {rutasPrivadas.map(({ path, component }) => (
           <Route 
             key={path} 
@@ -134,6 +161,7 @@ export default function App() {
           />
         ))}
 
+        {/* Catch-all: Redirecciona cualquier URL inválida al SmartHome */}
         <Route path="*" element={<SmartHome />} />
       </Routes>
     </BrowserRouter>

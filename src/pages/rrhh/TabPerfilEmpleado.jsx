@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
-// Funciones de puntaje (igual que antes)
+// Funciones de puntaje
 function calcularPuntajeNeto(incidencias) {
   let p = 0;
   p -= (incidencias.tard_leve || 0) * 1;
@@ -73,36 +73,46 @@ export default function TabPerfilEmpleado() {
     return { tard_leve, tard_grave, falta_inj, permiso_sj, falta_feriado };
   }, []);
 
-  // Cargar todos los datos del empleado seleccionado (ahora con JOIN a horarios)
+  // Cargar todos los datos del empleado seleccionado (CON FIX DE BUCLE INFINITO)
   const cargarDatosEmpleado = async (emp) => {
     if (!emp) return;
     setCargando(true);
     
-    // Obtener los detalles del empleado incluyendo el horario (por si acaso)
-    const { data: empData } = await supabase
-      .from('empleados')
-      .select('*, horarios(*)')
-      .eq('id', emp.id)
-      .single();
-    
-    const [vac, des, eva, asis] = await Promise.all([
-      supabase.from('vacaciones').select('*').eq('empleado_id', emp.id).order('fecha_inicio', { ascending: false }),
-      supabase.from('descansos_medicos').select('*').eq('empleado_id', emp.id).order('fecha', { ascending: false }),
-      supabase.from('evaluaciones').select('*').eq('empleado_id', emp.id).order('mes', { ascending: false }),
-      supabase.from('asistencia').select('*').eq('empleado_id', emp.id).order('fecha', { ascending: false })
-    ]);
-    
-    setVacaciones(vac.data || []);
-    setDescansos(des.data || []);
-    setEvaluaciones(eva.data || []);
-    setAsistencias(asis.data || []);
-    
-    // Actualizar el empleado seleccionado con los datos del horario (por si no venía en la lista inicial)
-    if (empData && empData.horarios) {
-      setEmpleadoSeleccionado(prev => ({ ...prev, horarios: empData.horarios }));
+    try {
+      const { data: empData, error: empError } = await supabase
+        .from('empleados')
+        .select('*, horarios(*)')
+        .eq('id', emp.id)
+        .single();
+      
+      if (empError) throw empError;
+
+      const [vac, des, eva, asis] = await Promise.all([
+        supabase.from('vacaciones').select('*').eq('empleado_id', emp.id).order('fecha_inicio', { ascending: false }),
+        supabase.from('descansos_medicos').select('*').eq('empleado_id', emp.id).order('fecha', { ascending: false }),
+        supabase.from('evaluaciones').select('*').eq('empleado_id', emp.id).order('mes', { ascending: false }),
+        supabase.from('asistencia').select('*').eq('empleado_id', emp.id).order('fecha', { ascending: false })
+      ]);
+      
+      setVacaciones(vac.data || []);
+      setDescansos(des.data || []);
+      setEvaluaciones(eva.data || []);
+      setAsistencias(asis.data || []);
+      
+      // Actualización segura del estado para evitar renders infinitos
+      if (empData && empData.horarios) {
+        setEmpleadoSeleccionado(prev => {
+          if (prev.horarios && JSON.stringify(prev.horarios) === JSON.stringify(empData.horarios)) {
+            return prev;
+          }
+          return { ...prev, horarios: empData.horarios };
+        });
+      }
+    } catch (error) {
+      console.error("Error cargando perfil del empleado:", error);
+    } finally {
+      setCargando(false);
     }
-    
-    setCargando(false);
   };
 
   useEffect(() => {
@@ -117,7 +127,6 @@ export default function TabPerfilEmpleado() {
     const hoy = new Date();
     const mesActual = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}`;
     const incidencias = await calcularIncidenciasDesdeAsistencia(empleadoSeleccionado.id, mesActual);
-    // Buscar si existe evaluación para este mes (para saber si tiene asistencia perfecta)
     const evaluacionMes = evaluaciones.find(e => e.mes === mesActual);
     const asistPerfecta = evaluacionMes?.asist_perfecta || false;
     const neto = calcularPuntajeNeto({ ...incidencias, asist_perfecta: asistPerfecta });
@@ -168,7 +177,7 @@ export default function TabPerfilEmpleado() {
     setCargando(false);
   };
 
-  const clasifActual = puntajeVisibleActual ? getClasificacion(puntajeVisibleActual) : null;
+  const clasifActual = puntajeVisibleActual !== null ? getClasificacion(puntajeVisibleActual) : null;
   const horario = empleadoSeleccionado?.horarios;
 
   return (
@@ -209,7 +218,7 @@ export default function TabPerfilEmpleado() {
                 <div className="relative z-10 flex flex-col items-center text-center">
                     <div className="w-32 h-32 rounded-full border-4 border-white/20 p-1 mb-4 shadow-2xl">
                         {empleadoSeleccionado.foto_url ? (
-                            <img src={empleadoSeleccionado.foto_url} className="w-full h-full rounded-full object-cover" />
+                            <img src={empleadoSeleccionado.foto_url} className="w-full h-full rounded-full object-cover" alt="Perfil" />
                         ) : (
                             <div className="w-full h-full rounded-full bg-white/10 flex items-center justify-center text-3xl font-light">
                                 {getInitials(empleadoSeleccionado.nombre, empleadoSeleccionado.apellido)}
@@ -270,7 +279,7 @@ export default function TabPerfilEmpleado() {
           </div>
 
           {/* CURRENT PERFORMANCE CARD */}
-          {puntajeVisibleActual !== null && (
+          {puntajeVisibleActual !== null && clasifActual && (
             <div className={`rounded-2xl p-6 border-2 ${clasifActual.bg} ${clasifActual.border}`}>
               <div className="flex justify-between items-center">
                 <div>

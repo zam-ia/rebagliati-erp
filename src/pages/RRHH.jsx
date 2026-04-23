@@ -1,261 +1,98 @@
-import { useState, useRef } from 'react';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+// src/pages/RRHH.jsx
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { 
-  UserCircle, Users, Cake, Bell, FileText, 
-  Clock, Calendar, HeartPulse, Star, Target, 
-  FolderOpen, CircleDollarSign, BarChart3, ShieldCheck, 
-  Search, Plus, Download, ChevronRight 
-} from 'lucide-react';
 
-// Importación de componentes
+// Importación de todos los tabs
+import TabPerfilEmpleado from './rrhh/TabPerfilEmpleado';
 import TabBase from './rrhh/TabBase';
 import TabDirectorio from './rrhh/TabDirectorio';
-import TabContratos from './rrhh/TabContratos';
-import TabPlanilla from './rrhh/TabPlanilla';
-import TabEvaluacion from './rrhh/TabEvaluacion';
+import TabReclutamiento from './rrhh/TabReclutamiento';
+import TabHorarios from './rrhh/TabHorarios';
 import TabVacaciones from './rrhh/TabVacaciones';
 import TabDescansos from './rrhh/TabDescansos';
-import TabPerfilEmpleado from './rrhh/TabPerfilEmpleado';
-import TabReclutamiento from './rrhh/TabReclutamiento';
-import TabCeses from './rrhh/TabCeses';
-import TabLiquidacion from './rrhh/TabLiquidacion';
+import TabEvaluacion from './rrhh/TabEvaluacion';
 import TabLocadores from './rrhh/TabLocadores';
 import TabPlanillaPagos from './rrhh/TabPlanillaPagos';
-import TabHorarios from './rrhh/TabHorarios';
-import TabSimple from './rrhh/TabSimple';
-import TabAsistenciaLocadores from './rrhh/TabAsistenciaLocadores'; // <-- IMPORTADO
-
-const SECCIONES = [
-  {
-    titulo: 'Talento',
-    items: [
-      { id: 'perfil',        icon: UserCircle, label: 'Perfil 360°' },
-      { id: 'base',          icon: Users,      label: 'Base de datos' },
-      { id: 'directorio',    icon: Cake,       label: 'Directorio' },
-      { id: 'reclutamiento', icon: Target,     label: 'Reclutamiento' },
-    ]
-  },
-  {
-    titulo: 'Operaciones',
-    items: [
-      { id: 'horarios',     icon: Clock,      label: 'Horarios' },
-      { id: 'vacaciones',   icon: Calendar,   label: 'Vacaciones' },
-      { id: 'descansos',     icon: HeartPulse, label: 'Descansos médicos' },
-      { id: 'evaluacion',   icon: Star,       label: 'Evaluación' },
-    ]
-  },
-  {
-    titulo: 'Nómina y Legal',
-    items: [
-      { id: 'planillapagos', icon: CircleDollarSign, label: 'Planilla y Pagos' },
-      { id: 'planilla',      icon: FileText,         label: 'Novedades Planilla' },
-      { id: 'contratos',     icon: Bell,             label: 'Alertas contratos' },
-      { id: 'locadores',     icon: FolderOpen,       label: 'Locadores' },
-      { id: 'asistencia_locadores', icon: FolderOpen, label: 'Asistencia Locadores' }, // <-- AGREGADO
-      { id: 'ceses',         icon: BarChart3,        label: 'Ceses' },
-      { id: 'liquidacion',   icon: FileText,         label: 'Liquidaciones' },
-      { id: 'sunafil',       icon: Search,           label: 'SUNAFIL' },
-    ]
-  }
-];
-
-const componentMap = {
-  perfil: TabPerfilEmpleado,
-  base: TabBase,
-  directorio: TabDirectorio,
-  contratos: TabContratos,
-  planilla: TabPlanilla,
-  horarios: TabHorarios,
-  vacaciones: TabVacaciones,
-  descansos: TabDescansos,
-  evaluacion: TabEvaluacion,
-  reclutamiento: TabReclutamiento,
-  locadores: TabLocadores,
-  planillapagos: TabPlanillaPagos, 
-  ceses: TabCeses,
-  liquidacion: TabLiquidacion,
-  asistencia_locadores: TabAsistenciaLocadores, // <-- VINCULADO
-};
+import TabPlanilla from './rrhh/TabPlanilla';
+import TabDocumentos from './rrhh/TabDocumentos'; // ✅ Importar nuevo componente
 
 export default function RRHH() {
-  const [activeTab, setActiveTab] = useState('perfil');
-  const contentRef = useRef(null);
-  const ActiveComp = componentMap[activeTab] || TabSimple;
+  const [primerRuta, setPrimerRuta] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  /**
-   * FUNCIÓN CENTRAL PARA REGISTRAR EGRESOS
-   * Ahora retorna el objeto { error } para depuración detallada en los componentes hijos
-   */
-  const registrarEgresoDesdeRRHH = async (datos) => {
-    try {
-      const { data, error: egresoError } = await supabase
-        .from('egresos')
-        .insert([{
-          fecha: datos.fecha_pago || new Date().toISOString().split('T')[0],
-          concepto: datos.concepto,
-          area: 'RRHH',
-          categoria: datos.categoria || 'Planilla', 
-          proveedor: datos.proveedor || 'Colaboradores',
-          monto: datos.monto,
-          estado: 'Pendiente',
-          origen: datos.origen, 
-          origen_id: datos.id
-        }])
-        .select();
-
-      if (egresoError) {
-        console.error('Error en inserción Supabase:', egresoError);
-        return { data: null, error: egresoError };
+  useEffect(() => {
+    const obtenerPrimerPermitido = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setPrimerRuta('/login');
+        setLoading(false);
+        return;
       }
-      
-      return { data, error: null };
-    } catch (error) {
-      console.error('Error crítico al registrar egreso:', error);
-      return { data: null, error };
-    }
-  };
 
-  const exportarPDF = () => {
-    if (!contentRef.current) return;
-    const tabla = contentRef.current.querySelector('table');
-    if (!tabla) {
-      alert('No hay una tabla visible para exportar.');
-      return;
-    }
-    const doc = new jsPDF();
-    const label = SECCIONES.flatMap(s => s.items).find(i => i.id === activeTab)?.label || activeTab;
-    
-    doc.setFontSize(16);
-    doc.text(`Reporte RRHH - ${label}`, 14, 15);
-    
-    autoTable(doc, { 
-      html: tabla, 
-      startY: 25,
-      styles: { fontSize: 8 },
-      headStyles: { fillColor: [17, 40, 78] },
-      alternateRowStyles: { fillColor: [245, 247, 250] }
-    });
-    
-    doc.save(`rrhh_${activeTab}_${new Date().getTime()}.pdf`);
-  };
+      const { data: permisos } = await supabase
+        .from('permisos_usuarios')
+        .select('modulo, puede_ver')
+        .eq('user_id', session.user.id)
+        .eq('puede_ver', true);
 
-  const handleNuevoRegistro = () => {
-    if (!contentRef.current) return;
-    const boton = contentRef.current.querySelector('.btn-nuevo-registro') || 
-                  Array.from(contentRef.current.querySelectorAll('button')).find(b => 
-                    b.innerText.toLowerCase().includes('nuevo') || b.innerText.includes('+')
-                  );
-    if (boton) {
-      boton.click();
-    } else {
-      alert('Esta sección no tiene un formulario de nuevo registro rápido o el botón no está disponible.');
-    }
-  };
+      const permisosModulos = permisos?.map(p => p.modulo) || [];
+
+      // Si tiene el módulo padre 'RRHH', acceso total -> redirige a perfil
+      if (permisosModulos.includes('RRHH')) {
+        setPrimerRuta('/rrhh/perfil');
+        setLoading(false);
+        return;
+      }
+
+      // Si no, busca el primer permiso específico disponible
+      const rutasDisponibles = [
+        { modulo: 'rrhh_perfil', ruta: '/rrhh/perfil' },
+        { modulo: 'rrhh_base', ruta: '/rrhh/base' },
+        { modulo: 'rrhh_directorio', ruta: '/rrhh/directorio' },
+        { modulo: 'rrhh_reclutamiento', ruta: '/rrhh/reclutamiento' },
+        { modulo: 'rrhh_horarios', ruta: '/rrhh/horarios' },
+        { modulo: 'rrhh_vacaciones', ruta: '/rrhh/vacaciones' },
+        { modulo: 'rrhh_descansos', ruta: '/rrhh/descansos' },
+        { modulo: 'rrhh_evaluacion', ruta: '/rrhh/evaluacion' },
+        { modulo: 'rrhh_locadores', ruta: '/rrhh/locadores' },
+        { modulo: 'rrhh_planilla_pagos', ruta: '/rrhh/planilla_pagos' },
+        { modulo: 'rrhh_novedades', ruta: '/rrhh/novedades' },
+        { modulo: 'rrhh_documentos', ruta: '/rrhh/documentos' }, // ✅ Nueva ruta
+      ];
+
+      const primera = rutasDisponibles.find(r => permisosModulos.includes(r.modulo))?.ruta || '/rrhh/perfil';
+      setPrimerRuta(primera);
+      setLoading(false);
+    };
+
+    obtenerPrimerPermitido();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="w-8 h-8 border-4 border-[#185FA5] border-t-transparent rounded-full animate-spin" />
+        <span className="ml-3 text-gray-500">Cargando módulo...</span>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex flex-col h-full bg-[#f8fafc]">
-      
-      {/* Header de la Página */}
-      <header className="flex items-center justify-between px-8 py-4 bg-white border-b border-slate-200 shrink-0">
-        <div>
-          <h1 className="text-lg font-bold text-slate-800 tracking-tight">Gestión de Capital Humano</h1>
-          <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-400 font-medium uppercase tracking-wider">
-            <span>Rebagliati Diplomados</span>
-            <span className="w-1 h-1 rounded-full bg-slate-300"></span>
-            <span className="text-[#185FA5]">Panel de Control</span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleNuevoRegistro}
-            className="flex items-center gap-2 px-4 py-2 text-[13px] font-semibold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-all active:scale-95"
-          >
-            <Plus size={16} /> Nuevo registro
-          </button>
-          <button
-            onClick={exportarPDF}
-            className="flex items-center gap-2 px-5 py-2 text-[13px] font-semibold text-white bg-[#11284e] rounded-xl hover:bg-[#1e4280] shadow-sm transition-all active:scale-95"
-          >
-            <Download size={16} /> Exportar
-          </button>
-        </div>
-      </header>
-
-      <div className="flex flex-1 overflow-hidden">
-        
-        {/* Menú Lateral de RRHH */}
-        <aside className="w-64 bg-white border-r border-slate-200 overflow-y-auto hidden md:block custom-scrollbar">
-          <nav className="p-4 space-y-7">
-            {SECCIONES.map((seccion) => (
-              <div key={seccion.titulo}>
-                <h3 className="px-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-[0.15em]">
-                  {seccion.titulo}
-                </h3>
-                <div className="space-y-0.5">
-                  {seccion.items.map((item) => {
-                    const isActive = activeTab === item.id;
-                    const Icon = item.icon;
-                    return (
-                      <button
-                        key={item.id}
-                        onClick={() => setActiveTab(item.id)}
-                        className={`flex items-center justify-between w-full px-3 py-2 rounded-xl text-[13px] transition-all group
-                          ${isActive 
-                            ? 'bg-blue-50 text-[#185FA5] font-semibold' 
-                            : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
-                          }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <Icon size={18} strokeWidth={isActive ? 2.5 : 2} className={isActive ? 'text-[#185FA5]' : 'text-slate-400 group-hover:text-slate-600'} />
-                          {item.label}
-                        </div>
-                        {isActive && <ChevronRight size={14} />}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </nav>
-        </aside>
-
-        {/* Contenido Dinámico */}
-        <main className="flex-1 flex flex-col min-w-0 bg-[#f8fafc]">
-          {/* Selector móvil */}
-          <div className="md:hidden p-4 bg-white border-b border-slate-200">
-            <select
-              value={activeTab}
-              onChange={(e) => setActiveTab(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none"
-            >
-              {SECCIONES.flatMap(s => s.items).map(item => (
-                <option key={item.id} value={item.id}>{item.label}</option>
-              ))}
-            </select>
-          </div>
-
-          <div 
-            ref={contentRef} 
-            className="flex-1 overflow-y-auto p-4 md:p-6"
-          >
-            <div className="max-w-[1400px] mx-auto animate-in fade-in duration-500">
-              <ActiveComp 
-                onRegistrarEgreso={registrarEgresoDesdeRRHH} 
-              />
-            </div>
-          </div>
-        </main>
-      </div>
-
-      <style dangerouslySetInnerHTML={{ __html: `
-        .custom-scrollbar::-webkit-scrollbar { width: 5px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
-        .custom-scrollbar:hover::-webkit-scrollbar-thumb { background: #cbd5e1; }
-      `}} />
-    </div>
+    <Routes>
+      <Route path="/" element={<Navigate to={primerRuta} replace />} />
+      <Route path="perfil" element={<TabPerfilEmpleado />} />
+      <Route path="base" element={<TabBase />} />
+      <Route path="directorio" element={<TabDirectorio />} />
+      <Route path="reclutamiento" element={<TabReclutamiento />} />
+      <Route path="horarios" element={<TabHorarios />} />
+      <Route path="vacaciones" element={<TabVacaciones />} />
+      <Route path="descansos" element={<TabDescansos />} />
+      <Route path="evaluacion" element={<TabEvaluacion />} />
+      <Route path="locadores" element={<TabLocadores />} />
+      <Route path="planilla_pagos" element={<TabPlanillaPagos />} />
+      <Route path="novedades" element={<TabPlanilla />} />
+      <Route path="documentos" element={<TabDocumentos />} /> {/* ✅ Nueva ruta */}
+    </Routes>
   );
 }

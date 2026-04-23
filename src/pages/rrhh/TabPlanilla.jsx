@@ -1,20 +1,20 @@
 // src/pages/rrhh/TabPlanilla.jsx
-// Módulo de Novedades: Incidencias (planilla) + Horas Extras (planilla y locadores)
+// Módulo de Novedades: Incidencias (planilla + locadores) + Horas Extras (planilla y locadores)
 // Visualización de fotos, separación por tipo de persona, gestión documental.
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
   Upload, FileText, Trash2, Eye, X, Plus, Clock, AlertTriangle,
-  Users, Briefcase, Loader2, CheckCircle, XCircle, FileCheck
+  Users, Briefcase, Loader2, CheckCircle, XCircle
 } from 'lucide-react';
 
 // ─── CONFIGURACIÓN DE TIPOS ─────────────────────────────────────────────────
 const TIPOS_INCIDENCIA = [
-  { value: 'Tardanza', label: 'Tardanza', color: 'bg-red-100 text-red-800', dot: '#A32D2D' },
-  { value: 'Falta', label: 'Falta', color: 'bg-orange-100 text-orange-800', dot: '#854F0B' },
-  { value: 'Suspension', label: 'Suspensión', color: 'bg-purple-100 text-purple-800', dot: '#534AB7' },
-  { value: 'LlamadaAtencion', label: 'Llamada de atención', color: 'bg-blue-100 text-blue-800', dot: '#185FA5' },
+  { value: 'Tardanza', label: 'Tardanza', color: 'bg-red-100 text-red-800' },
+  { value: 'Falta', label: 'Falta', color: 'bg-orange-100 text-orange-800' },
+  { value: 'Suspension', label: 'Suspensión', color: 'bg-purple-100 text-purple-800' },
+  { value: 'LlamadaAtencion', label: 'Llamada de atención', color: 'bg-blue-100 text-blue-800' },
 ];
 
 const MODALIDADES_HE = [
@@ -31,21 +31,28 @@ const labelModalidad = (modalidad) => MODALIDADES_HE.find(m => m.value === modal
 
 // Formularios vacíos
 const FORM_INC_VACIO = {
-  empleado_id: '', empleado_nombre: '',
+  tipo_persona: 'planilla', // 'planilla' | 'locador'
+  persona_id: '',
+  persona_nombre: '',
   fecha: new Date().toISOString().slice(0, 10),
   tipo: 'Tardanza',
   minutos_tardanza: 0,
-  justificada: false, justificacion: '',
-  dias_suspension: 0, motivo: '',
+  justificada: false,
+  justificacion: '',
+  dias_suspension: 0,
+  motivo: '',
   documentoSubido: null,
 };
 
 const FORM_HE_VACIO = {
-  tipo_persona: 'planilla', // 'planilla' | 'locador'
-  empleado_id: '', empleado_nombre: '',
-  locador_id: '', locador_nombre: '',
+  tipo_persona: 'planilla',
+  empleado_id: '',
+  empleado_nombre: '',
+  locador_id: '',
+  locador_nombre: '',
   fecha: new Date().toISOString().slice(0, 10),
-  horas: 1, minutos: 0,
+  horas: 1,
+  minutos: 0,
   modalidad: 'sin_compensacion',
   observaciones: '',
   aprobado_por: '',
@@ -154,10 +161,10 @@ export default function TabPlanilla() {
     cargarTodo();
   }, [cargarTodo]);
 
-  // ─── GUARDAR INCIDENCIA ────────────────────────────────────────────────────
+  // ─── GUARDAR INCIDENCIA (ahora soporta planilla y locador) ─────────────────
   const guardarIncidencia = async () => {
-    if (!formInc.empleado_id || !formInc.fecha) {
-      mostrarToast('Selecciona colaborador y fecha', 'error');
+    if (!formInc.persona_id || !formInc.fecha) {
+      mostrarToast('Selecciona colaborador/locador y fecha', 'error');
       return;
     }
 
@@ -168,8 +175,10 @@ export default function TabPlanilla() {
     const mins = parseInt(formInc.minutos_tardanza) || 0;
 
     const registro = {
-      empleado_id: formInc.empleado_id,
-      empleado_nombre: formInc.empleado_nombre,
+      tipo_persona: formInc.tipo_persona,
+      empleado_id: formInc.tipo_persona === 'planilla' ? formInc.persona_id : null,
+      locador_id: formInc.tipo_persona === 'locador' ? formInc.persona_id : null,
+      empleado_nombre: formInc.persona_nombre,
       fecha: formInc.fecha,
       tardanza: esTardanza,
       falta: esFalta,
@@ -194,7 +203,7 @@ export default function TabPlanilla() {
       }
 
       if (formInc.documentoSubido && incidenciaId) {
-        await subirDocAutomatic(formInc.documentoSubido, formInc.empleado_id, incidenciaId, formInc.tipo);
+        await subirDocAutomatic(formInc.documentoSubido, formInc.persona_id, incidenciaId, formInc.tipo);
       }
 
       mostrarToast(editandoIncId ? 'Incidencia actualizada' : 'Incidencia registrada', 'success');
@@ -207,7 +216,7 @@ export default function TabPlanilla() {
     }
   };
 
-  // ─── GUARDAR HORA EXTRA ────────────────────────────────────────────────────
+  // ─── GUARDAR HORA EXTRA (sin cambios, ya soporta locadores) ─────────────────
   const guardarHoraExtra = async () => {
     if (!formHE.fecha) {
       mostrarToast('Selecciona una fecha', 'error');
@@ -312,14 +321,14 @@ export default function TabPlanilla() {
   };
 
   // ─── DOCUMENTOS ────────────────────────────────────────────────────────────
-  const subirDocAutomatic = async (file, empleadoId, incidenciaId, tipo) => {
+  const subirDocAutomatic = async (file, personaId, incidenciaId, tipo) => {
     const ext = file.name.split('.').pop();
     const path = `documentos_incidencias/${incidenciaId}_${Date.now()}.${ext}`;
     const { error: upErr } = await supabase.storage.from('documentos-empleados').upload(path, file);
     if (upErr) throw upErr;
     const { data: { publicUrl } } = supabase.storage.from('documentos-empleados').getPublicUrl(path);
     const { data: doc } = await supabase.from('documentos_empleados').insert({
-      empleado_id: empleadoId,
+      empleado_id: personaId,
       tipo_documento: 'incidencia_planilla',
       titulo: `${tipo} - documento adjunto`,
       archivo_url: publicUrl,
@@ -360,8 +369,9 @@ export default function TabPlanilla() {
   const editarInc = (inc) => {
     setEditandoIncId(inc.id);
     setFormInc({
-      empleado_id: inc.empleado_id,
-      empleado_nombre: inc.empleado_nombre,
+      tipo_persona: inc.tipo_persona || 'planilla',
+      persona_id: inc.tipo_persona === 'locador' ? inc.locador_id : inc.empleado_id,
+      persona_nombre: inc.empleado_nombre,
       fecha: inc.fecha,
       tipo: inc.tipo_incidencia || (inc.tardanza ? 'Tardanza' : inc.falta ? 'Falta' : 'Tardanza'),
       minutos_tardanza: inc.minutos || 0,
@@ -471,14 +481,14 @@ export default function TabPlanilla() {
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
         {[
-          { label: 'Tardanzas', val: resumenIncidencias.tardanzas, bg: 'bg-red-50', txt: 'text-red-700', border: 'border-red-100' },
-          { label: 'Faltas', val: resumenIncidencias.faltas, bg: 'bg-orange-50', txt: 'text-orange-700', border: 'border-orange-100' },
-          { label: 'Suspensiones', val: resumenIncidencias.suspensiones, bg: 'bg-purple-50', txt: 'text-purple-700', border: 'border-purple-100' },
-          { label: 'Llamadas atención', val: resumenIncidencias.llamadas, bg: 'bg-blue-50', txt: 'text-blue-700', border: 'border-blue-100' },
-          { label: 'Hrs extras (mes)', val: `${totalHorasExtras.toFixed(1)}h`, bg: 'bg-amber-50', txt: 'text-amber-700', border: 'border-amber-100' },
-          { label: 'HE aprobadas', val: heAprobadas, bg: 'bg-green-50', txt: 'text-green-700', border: 'border-green-100' },
+          { label: 'Tardanzas', val: resumenIncidencias.tardanzas, bg: 'bg-red-50', txt: 'text-red-700' },
+          { label: 'Faltas', val: resumenIncidencias.faltas, bg: 'bg-orange-50', txt: 'text-orange-700' },
+          { label: 'Suspensiones', val: resumenIncidencias.suspensiones, bg: 'bg-purple-50', txt: 'text-purple-700' },
+          { label: 'Llamadas atención', val: resumenIncidencias.llamadas, bg: 'bg-blue-50', txt: 'text-blue-700' },
+          { label: 'Hrs extras (mes)', val: `${totalHorasExtras.toFixed(1)}h`, bg: 'bg-amber-50', txt: 'text-amber-700' },
+          { label: 'HE aprobadas', val: heAprobadas, bg: 'bg-green-50', txt: 'text-green-700' },
         ].map((k) => (
-          <div key={k.label} className={`${k.bg} border ${k.border} p-3 rounded-2xl`}>
+          <div key={k.label} className={`${k.bg} border border-gray-100 p-3 rounded-2xl`}>
             <div className={`text-2xl font-black ${k.txt}`}>{k.val}</div>
             <div className={`text-[9px] font-black uppercase tracking-widest mt-0.5 ${k.txt} opacity-70`}>
               {k.label}
@@ -518,32 +528,46 @@ export default function TabPlanilla() {
         ))}
       </div>
 
-      {/* ─── TABLA INCIDENCIAS ───────────────────────────────────────────────── */}
+      {/* ─── TABLA INCIDENCIAS (con soporte para planilla y locadores) ────────── */}
       {pestana === 'incidencias' && (
         <div className="bg-white border rounded-2xl overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead className="bg-gray-50 border-b">
                 <tr className="text-[9px] font-black text-gray-400 uppercase tracking-wide">
-                  <th className="p-4">Colaborador</th>
-                  <th className="p-4">Fecha</th>
+                  <th className="p-4">Persona</th>
                   <th className="p-4">Tipo</th>
+                  <th className="p-4">Fecha</th>
+                  <th className="p-4">Tipo Inc.</th>
                   <th className="p-4">Detalle</th>
                   <th className="p-4">Estado</th>
                   <th className="p-4 text-center">Docs</th>
                   <th className="p-4 text-center">Acciones</th>
-                </tr>
+                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {incidencias.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="p-8 text-center text-gray-400 italic text-sm">
+                    <td colSpan={8} className="p-8 text-center text-gray-400 italic text-sm">
                       Sin incidencias en este periodo
                     </td>
                   </tr>
                 ) : (
                   incidencias.map((n) => {
-                    const emp = empleados.find((e) => e.id === n.empleado_id);
+                    const esPlanilla = n.tipo_persona !== 'locador';
+                    let fotoUrl = null;
+                    let iniciales = '';
+                    let nombre = n.empleado_nombre || '';
+
+                    if (esPlanilla) {
+                      const emp = empleados.find(e => e.id === n.empleado_id);
+                      fotoUrl = emp?.foto_url;
+                      iniciales = getInitials(emp?.nombre, emp?.apellido);
+                    } else {
+                      const loc = locadores.find(l => l.id === n.locador_id);
+                      iniciales = getInitials(loc?.nombre, loc?.apellido);
+                    }
+
                     const tipo = n.tipo_incidencia || (n.tardanza ? 'Tardanza' : n.falta ? 'Falta' : 'Otro');
                     let detalle = '';
                     if (tipo === 'Tardanza') detalle = `${n.minutos || 0} min${n.tardanza_supera_10min ? ' (descuenta)' : ' (sin descuento)'}`;
@@ -555,18 +579,23 @@ export default function TabPlanilla() {
                       <tr key={n.id} className="hover:bg-blue-50/20 transition-colors">
                         <td className="p-4">
                           <div className="flex items-center gap-3">
-                            {emp?.foto_url ? (
-                              <img
-                                src={emp.foto_url}
-                                className="w-8 h-8 rounded-full object-cover flex-shrink-0"
-                                alt="foto"
-                              />
+                            {fotoUrl ? (
+                              <img src={fotoUrl} className="w-8 h-8 rounded-full object-cover flex-shrink-0" alt="foto" />
                             ) : (
-                              <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-[10px] font-black text-blue-700 flex-shrink-0">
-                                {getInitials(emp?.nombre, emp?.apellido)}
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-black flex-shrink-0 ${
+                                esPlanilla ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
+                              }`}>
+                                {iniciales || (esPlanilla ? <Users size={14} /> : <Briefcase size={14} />)}
                               </div>
                             )}
-                            <span className="font-bold text-gray-800 text-[11px]">{n.empleado_nombre}</span>
+                            <div>
+                              <span className="font-bold text-gray-800 text-[11px]">{nombre}</span>
+                              <span className={`ml-2 text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full ${
+                                esPlanilla ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'
+                              }`}>
+                                {esPlanilla ? 'Planilla' : 'Locador'}
+                              </span>
+                            </div>
                           </div>
                         </td>
                         <td className="p-4 text-gray-500 text-xs font-mono">{n.fecha}</td>
@@ -622,7 +651,7 @@ export default function TabPlanilla() {
         </div>
       )}
 
-      {/* ─── TABLA HORAS EXTRAS (PLANILLA + LOCADORES) ────────────────────────── */}
+      {/* ─── TABLA HORAS EXTRAS (sin cambios) ──────────────────────────────────── */}
       {pestana === 'horas_extras' && (
         <div className="bg-white border rounded-2xl overflow-hidden shadow-sm">
           {/* Resumen por modalidad */}
@@ -689,14 +718,10 @@ export default function TabPlanilla() {
                           <div className="flex items-center gap-3">
                             {esPlanilla ? (
                               fotoUrl ? (
-                                <img
-                                  src={fotoUrl}
-                                  className="w-8 h-8 rounded-full object-cover flex-shrink-0"
-                                  alt="foto"
-                                />
+                                <img src={fotoUrl} className="w-8 h-8 rounded-full object-cover flex-shrink-0" alt="foto" />
                               ) : (
                                 <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-[10px] font-black text-blue-700 flex-shrink-0">
-                                  {iniciales}
+                                  {iniciales || <Users size={14} />}
                                 </div>
                               )
                             ) : (
@@ -708,11 +733,9 @@ export default function TabPlanilla() {
                           </div>
                         </td>
                         <td className="p-4">
-                          <span
-                            className={`text-[9px] font-black uppercase px-2 py-1 rounded-full ${
-                              esPlanilla ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'
-                            }`}
-                          >
+                          <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-full ${
+                            esPlanilla ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'
+                          }`}>
                             {esPlanilla ? 'Planilla' : 'Locador'}
                           </span>
                         </td>
@@ -733,15 +756,13 @@ export default function TabPlanilla() {
                         </td>
                         <td className="p-4 text-xs text-gray-500">{h.aprobado_por || '—'}</td>
                         <td className="p-4 text-center">
-                          <span
-                            className={`text-[9px] font-black uppercase px-2 py-1 rounded-full ${
-                              h.estado === 'Aprobado'
-                                ? 'bg-green-100 text-green-800'
-                                : h.estado === 'Rechazado'
-                                ? 'bg-red-100 text-red-800'
-                                : 'bg-yellow-100 text-yellow-800'
-                            }`}
-                          >
+                          <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-full ${
+                            h.estado === 'Aprobado'
+                              ? 'bg-green-100 text-green-800'
+                              : h.estado === 'Rechazado'
+                              ? 'bg-red-100 text-red-800'
+                              : 'bg-yellow-100 text-yellow-800'
+                          }`}>
                             {h.estado}
                           </span>
                         </td>
@@ -777,9 +798,7 @@ export default function TabPlanilla() {
               {horasExtras.length > 0 && (
                 <tfoot className="bg-gray-50 border-t font-black text-[11px]">
                   <tr>
-                    <td colSpan={3} className="p-3 text-right text-gray-500 uppercase">
-                      Total del mes:
-                    </td>
+                    <td colSpan={3} className="p-3 text-right text-gray-500 uppercase">Total del mes:</td>
                     <td className="p-3 text-center text-amber-700">{totalHorasExtras.toFixed(1)}h</td>
                     <td colSpan={4}></td>
                   </tr>
@@ -790,7 +809,7 @@ export default function TabPlanilla() {
         </div>
       )}
 
-      {/* ─── MODAL INCIDENCIA ────────────────────────────────────────────────── */}
+      {/* ─── MODAL INCIDENCIA (con selector de tipo persona y listado combinado) ─── */}
       {modalInc && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl w-full max-w-lg p-6 my-4 max-h-[90vh] overflow-y-auto">
@@ -812,38 +831,86 @@ export default function TabPlanilla() {
             </div>
 
             <div className="space-y-4">
-              {/* Colaborador */}
+              {/* Tipo de persona (Planilla / Locador) */}
               <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">
-                  Colaborador
-                </label>
-                <select
-                  value={formInc.empleado_id}
-                  onChange={(e) => {
-                    const emp = empleados.find((em) => em.id === e.target.value);
-                    setFormInc({
-                      ...formInc,
-                      empleado_id: e.target.value,
-                      empleado_nombre: emp ? `${emp.nombre} ${emp.apellido}` : '',
-                    });
-                  }}
-                  className="w-full border-2 border-gray-200 p-3 rounded-xl outline-none focus:border-blue-500 text-sm"
-                >
-                  <option value="">Seleccionar colaborador...</option>
-                  {empleados.map((e) => (
-                    <option key={e.id} value={e.id}>
-                      {e.nombre} {e.apellido}
-                    </option>
-                  ))}
-                </select>
+                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Tipo de persona</label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      value="planilla"
+                      checked={formInc.tipo_persona === 'planilla'}
+                      onChange={() => setFormInc({ ...formInc, tipo_persona: 'planilla', persona_id: '', persona_nombre: '' })}
+                      className="w-4 h-4 text-blue-600"
+                    />
+                    <span className="text-sm font-medium">Planilla</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      value="locador"
+                      checked={formInc.tipo_persona === 'locador'}
+                      onChange={() => setFormInc({ ...formInc, tipo_persona: 'locador', persona_id: '', persona_nombre: '' })}
+                      className="w-4 h-4 text-blue-600"
+                    />
+                    <span className="text-sm font-medium">Locador</span>
+                  </label>
+                </div>
               </div>
+
+              {/* Selector de persona según tipo */}
+              {formInc.tipo_persona === 'planilla' ? (
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Colaborador</label>
+                  <select
+                    value={formInc.persona_id}
+                    onChange={(e) => {
+                      const emp = empleados.find(em => em.id === e.target.value);
+                      setFormInc({
+                        ...formInc,
+                        persona_id: e.target.value,
+                        persona_nombre: emp ? `${emp.nombre} ${emp.apellido}` : '',
+                      });
+                    }}
+                    className="w-full border-2 border-gray-200 p-3 rounded-xl outline-none focus:border-blue-500 text-sm"
+                  >
+                    <option value="">Seleccionar colaborador...</option>
+                    {empleados.map((e) => (
+                      <option key={e.id} value={e.id}>
+                        {e.nombre} {e.apellido}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Locador</label>
+                  <select
+                    value={formInc.persona_id}
+                    onChange={(e) => {
+                      const loc = locadores.find(l => l.id === e.target.value);
+                      setFormInc({
+                        ...formInc,
+                        persona_id: e.target.value,
+                        persona_nombre: loc ? `${loc.nombre} ${loc.apellido}` : '',
+                      });
+                    }}
+                    className="w-full border-2 border-gray-200 p-3 rounded-xl outline-none focus:border-blue-500 text-sm"
+                  >
+                    <option value="">Seleccionar locador...</option>
+                    {locadores.map((l) => (
+                      <option key={l.id} value={l.id}>
+                        {l.nombre} {l.apellido}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {/* Fecha y tipo */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">
-                    Fecha
-                  </label>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Fecha</label>
                   <input
                     type="date"
                     value={formInc.fecha}
@@ -852,18 +919,14 @@ export default function TabPlanilla() {
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">
-                    Tipo de incidencia
-                  </label>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Tipo de incidencia</label>
                   <select
                     value={formInc.tipo}
                     onChange={(e) => setFormInc({ ...formInc, tipo: e.target.value })}
                     className="w-full border-2 border-gray-200 p-3 rounded-xl text-sm font-bold outline-none focus:border-blue-500"
                   >
                     {TIPOS_INCIDENCIA.map((t) => (
-                      <option key={t.value} value={t.value}>
-                        {t.label}
-                      </option>
+                      <option key={t.value} value={t.value}>{t.label}</option>
                     ))}
                   </select>
                 </div>
@@ -872,9 +935,7 @@ export default function TabPlanilla() {
               {/* Campos condicionales */}
               {formInc.tipo === 'Tardanza' && (
                 <div>
-                  <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">
-                    Minutos de tardanza
-                  </label>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Minutos de tardanza</label>
                   <input
                     type="number"
                     min="0"
@@ -911,9 +972,7 @@ export default function TabPlanilla() {
                 <div className="space-y-3">
                   {formInc.tipo === 'Suspension' && (
                     <div>
-                      <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">
-                        Días de suspensión
-                      </label>
+                      <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Días de suspensión</label>
                       <input
                         type="number"
                         min="1"
@@ -924,9 +983,7 @@ export default function TabPlanilla() {
                     </div>
                   )}
                   <div>
-                    <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">
-                      Motivo detallado
-                    </label>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Motivo detallado</label>
                     <textarea
                       value={formInc.motivo}
                       onChange={(e) => setFormInc({ ...formInc, motivo: e.target.value })}
@@ -937,11 +994,9 @@ export default function TabPlanilla() {
                 </div>
               )}
 
-              {/* Adjuntar documento (opcional) */}
+              {/* Adjuntar documento */}
               <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">
-                  Documento adjunto (opcional)
-                </label>
+                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Documento adjunto (opcional)</label>
                 <input
                   type="file"
                   onChange={(e) => setFormInc({ ...formInc, documentoSubido: e.target.files?.[0] || null })}
@@ -960,7 +1015,7 @@ export default function TabPlanilla() {
         </div>
       )}
 
-      {/* ─── MODAL HORAS EXTRAS ──────────────────────────────────────────────── */}
+      {/* ─── MODAL HORAS EXTRAS (sin cambios) ──────────────────────────────────── */}
       {modalHE && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl w-full max-w-lg p-6 my-4 max-h-[90vh] overflow-y-auto">
@@ -969,14 +1024,9 @@ export default function TabPlanilla() {
                 <h2 className="text-lg font-black text-[#185FA5]">
                   {editandoHEId ? 'Editar horas extras' : 'Registrar horas extras'}
                 </h2>
-                <p className="text-[11px] text-gray-400 mt-0.5">
-                  Gestión de sobretiempo y compensaciones
-                </p>
+                <p className="text-[11px] text-gray-400 mt-0.5">Gestión de sobretiempo y compensaciones</p>
               </div>
-              <button
-                onClick={() => setModalHE(false)}
-                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100"
-              >
+              <button onClick={() => setModalHE(false)} className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100">
                 <X size={20} />
               </button>
             </div>
@@ -984,18 +1034,14 @@ export default function TabPlanilla() {
             <div className="space-y-4">
               {/* Tipo de persona */}
               <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">
-                  Tipo de persona
-                </label>
+                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Tipo de persona</label>
                 <div className="flex gap-4">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
                       type="radio"
                       value="planilla"
                       checked={formHE.tipo_persona === 'planilla'}
-                      onChange={() =>
-                        setFormHE({ ...formHE, tipo_persona: 'planilla', empleado_id: '', locador_id: '' })
-                      }
+                      onChange={() => setFormHE({ ...formHE, tipo_persona: 'planilla', empleado_id: '', locador_id: '' })}
                       className="w-4 h-4 text-blue-600"
                     />
                     <span className="text-sm font-medium">Planilla</span>
@@ -1005,9 +1051,7 @@ export default function TabPlanilla() {
                       type="radio"
                       value="locador"
                       checked={formHE.tipo_persona === 'locador'}
-                      onChange={() =>
-                        setFormHE({ ...formHE, tipo_persona: 'locador', empleado_id: '', locador_id: '' })
-                      }
+                      onChange={() => setFormHE({ ...formHE, tipo_persona: 'locador', empleado_id: '', locador_id: '' })}
                       className="w-4 h-4 text-blue-600"
                     />
                     <span className="text-sm font-medium">Locador</span>
@@ -1015,12 +1059,9 @@ export default function TabPlanilla() {
                 </div>
               </div>
 
-              {/* Selector según tipo */}
               {formHE.tipo_persona === 'planilla' ? (
                 <div>
-                  <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">
-                    Colaborador
-                  </label>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Colaborador</label>
                   <select
                     value={formHE.empleado_id}
                     onChange={(e) => setFormHE({ ...formHE, empleado_id: e.target.value })}
@@ -1028,17 +1069,13 @@ export default function TabPlanilla() {
                   >
                     <option value="">Seleccionar colaborador...</option>
                     {empleados.map((e) => (
-                      <option key={e.id} value={e.id}>
-                        {e.nombre} {e.apellido}
-                      </option>
+                      <option key={e.id} value={e.id}>{e.nombre} {e.apellido}</option>
                     ))}
                   </select>
                 </div>
               ) : (
                 <div>
-                  <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">
-                    Locador
-                  </label>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Locador</label>
                   <select
                     value={formHE.locador_id}
                     onChange={(e) => setFormHE({ ...formHE, locador_id: e.target.value })}
@@ -1046,18 +1083,14 @@ export default function TabPlanilla() {
                   >
                     <option value="">Seleccionar locador...</option>
                     {locadores.map((l) => (
-                      <option key={l.id} value={l.id}>
-                        {l.nombre} {l.apellido}
-                      </option>
+                      <option key={l.id} value={l.id}>{l.nombre} {l.apellido}</option>
                     ))}
                   </select>
                 </div>
               )}
 
               <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">
-                  Fecha de ejecución
-                </label>
+                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Fecha de ejecución</label>
                 <input
                   type="date"
                   value={formHE.fecha}
@@ -1068,9 +1101,7 @@ export default function TabPlanilla() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">
-                    Horas
-                  </label>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Horas</label>
                   <input
                     type="number"
                     min="0"
@@ -1080,9 +1111,7 @@ export default function TabPlanilla() {
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">
-                    Minutos
-                  </label>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Minutos</label>
                   <input
                     type="number"
                     min="0"
@@ -1095,19 +1124,12 @@ export default function TabPlanilla() {
               </div>
 
               <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase mb-2">
-                  Modalidad de compensación
-                </label>
+                <label className="block text-[10px] font-black text-gray-400 uppercase mb-2">Modalidad de compensación</label>
                 <div className="space-y-2">
                   {MODALIDADES_HE.map((m) => (
-                    <label
-                      key={m.value}
-                      className={`flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${
-                        formHE.modalidad === m.value
-                          ? 'border-blue-500 bg-blue-50/50'
-                          : 'border-gray-100 hover:border-gray-200'
-                      }`}
-                    >
+                    <label key={m.value} className={`flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                      formHE.modalidad === m.value ? 'border-blue-500 bg-blue-50/50' : 'border-gray-100 hover:border-gray-200'
+                    }`}>
                       <input
                         type="radio"
                         name="modalidad_he"
@@ -1126,9 +1148,7 @@ export default function TabPlanilla() {
               </div>
 
               <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">
-                  Observaciones
-                </label>
+                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Observaciones</label>
                 <textarea
                   value={formHE.observaciones}
                   onChange={(e) => setFormHE({ ...formHE, observaciones: e.target.value })}
@@ -1138,9 +1158,7 @@ export default function TabPlanilla() {
               </div>
 
               <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">
-                  Aprobado por
-                </label>
+                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Aprobado por</label>
                 <input
                   type="text"
                   value={formHE.aprobado_por}
@@ -1161,7 +1179,7 @@ export default function TabPlanilla() {
         </div>
       )}
 
-      {/* ─── MODAL DE DOCUMENTOS ─────────────────────────────────────────────── */}
+      {/* ─── MODAL DE DOCUMENTOS (sin cambios) ──────────────────────────────────── */}
       {modalDoc && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl w-full max-w-md p-6">
@@ -1183,18 +1201,10 @@ export default function TabPlanilla() {
                       <span className="text-xs font-medium truncate max-w-[180px]">{doc.titulo}</span>
                     </div>
                     <div className="flex gap-1">
-                      <a
-                        href={doc.archivo_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="p-1 text-blue-600 hover:bg-blue-100 rounded"
-                      >
+                      <a href={doc.archivo_url} target="_blank" rel="noopener noreferrer" className="p-1 text-blue-600 hover:bg-blue-100 rounded">
                         <Eye size={14} />
                       </a>
-                      <button
-                        onClick={() => eliminarDoc(doc)}
-                        className="p-1 text-red-500 hover:bg-red-100 rounded"
-                      >
+                      <button onClick={() => eliminarDoc(doc)} className="p-1 text-red-500 hover:bg-red-100 rounded">
                         <Trash2 size={14} />
                       </button>
                     </div>
@@ -1215,7 +1225,7 @@ export default function TabPlanilla() {
                     try {
                       await subirDocAutomatic(
                         file,
-                        modalDoc.incidencia.empleado_id,
+                        modalDoc.incidencia.empleado_id || modalDoc.incidencia.locador_id,
                         modalDoc.incidenciaId,
                         'Documento adicional'
                       );

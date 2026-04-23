@@ -1,15 +1,17 @@
 // src/pages/rrhh/TabPlanillaPagos.jsx
 // ─────────────────────────────────────────────────────────────────────────────
-// BOLETA FIEL A LA ESTRUCTURA OFICIAL REBAGLIATI
-// CORRECCIÓN: FECHA DE INGRESO MUESTRA fecha_ingreso_planilla
-// ENVÍO DE CORREO CON EDGE FUNCTION 'send-boleta'
+// MEJORAS:
+// - Modalidad de pago en locadores editable directamente desde la tabla (click en badge)
+// - Filtro por modalidad (RHE / Efectivo / Todos)
+// - Totales más visibles
+// - Botón "Aprobar a Finanzas" en todas las pestañas
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
   Download, X, Eye, Send, Users, Briefcase,
-  Mail, Loader2, AlertCircle
+  Mail, Loader2, AlertCircle, Clock, Filter
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 
@@ -167,7 +169,6 @@ function calcularPlanilla(emp, asistencias = [], mesStr) {
       vacDias: emp?.vacaciones_dias || '-',
       pVac: emp?.periodo_vacacional || '-',
       obs: obs.join(' | '),
-      // FECHA DE INGRESO A PLANILLA (con fallback a fecha_inicio)
       fechaIngresoPlanilla: emp?.fecha_ingreso_planilla || emp?.fecha_inicio,
     };
   } catch (e) {
@@ -208,7 +209,7 @@ function calcularLocador(loc, asis = []) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// GENERADOR PDF (versión que retorna base64 y versión que descarga)
+// GENERADOR PDF (sin cambios)
 // ══════════════════════════════════════════════════════════════════════════════
 function generarPDF(emp, c, mesStr, returnBase64 = false) {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
@@ -268,7 +269,6 @@ function generarPDF(emp, c, mesStr, returnBase64 = false) {
   doc.text('FECHA DE INGRESO', ML, y + 3.5);
   doc.text(':', ML + 42, y + 3.5);
   doc.setFont('helvetica', 'normal');
-  // ─── CORRECCIÓN: Usar fechaIngresoPlanilla del cálculo ──────────────────
   doc.text(fmtFecha(c.fechaIngresoPlanilla), ML + 45, y + 3.5);
   doc.setFont('helvetica', 'bold');
   doc.text('No.CUSPP:', W / 2 + 5, y + 3.5);
@@ -511,7 +511,7 @@ function generarPDF(emp, c, mesStr, returnBase64 = false) {
   }
 }
 
-// ─── MODAL BOLETA (con envío de correo corregido) ───────────────────────────
+// ─── MODAL BOLETA (sin cambios) ───────────────────────────────────────────
 function ModalBoleta({ emp, c, mesStr, onClose }) {
   const periodo = periodoLabel(mesStr);
   const nomCompleto = `${(emp.apellido || '').toUpperCase()} ${(emp.nombre || '').toUpperCase()}`;
@@ -630,7 +630,6 @@ function ModalBoleta({ emp, c, mesStr, onClose }) {
           {[
             { l: 'APELLIDOS Y NOMBRES', v: nomCompleto, extra: null },
             { l: 'CARGO', v: emp.cargo || '—', extra: { l: 'Nro. ESSALUD :', v: c.nroEssalud } },
-            // ─── CORRECCIÓN: usar c.fechaIngresoPlanilla ──────────────────
             { l: 'FECHA DE INGRESO', v: fmtFecha(c.fechaIngresoPlanilla),
               extra2: { l: 'No.CUSPP:', v: c.cuspp }, extra3: { l: 'AFP:', v: c.afpCortoNom || (c.tip === 'ONP' ? 'ONP' : '—') } },
             { l: 'CONDICION', v: 'PLANILLA',
@@ -855,11 +854,15 @@ export default function TabPlanillaPagos() {
   const [locs, setLocs]         = useState([]);
   const [asis, setAsis]         = useState([]);
   const [asisL, setAsisL]       = useState([]);
+  const [horasExtras, setHorasExtras] = useState([]);
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState(null);
   const [vista, setVista]       = useState('planilla');
   const [selEmp, setSelEmp]     = useState(null);
   const [selLoc, setSelLoc]     = useState(null);
+
+  // Filtro para locadores
+  const [filtroModalidad, setFiltroModalidad] = useState('Todos');
 
   const cargar = async () => {
     setLoading(true); setError(null);
@@ -874,23 +877,65 @@ export default function TabPlanillaPagos() {
       if (aE) throw aE;
       const { data: al, error: alE } = await supabase.from('asistencia_locadores').select('*').gte('fecha', p1).lte('fecha', p2);
       if (alE) throw alE;
-      setCols(e || []); setLocs(l || []); setAsis(a || []); setAsisL(al || []);
+      const { data: he, error: heE } = await supabase.from('horas_extras').select('*').gte('fecha', p1).lte('fecha', p2);
+      if (heE) throw heE;
+
+      setCols(e || []); setLocs(l || []); setAsis(a || []); setAsisL(al || []); setHorasExtras(he || []);
     } catch (err) { setError(err.message); }
     finally { setLoading(false); }
   };
 
   useEffect(() => { cargar(); }, [mes]);
 
-  const enviarFinanzas = async () => {
-    const total = cols.reduce((s, e) => s + calcularPlanilla(e, asis, mes).NETO, 0);
-    if (!window.confirm(`¿Enviar planilla a Finanzas por S/ ${fmt(total)}?`)) return;
+  // Función para cambiar modalidad de pago directamente
+  const toggleModalidadPago = async (loc) => {
+    const nuevaModalidad = loc.modalidad_pago === 'Efectivo' ? 'RHE' : 'Efectivo';
+    const { error } = await supabase
+      .from('locadores')
+      .update({ modalidad_pago: nuevaModalidad })
+      .eq('id', loc.id);
+    if (!error) {
+      // Actualizar estado local
+      setLocs(prev => prev.map(l => l.id === loc.id ? { ...l, modalidad_pago: nuevaModalidad } : l));
+    } else {
+      alert('Error al actualizar modalidad: ' + error.message);
+    }
+  };
+
+  const enviarFinanzas = async (tipo) => {
+    let total = 0;
+    let concepto = '';
+
+    if (tipo === 'planilla') {
+      total = cols.reduce((s, e) => s + calcularPlanilla(e, asis, mes).NETO, 0);
+      concepto = `Planilla de Haberes - ${mes}`;
+    } else if (tipo === 'locadores') {
+      total = locs.filter(l => filtroModalidad === 'Todos' || (l.modalidad_pago || 'RHE') === filtroModalidad)
+        .reduce((s, l) => s + calcularLocador(l, asisL).neto, 0);
+      concepto = `Pago a Locadores - ${mes}`;
+    } else if (tipo === 'horas_extras') {
+      total = horasExtras.filter(h => h.estado === 'Aprobado')
+        .reduce((s, h) => s + (h.valor_hora * (h.horas_decimal || 0)), 0);
+      concepto = `Pago de Horas Extras - ${mes}`;
+    }
+
+    if (total <= 0) {
+      alert('No hay montos para enviar a Finanzas.');
+      return;
+    }
+
+    if (!window.confirm(`¿Enviar a Finanzas por S/ ${fmt(total)}?`)) return;
+
     await supabase.from('egresos').insert({
       fecha: new Date().toISOString().split('T')[0],
-      concepto: `Planilla de Haberes - ${mes}`, area: 'RRHH',
-      categoria: 'Planilla', proveedor: 'Nómina Colaboradores',
-      monto: total, estado: 'Pendiente',
+      concepto,
+      area: 'RRHH',
+      categoria: tipo === 'planilla' ? 'Planilla' : tipo === 'locadores' ? 'Locadores' : 'Horas Extras',
+      proveedor: 'Nómina',
+      monto: total,
+      estado: 'Pendiente',
     });
-    alert(`Planilla enviada: S/ ${fmt(total)}`);
+    alert(`${concepto} enviado: S/ ${fmt(total)}`);
   };
 
   const exportCSV = () => {
@@ -914,9 +959,18 @@ export default function TabPlanillaPagos() {
     URL.revokeObjectURL(a.href);
   };
 
-  const totP  = cols.reduce((s, e) => s + calcularPlanilla(e, asis, mes).NETO, 0);
-  const totL  = locs.reduce((s, l) => s + calcularLocador(l, asisL).neto, 0);
+  const totP = cols.reduce((s, e) => s + calcularPlanilla(e, asis, mes).NETO, 0);
+  const totL = locs.filter(l => filtroModalidad === 'Todos' || (l.modalidad_pago || 'RHE') === filtroModalidad)
+    .reduce((s, l) => s + calcularLocador(l, asisL).neto, 0);
   const totEs = cols.reduce((s, e) => s + calcularPlanilla(e, asis, mes).es9, 0);
+  const totHE = horasExtras.filter(h => h.estado === 'Aprobado')
+    .reduce((s, h) => s + (h.valor_hora * (h.horas_decimal || 0)), 0);
+
+  // Filtrar locadores según modalidad
+  const locadoresFiltrados = useMemo(() => {
+    if (filtroModalidad === 'Todos') return locs;
+    return locs.filter(l => (l.modalidad_pago || 'RHE') === filtroModalidad);
+  }, [locs, filtroModalidad]);
 
   if (loading) return (
     <div className="flex items-center justify-center h-64 gap-3 text-gray-400">
@@ -950,22 +1004,22 @@ export default function TabPlanillaPagos() {
                        px-3 py-1.5 rounded-lg text-[10px] font-black hover:bg-gray-50">
             <Download size={12}/> CSV
           </button>
-          {vista === 'planilla' && (
-            <button onClick={enviarFinanzas}
-              className="flex items-center gap-1.5 bg-[#185FA5] text-white px-3 py-1.5
-                         rounded-lg text-[10px] font-black hover:bg-[#11284e]">
-              <Send size={12}/> Aprobar a Finanzas
-            </button>
-          )}
+          <button onClick={() => enviarFinanzas(vista)}
+            className="flex items-center gap-1.5 bg-[#185FA5] text-white px-3 py-1.5
+                       rounded-lg text-[10px] font-black hover:bg-[#11284e]">
+            <Send size={12}/> Aprobar a Finanzas
+          </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+      {/* KPIs */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
         {[
           { l: 'Neto Planilla',    v: `S/ ${fmt(totP)}`,       c: 'border-[#185FA5]' },
           { l: 'Neto Locadores',   v: `S/ ${fmt(totL)}`,       c: 'border-purple-500' },
           { l: 'EsSalud Emp. 9%',  v: `S/ ${fmt(totEs)}`,      c: 'border-emerald-500' },
-          { l: 'Total Nómina',     v: `S/ ${fmt(totP + totL)}`, c: 'border-[#11284e]' },
+          { l: 'Horas Extras',     v: `S/ ${fmt(totHE)}`,      c: 'border-amber-500' },
+          { l: 'Total Nómina',     v: `S/ ${fmt(totP + totL + totHE)}`, c: 'border-[#11284e]' },
         ].map(k => (
           <div key={k.l} className={`bg-white rounded-xl border shadow-sm p-4 border-l-4 ${k.c}`}>
             <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">{k.l}</p>
@@ -974,6 +1028,7 @@ export default function TabPlanillaPagos() {
         ))}
       </div>
 
+      {/* Pestañas */}
       <div className="flex gap-2 mb-4 bg-white p-1 w-max rounded-xl border border-gray-200 shadow-sm">
         <button onClick={() => setVista('planilla')}
           className={`px-4 py-2 text-xs font-black rounded-lg flex items-center gap-2 transition-all
@@ -985,8 +1040,35 @@ export default function TabPlanillaPagos() {
                       ${vista === 'locacion' ? 'bg-[#185FA5] text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}>
           <Briefcase size={14}/> LOCADORES (Cuarta Categ.)
         </button>
+        <button onClick={() => setVista('horas_extras')}
+          className={`px-4 py-2 text-xs font-black rounded-lg flex items-center gap-2 transition-all
+                      ${vista === 'horas_extras' ? 'bg-amber-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}>
+          <Clock size={14}/> PAGO DE HORAS EXTRAS
+        </button>
       </div>
 
+      {/* Filtro para locadores */}
+      {vista === 'locacion' && (
+        <div className="mb-3 flex items-center gap-2">
+          <Filter size={14} className="text-gray-400" />
+          <span className="text-xs font-bold text-gray-500">Modalidad de Pago:</span>
+          <div className="flex gap-1">
+            {['Todos', 'RHE', 'Efectivo'].map(m => (
+              <button
+                key={m}
+                onClick={() => setFiltroModalidad(m)}
+                className={`px-3 py-1 rounded-full text-[10px] font-black transition-all ${
+                  filtroModalidad === m ? 'bg-[#185FA5] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* TABLAS */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left">
@@ -1002,43 +1084,44 @@ export default function TabPlanillaPagos() {
                     <th className="px-4 py-4 text-right">AFP/ONP</th>
                     <th className="px-4 py-4 text-right">Otros Dsctos</th>
                   </>
-                ) : (
+                ) : vista === 'locacion' ? (
                   <>
                     <th className="px-4 py-4 text-right">Honorario</th>
                     <th className="px-4 py-4 text-right">Retención (8%)</th>
+                    <th className="px-4 py-4 text-center">Modalidad Pago</th>
+                  </>
+                ) : (
+                  <>
+                    <th className="px-4 py-4 text-center">Tipo</th>
+                    <th className="px-4 py-4 text-right">Horas</th>
+                    <th className="px-4 py-4 text-right">Valor Hora</th>
+                    <th className="px-4 py-4 text-right">Total</th>
+                    <th className="px-4 py-4 text-center">Estado</th>
                   </>
                 )}
                 <th className="px-5 py-4 text-right">Neto a Pagar</th>
-                <th className="px-5 py-4 text-center">Boleta</th>
+                {vista !== 'horas_extras' && <th className="px-5 py-4 text-center">Boleta</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50 text-xs">
-              {(vista === 'planilla' ? cols : locs).length === 0 ? (
+              {(vista === 'planilla' ? cols : vista === 'locacion' ? locadoresFiltrados : horasExtras).length === 0 ? (
                 <tr><td colSpan={10} className="p-8 text-center text-gray-400 italic">Sin registros</td></tr>
-              ) : (vista === 'planilla' ? cols : locs).map(item => {
-                const isPlan = vista === 'planilla';
-                const c = isPlan
-                  ? calcularPlanilla(item, asis, mes)
-                  : calcularLocador(item, asisL);
-                return (
-                  <tr key={item.id} className="hover:bg-blue-50/30 transition-colors">
-                    <td className="px-5 py-3">
-                      <div className="flex items-center gap-3">
-                        <img
-                          src={item.foto_url || `https://ui-avatars.com/api/?name=${encodeURIComponent((item.nombre||'')+' '+(item.apellido||''))}&background=185FA5&color=fff&size=56`}
-                          className="w-9 h-9 rounded-full object-cover border-2 border-white shadow-sm flex-shrink-0"
-                          alt=""/>
-                        <div>
-                          <p className="font-black text-gray-800">{item.apellido} {item.nombre}</p>
-                          <p className="text-[9px] text-gray-400 font-bold uppercase truncate max-w-[140px]">
-                            {item.dni} | {item.cargo || (isPlan ? 'EMPLEADO' : 'LOCADOR')}
-                          </p>
-                        </div>
-                      </div>
-                    </td>
-
-                    {isPlan ? (
-                      <>
+              ) : (
+                (vista === 'planilla' ? cols : vista === 'locacion' ? locadoresFiltrados : horasExtras).map(item => {
+                  if (vista === 'planilla') {
+                    const c = calcularPlanilla(item, asis, mes);
+                    return (
+                      <tr key={item.id} className="hover:bg-blue-50/30">
+                        <td className="px-5 py-3">
+                          <div className="flex items-center gap-3">
+                            <img src={item.foto_url || `https://ui-avatars.com/api/?name=${encodeURIComponent((item.nombre||'')+' '+(item.apellido||''))}&background=185FA5&color=fff&size=56`}
+                              className="w-9 h-9 rounded-full object-cover border-2 border-white shadow-sm" alt=""/>
+                            <div>
+                              <p className="font-black text-gray-800">{item.apellido} {item.nombre}</p>
+                              <p className="text-[9px] text-gray-400 font-bold uppercase">{item.dni} | {item.cargo || 'EMPLEADO'}</p>
+                            </div>
+                          </div>
+                        </td>
                         <td className="px-4 py-3 text-right font-mono text-gray-500">S/ {fmt(c.sb)}</td>
                         <td className={`px-4 py-3 text-right font-mono ${c.hayAus ? 'text-amber-600 font-bold' : 'text-gray-500'}`}>
                           S/ {fmt(c.sProp)}
@@ -1053,8 +1136,7 @@ export default function TabPlanillaPagos() {
                           </div>
                         </td>
                         <td className="px-4 py-3 text-center">
-                          <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase
-                            ${c.tip === 'ONP' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}`}>
+                          <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase ${c.tip === 'ONP' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}`}>
                             {c.tip === 'ONP' ? 'ONP' : c.afpCortoNom}
                           </span>
                         </td>
@@ -1062,49 +1144,119 @@ export default function TabPlanillaPagos() {
                         <td className="px-4 py-3 text-right text-red-400 font-mono text-[10px]">
                           {(c.r5 + c.adel + c.dpe + c.d15) > 0 ? `S/ ${fmt(c.r5 + c.adel + c.dpe + c.d15)}` : '—'}
                         </td>
-                      </>
-                    ) : (
-                      <>
+                        <td className="px-5 py-3 text-right">
+                          <span className="text-sm font-black text-[#185FA5]">S/ {fmt(c.NETO)}</span>
+                        </td>
+                        <td className="px-5 py-3 text-center">
+                          <button onClick={() => setSelEmp(item)} className="p-2 bg-gray-100 hover:bg-[#185FA5] hover:text-white rounded-xl">
+                            <Eye size={15}/>
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  } else if (vista === 'locacion') {
+                    const c = calcularLocador(item, asisL);
+                    return (
+                      <tr key={item.id} className="hover:bg-purple-50/30">
+                        <td className="px-5 py-3">
+                          <div className="flex items-center gap-3">
+                            <img src={item.foto_url || `https://ui-avatars.com/api/?name=${encodeURIComponent((item.nombre||'')+' '+(item.apellido||''))}&background=185FA5&color=fff&size=56`}
+                              className="w-9 h-9 rounded-full object-cover border-2 border-white shadow-sm" alt=""/>
+                            <div>
+                              <p className="font-black text-gray-800">{item.apellido} {item.nombre}</p>
+                              <p className="text-[9px] text-gray-400 font-bold uppercase">{item.dni} | LOCADOR</p>
+                            </div>
+                          </div>
+                        </td>
                         <td className="px-4 py-3 text-right font-mono text-gray-500">S/ {fmt(c.sb)}</td>
                         <td className="px-4 py-3 text-right text-red-500">S/ {fmt(c.ret4)}</td>
-                      </>
-                    )}
-
-                    <td className="px-5 py-3 text-right">
-                      <span className="text-sm font-black text-[#185FA5]">
-                        S/ {fmt(isPlan ? c.NETO : c.neto)}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3 text-center">
-                      <button
-                        onClick={() => isPlan ? setSelEmp(item) : setSelLoc(item)}
-                        className="p-2 bg-gray-100 hover:bg-[#185FA5] hover:text-white
-                                   rounded-xl transition-all text-gray-500"
-                        title="Ver boleta">
-                        <Eye size={15}/>
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
+                        <td className="px-4 py-3 text-center">
+                          <button
+                            onClick={() => toggleModalidadPago(item)}
+                            className={`text-[8px] font-black px-2 py-1 rounded-full cursor-pointer transition-all hover:opacity-80 ${
+                              item.modalidad_pago === 'Efectivo' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+                            }`}
+                            title="Clic para cambiar modalidad"
+                          >
+                            {item.modalidad_pago || 'RHE'}
+                          </button>
+                        </td>
+                        <td className="px-5 py-3 text-right">
+                          <span className="text-sm font-black text-[#185FA5]">S/ {fmt(c.neto)}</span>
+                        </td>
+                        <td className="px-5 py-3 text-center">
+                          <button onClick={() => setSelLoc(item)} className="p-2 bg-gray-100 hover:bg-[#185FA5] hover:text-white rounded-xl">
+                            <Eye size={15}/>
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  } else {
+                    // Vista horas extras
+                    const esPlanilla = item.tipo_persona === 'planilla';
+                    const persona = esPlanilla
+                      ? cols.find(e => e.id === item.empleado_id)
+                      : locs.find(l => l.id === item.locador_id);
+                    const nombre = persona ? `${persona.nombre} ${persona.apellido}` : (item.empleado_nombre || '—');
+                    const totalPagar = (item.valor_hora || 0) * (item.horas_decimal || 0);
+                    return (
+                      <tr key={item.id} className="hover:bg-amber-50/30">
+                        <td className="px-5 py-3">
+                          <div className="flex items-center gap-3">
+                            <img src={persona?.foto_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(nombre)}&background=185FA5&color=fff&size=56`}
+                              className="w-9 h-9 rounded-full object-cover border-2 border-white shadow-sm" alt=""/>
+                            <div>
+                              <p className="font-black text-gray-800">{nombre}</p>
+                              <p className="text-[9px] text-gray-400 font-bold uppercase">{item.fecha}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <span className={`text-[8px] font-black px-2 py-1 rounded-full ${esPlanilla ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}`}>
+                            {esPlanilla ? 'Planilla' : 'Locador'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono">{item.horas}h {item.minutos > 0 ? `${item.minutos}m` : ''}</td>
+                        <td className="px-4 py-3 text-right font-mono">S/ {fmt(item.valor_hora || 0)}</td>
+                        <td className="px-4 py-3 text-right font-bold text-amber-700">S/ {fmt(totalPagar)}</td>
+                        <td className="px-4 py-3 text-center">
+                          <span className={`text-[8px] font-black px-2 py-1 rounded-full ${
+                            item.estado === 'Aprobado' ? 'bg-green-100 text-green-800' :
+                            item.estado === 'Rechazado' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'
+                          }`}>
+                            {item.estado}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3 text-right">
+                          <span className="text-sm font-black text-[#185FA5]">S/ {fmt(totalPagar)}</span>
+                        </td>
+                      </tr>
+                    );
+                  }
+                })
+              )}
             </tbody>
           </table>
         </div>
       </div>
 
-      <div className="mt-3 flex justify-end gap-6 text-xs text-gray-500 font-bold pr-2">
-        <span>Total {vista === 'planilla' ? 'planilla' : 'locadores'}:
-          <span className="text-[#185FA5] ml-1">
-            S/ {fmt(vista === 'planilla' ? totP : totL)}
-          </span>
+      {/* Totales (más visibles) */}
+      <div className="mt-4 flex justify-end gap-8 text-sm font-bold pr-2 bg-white p-3 rounded-xl border border-gray-200 shadow-sm">
+        <span className="text-gray-600">
+          Total {vista === 'planilla' ? 'Planilla' : vista === 'locacion' ? 'Locadores' : 'Horas Extras'}:
+        </span>
+        <span className="text-[#185FA5] text-lg font-black">
+          S/ {fmt(vista === 'planilla' ? totP : vista === 'locacion' ? totL : totHE)}
         </span>
         {vista === 'planilla' && (
-          <span>EsSalud emp.:
-            <span className="text-emerald-600 ml-1">S/ {fmt(totEs)}</span>
-          </span>
+          <>
+            <span className="text-gray-600">EsSalud Emp.:</span>
+            <span className="text-emerald-600 text-lg font-black">S/ {fmt(totEs)}</span>
+          </>
         )}
       </div>
 
+      {/* Modales */}
       {selEmp && (
         <ModalBoleta
           emp={selEmp}
