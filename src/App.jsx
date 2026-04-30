@@ -10,7 +10,19 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Inscripciones from './pages/Inscripciones';
 import Caja from './pages/Caja';
-import CRM from './pages/CRM';
+import Marketing from './pages/Marketing';          // Dashboard de Marketing
+import TabPlaneacionEstrategica from './pages/marketing/TabPlaneacionEstrategica';
+import TabCRM from './pages/marketing/TabCRM';
+import TabCampanas from './pages/marketing/TabCampanas';
+import TabCalendarioContenido from './pages/marketing/TabCalendarioContenido';
+import TabProduccionCreativa from './pages/marketing/TabProduccionCreativa';
+import TabBibliotecaActivos from './pages/marketing/TabBibliotecaActivos';
+import TabPublicidadPresupuesto from './pages/marketing/TabPublicidadPresupuesto';
+import TabAutomatizacion from './pages/marketing/TabAutomatizacion';
+import TabMetricasAnalytics from './pages/marketing/TabMetricasAnalytics';
+import TabGestionMarca from './pages/marketing/TabGestionMarca';
+import TabColaboracionFlujos from './pages/marketing/TabColaboracionFlujos';
+import TabBriefingContenido from './pages/marketing/TabBriefingContenido';   // ⭐ NUEVO
 import RRHH from './pages/RRHH';
 import Logistica from './pages/Logistica';
 import Reclamaciones from './pages/Reclamaciones';
@@ -27,7 +39,7 @@ const MAPA_RUTAS = {
   'Dashboard': '/dashboard',
   'Inscripciones': '/inscripciones',
   'Caja y Pagos': '/caja',
-  'CRM Clientes': '/crm',
+  'Marketing': '/marketing',
   'RRHH': '/rrhh',
   'Finanzas': '/finanzas',
   'Logística': '/logistica',
@@ -126,19 +138,37 @@ function ProtectedRoute({ children }) {
 // APLICACIÓN PRINCIPAL
 // ==========================================
 export default function App() {
-  // Matriz de Rutas Protegidas
+  // Matriz de Rutas Protegidas (incluye submódulos de marketing)
   const rutasPrivadas = [
-    { path: '/dashboard',       component: <Dashboard /> },
-    { path: '/inscripciones',   component: <Inscripciones /> },
-    { path: '/caja',            component: <Caja /> },
-    { path: '/crm',             component: <CRM /> },
-    { path: '/rrhh/*',          component: <RRHH /> }, // <-- Modificación VIP: Permite sub-rutas dentro de RRHH
-    { path: '/finanzas',        component: <Finanzas /> },
-    { path: '/logistica',       component: <Logistica /> },
-    { path: '/reclamaciones',   component: <Reclamaciones /> },
-    { path: '/reportes',        component: <Reportes /> },
-    { path: '/gestion',         component: <GestionEstrategica /> },
-    { path: '/admin/usuarios',  component: <AdminUsuarios /> },
+    { path: '/dashboard',                component: <Dashboard /> },
+    { path: '/inscripciones',            component: <Inscripciones /> },
+    { path: '/caja',                     component: <Caja /> },
+    // Marketing
+    { path: '/marketing',                component: <Marketing /> },
+    { path: '/marketing/dashboard',      component: <Marketing /> },
+    { path: '/marketing/planeacion',     component: <TabPlaneacionEstrategica /> },
+    { path: '/marketing/crm',            component: <TabCRM /> },
+    { path: '/marketing/campanas',       component: <TabCampanas /> },
+    { path: '/marketing/calendario',     component: <TabCalendarioContenido /> },
+    { path: '/marketing/produccion',     component: <TabProduccionCreativa /> },
+    { path: '/marketing/biblioteca',     component: <TabBibliotecaActivos /> },
+    { path: '/marketing/publicidad',     component: <TabPublicidadPresupuesto /> },
+    { path: '/marketing/automatizacion', component: <TabAutomatizacion /> },
+    { path: '/marketing/metricas',       component: <TabMetricasAnalytics /> },
+    { path: '/marketing/marca',          component: <TabGestionMarca /> },
+    { path: '/marketing/colaboracion',   component: <TabColaboracionFlujos /> },
+    { path: '/marketing/briefing',       component: <TabBriefingContenido /> },  // ⭐ NUEVO
+    // Redirige CRM antiguo
+    { path: '/crm',                      component: <Navigate to="/marketing" replace /> },
+    // RRHH
+    { path: '/rrhh/*',                   component: <RRHH /> },
+    // Otros módulos
+    { path: '/finanzas',                 component: <Finanzas /> },
+    { path: '/logistica',               component: <Logistica /> },
+    { path: '/reclamaciones',            component: <Reclamaciones /> },
+    { path: '/reportes',                 component: <Reportes /> },
+    { path: '/gestion',                  component: <GestionEstrategica /> },
+    { path: '/admin/usuarios',           component: <AdminUsuarios /> },
   ];
 
   return (

@@ -1,34 +1,52 @@
 // src/pages/rrhh/TabPlanillaPagos.jsx
 // ─────────────────────────────────────────────────────────────────────────────
 // MEJORAS:
-// - Modalidad de pago en locadores editable directamente desde la tabla (click en badge)
+// - Modalidad de pago en locadores editable desde la tabla (click en badge)
 // - Filtro por modalidad (RHE / Efectivo / Todos)
 // - Totales más visibles
 // - Botón "Aprobar a Finanzas" en todas las pestañas
+// - Soporte para locadores que cesaron en el mes (cálculo proporcional automático)
+// - Soporte para locadores que ingresaron en el mes (cálculo proporcional automático)
+// - Toggle de retención 4ta categoría (columna "Ret. 4ta" clickeable)
+// - Corrección horas extras: si la novedad es "Sin compensación (pago por horas)",
+//   se paga la hora ordinaria sin sobretasa del 25%/35%
+// - NUEVA PESTAÑA: Calculadora de Costo por Trabajador (Régimen MYPE)
+// - TASAS AFP ACTUALIZADAS según SBS abril 2026 (comisión flujo por AFP)
+// - Cálculo correcto de descuentos AFP: fondo + prima de seguro + comisión flujo
+// - Etiquetas fijas según formato oficial de planilla:
+//   "AFP Aport. 10%", "AFP Com. Seg.", "AFP Com. Com."
+// - LOCADORES: ahora se consideran también las faltas/tardanzas registradas desde
+//   Novedades Planilla (tabla asistencia), además de asistencia_locadores
+// - ELIMINADO: Asignación Familiar (no aplica en régimen MYPE)
+// - NUEVA PESTAÑA: Practicantes (pago por horas) con tarifa diferenciada fines de semana
+// - NUEVO MODAL VIP: registro semanal / mensual con cuadrícula de horas
+// - CORRECCIÓN AFP DUPLICADA: búsqueda flexible de tasas y ocultación de
+//   "AFP Com. Com." cuando la comisión flujo es 0 (AFP mixta/saldo)
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
   Download, X, Eye, Send, Users, Briefcase,
-  Mail, Loader2, AlertCircle, Clock, Filter
+  Mail, Loader2, AlertCircle, Clock, Filter, CalendarDays, Calculator,
+  UserPlus, Plus, Trash2, Edit, ChevronLeft, ChevronRight, Grid, List
 } from 'lucide-react';
 import jsPDF from 'jspdf';
+import CalculadoraCostos from './CalculadoraCostos';
 
-// ── Constantes de cálculo ─────────────────────────────────────────────────
+// ══════════ AFP_TASAS ACTUALIZADAS (SBS ABRIL 2026) ══════════
 const AFP_TASAS = {
   'AFP PRIMA MIXTA / SALDO':     { fondo: 0.10, poliza: 0.0137, comision: 0.0000 },
-  'AFP PRIMA/FLUJO':             { fondo: 0.10, poliza: 0.0137, comision: 0.0160 },
+  'AFP PRIMA/FLUJO':             { fondo: 0.10, poliza: 0.0137, comision: 0.0160 },  // 1.60% flujo
   'AFP HABITAT MIXTA / SALDO':   { fondo: 0.10, poliza: 0.0137, comision: 0.0000 },
-  'AFP HABITAT FLUJO':           { fondo: 0.10, poliza: 0.0137, comision: 0.0147 },
+  'AFP HABITAT FLUJO':           { fondo: 0.10, poliza: 0.0137, comision: 0.0147 },  // 1.47% flujo
   'AFP PROFUTURO MIXTA / SALDO': { fondo: 0.10, poliza: 0.0137, comision: 0.0000 },
-  'AFP PROFUTURO FLUJO':         { fondo: 0.10, poliza: 0.0137, comision: 0.0169 },
+  'AFP PROFUTURO FLUJO':         { fondo: 0.10, poliza: 0.0137, comision: 0.0169 },  // 1.69% flujo
   'AFP INTEGRA MIXTA / SALDO':   { fondo: 0.10, poliza: 0.0137, comision: 0.0000 },
-  'AFP INTEGRA FLUJO':           { fondo: 0.10, poliza: 0.0137, comision: 0.0155 },
+  'AFP INTEGRA FLUJO':           { fondo: 0.10, poliza: 0.0137, comision: 0.0155 },  // 1.55% flujo
 };
 const ONP_TASA     = 0.13;
 const ESSALUD_TASA = 0.09;
-const ASIG_FAM     = 102.50;
 
 const MESES_ES = [
   'ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO',
@@ -71,8 +89,42 @@ const afpCorto = (tipoPension) => {
     .toUpperCase();
 };
 
+// ─── BÚSQUEDA FLEXIBLE DE TASAS AFP ───────────────────────────────────────
+// Para que coincida con nombres como "AFP INTEGRA" o "AFP INTEGRA/FLUJO"
+const buscarTasasAFP = (tipoPension) => {
+  if (!tipoPension) return { fondo: 0.10, poliza: 0.0137, comision: 0.0137 }; // seguro + comisión por defecto
+  const tipo = tipoPension.trim().toUpperCase();
+
+  // Búsqueda exacta primero
+  if (AFP_TASAS[tipo]) return AFP_TASAS[tipo];
+
+  // Búsqueda flexible: extraer el nombre de la AFP y si es MIXTA o FLUJO
+  const esFlujo = /FLUJO/i.test(tipo);
+  const esMixta = /MIXTA/i.test(tipo);
+
+  // Intenta identificar la AFP por nombre conocido
+  for (const [clave, tasas] of Object.entries(AFP_TASAS)) {
+    const nombreAfp = clave.replace(/\s+MIXTA\s*\/\s*SALDO/i, '').replace(/\s*\/\s*FLUJO$/i, '').replace(/\s+FLUJO$/i, '').trim();
+    if (tipo.includes(nombreAfp.toUpperCase())) {
+      // Si el tipo original no especifica, asumimos MIXTA si no dice FLUJO
+      if (esFlujo) {
+        // Buscar la versión FLUJO de esa AFP
+        const claveFlujo = `${nombreAfp} FLUJO`.toUpperCase().replace(/\s+/g, ' ');
+        if (AFP_TASAS[claveFlujo]) return AFP_TASAS[claveFlujo];
+      } else {
+        // MIXTA (o sin especificar) -> devolver la MIXTA de esa AFP
+        const claveMixta = `${nombreAfp} MIXTA / SALDO`.toUpperCase().replace(/\s+/g, ' ');
+        if (AFP_TASAS[claveMixta]) return AFP_TASAS[claveMixta];
+      }
+    }
+  }
+
+  // Fallback: si no se encontró, asumir MIXTA con comision=0 para no duplicar valores
+  return { fondo: 0.10, poliza: 0.0137, comision: 0.0000 };
+};
+
 // ══════════════════════════════════════════════════════════════════════════════
-// CÁLCULO PLANILLA
+// CÁLCULO PLANILLA (sin asignación familiar)
 // ══════════════════════════════════════════════════════════════════════════════
 function calcularPlanilla(emp, asistencias = [], mesStr) {
   try {
@@ -97,7 +149,6 @@ function calcularPlanilla(emp, asistencias = [], mesStr) {
     const com    = Number(emp?.comodato || 0);
     const cProp  = hayAus ? (com / tdm) * diasTrab : com;
 
-    const af     = emp?.tiene_hijos ? ASIG_FAM : 0;
     const he25   = Number(emp?.horas_extra_25 || 0);
     const he35   = Number(emp?.horas_extra_35 || 0);
     const oib    = Number(emp?.otros_ingresos_bono || 0);
@@ -111,16 +162,21 @@ function calcularPlanilla(emp, asistencias = [], mesStr) {
     const dTard  = tard10 * valTard;
     const dFalt  = fInj * (sb / 30);
 
-    const TRA = sProp + af + he25 + he35 + oib + vt + gt - dTard;
+    const TRA = sProp + he25 + he35 + oib + vt + gt - dTard;
     const TRNA = cProp + mvF + mvV + sub;
     const TREM = TRA + TRNA;
+
+    const remComputable = sProp + cProp;
+    const valorHoraBase = remComputable / 30 / 8;
+    const hrExt25 = valorHoraBase * 1.25;
+    const hrExt35 = valorHoraBase * 1.35;
 
     const tip = emp?.sistema_pensionario || '';
     let onp = 0, afpF = 0, afpP = 0, afpC = 0, afpT = 0;
     if (tip === 'ONP') {
       onp = TRA * ONP_TASA;
     } else {
-      const t = AFP_TASAS[tip] || { fondo: 0.10, poliza: 0.0137, comision: 0 };
+      const t = buscarTasasAFP(tip);   // ⭐ usa búsqueda flexible
       afpF = TRA * t.fondo;
       afpP = TRA * t.poliza;
       afpC = TRA * t.comision;
@@ -149,7 +205,8 @@ function calcularPlanilla(emp, asistencias = [], mesStr) {
     return {
       tdm, diasTrab, ausentes, fInj, diasDM, hayAus,
       horas: Number(emp?.horas_trabajadas || diasTrab * 8),
-      sb, sProp, af, he25, he35, oib, vt, gt, ctsTr,
+      sb, sProp,
+      he25, he35, oib, vt, gt, ctsTr,
       dTard, cProp, mvF, mvV, sub,
       TRA, TRNA, TREM,
       tip, afpCortoNom: afpCorto(tip),
@@ -157,6 +214,7 @@ function calcularPlanilla(emp, asistencias = [], mesStr) {
       r5, r5As, adel, dpe, d15, dFalt, TD, NETO,
       tard10, valTard,
       es9, esVL,
+      valorHoraBase, hrExt25, hrExt35,
       banco: emp?.banco_nombre || emp?.banco || '—',
       cuenta: emp?.numero_cuenta || '—',
       cuspp: emp?.cuspp || '—',
@@ -174,11 +232,13 @@ function calcularPlanilla(emp, asistencias = [], mesStr) {
   } catch (e) {
     console.error('calcularPlanilla:', e);
     return {
-      sb:0, sProp:0, af:0, he25:0, he35:0, oib:0, vt:0, gt:0, ctsTr:0,
+      sb:0, sProp:0,
+      he25:0, he35:0, oib:0, vt:0, gt:0, ctsTr:0,
       dTard:0, cProp:0, mvF:0, mvV:0, sub:0, TRA:0, TRNA:0, TREM:0,
       tip:'', afpCortoNom:'—', onp:0, afpF:0, afpP:0, afpC:0, afpT:0, penT:0,
       r5:0, r5As:0, adel:0, dpe:0, d15:0, dFalt:0, TD:0, NETO:0,
       tard10:0, valTard:10, es9:0, esVL:0,
+      valorHoraBase:0, hrExt25:0, hrExt35:0,
       banco:'—', cuenta:'—', cuspp:'—', nroEssalud:'—', cCosto:'—', cod:'—',
       tdm:30, diasTrab:30, ausentes:0, fInj:0, diasDM:0, hayAus:false,
       horas:0, obs:'', vacD:'-', vacH:'-', vacR:'-', vacDias:'-', pVac:'-',
@@ -187,8 +247,8 @@ function calcularPlanilla(emp, asistencias = [], mesStr) {
   }
 }
 
-// ── Cálculo locadores ─────────────────────────────────────────────────────
-function calcularLocador(loc, asis = []) {
+// ── Cálculo locadores ──
+function calcularLocador(loc, asis = [], mesStr = null) {
   try {
     const sb = Number(loc?.sueldo_base || loc?.monto_mensual || 0);
     const al = asis.filter(a => String(a.locador_id) === String(loc?.id));
@@ -200,16 +260,128 @@ function calcularLocador(loc, asis = []) {
         if (a.falta) fi++;
       }
     });
-    const dt = t10 * vt, df = fi * (sb / 30);
-    const ret4 = sb > 1500 ? sb * 0.08 : 0;
+
+    let diasTrabajados = 30;
+    let motivoAjuste = null;
+
+    if (mesStr) {
+      const totalDiasMes = diasDelMes(mesStr);
+      let diaInicio = 1;
+      let diaFin = totalDiasMes;
+      let inicioAjustado = false;
+      let finAjustado = false;
+
+      if (loc.fecha_inicio) {
+        const mesInicio = loc.fecha_inicio.substring(0, 7);
+        if (mesInicio === mesStr) {
+          diaInicio = parseInt(loc.fecha_inicio.split('-')[2], 10);
+          inicioAjustado = true;
+        }
+      }
+
+      if (loc.fecha_cese) {
+        const mesCese = loc.fecha_cese.substring(0, 7);
+        if (mesCese === mesStr) {
+          diaFin = parseInt(loc.fecha_cese.split('-')[2], 10);
+          finAjustado = true;
+        }
+      }
+
+      if (inicioAjustado || finAjustado) {
+        diasTrabajados = diaFin - diaInicio + 1;
+        if (diasTrabajados < 0) diasTrabajados = 0;
+
+        if (inicioAjustado && finAjustado) {
+          motivoAjuste = `Ingreso ${fmtFecha(loc.fecha_inicio)} - Cese ${fmtFecha(loc.fecha_cese)}`;
+        } else if (inicioAjustado) {
+          motivoAjuste = `Ingreso el ${fmtFecha(loc.fecha_inicio)}`;
+        } else if (finAjustado) {
+          motivoAjuste = `Cese el ${fmtFecha(loc.fecha_cese)}`;
+        }
+      }
+    }
+
+    diasTrabajados = Math.max(0, diasTrabajados - fi);
+
+    const honorarioBase = (sb / 30) * diasTrabajados;
+    const dt = t10 * vt;
+    const df = fi * (sb / 30);
+    const aplica = loc?.aplica_retencion !== false;
+    const ret4 = (aplica && honorarioBase > 1500) ? honorarioBase * 0.08 : 0;
     const td = dt + df + ret4;
-    return { sb, t10, fi, vt, dt, df, ret4, td, neto: sb - td,
-      banco: loc?.banco || '—', cuenta: loc?.numero_cuenta || '—' };
-  } catch { return { sb:0, t10:0, fi:0, vt:10, dt:0, df:0, ret4:0, td:0, neto:0, banco:'—', cuenta:'—' }; }
+    const neto = honorarioBase - td;
+
+    return {
+      sb, honorarioBase, t10, fi, vt, dt, df,
+      ret4, td, neto, diasTrabajados, motivoAjuste,
+      aplicaRetencion: aplica,
+      banco: loc?.banco || '—',
+      cuenta: loc?.numero_cuenta || '—',
+      estado: loc?.estado || 'activo',
+      fechaCese: loc?.fecha_cese || null,
+      fechaInicio: loc?.fecha_inicio || null,
+    };
+  } catch {
+    return {
+      sb:0, honorarioBase:0, t10:0, fi:0, vt:10, dt:0, df:0,
+      ret4:0, td:0, neto:0, diasTrabajados:30, motivoAjuste:null,
+      aplicaRetencion: true,
+      banco:'—', cuenta:'—', estado:'activo', fechaCese:null, fechaInicio:null
+    };
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// GENERADOR PDF (sin cambios)
+// Cálculo para practicantes
+// ══════════════════════════════════════════════════════════════════════════════
+function calcularPracticante(loc, horas = []) {
+  try {
+    const sb = Number(loc?.sueldo_base || 0);
+    const valorHora = sb / 240;
+    const factorFinSemana = Number(loc?.factor_fin_semana) || 1.5;
+
+    let totalHorasNormales = 0;
+    let totalHorasFinSemana = 0;
+
+    horas.forEach(h => {
+      const fecha = new Date(h.fecha + 'T12:00:00');
+      const dia = fecha.getUTCDay();
+      const horasReg = Number(h.horas || 0);
+      if (dia === 0 || dia === 6) {
+        totalHorasFinSemana += horasReg;
+      } else {
+        totalHorasNormales += horasReg;
+      }
+    });
+
+    const totalHoras = totalHorasNormales + totalHorasFinSemana;
+    const remuneracion = (valorHora * totalHorasNormales) +
+                         (valorHora * factorFinSemana * totalHorasFinSemana);
+
+    const aplica = loc?.aplica_retencion !== false;
+    const ret4 = (aplica && remuneracion > 1500) ? remuneracion * 0.08 : 0;
+    const neto = remuneracion - ret4;
+
+    return {
+      sb, valorHora, factorFinSemana,
+      totalHoras, totalHorasNormales, totalHorasFinSemana,
+      remuneracion, ret4, neto,
+      aplicaRetencion: aplica,
+      banco: loc?.banco || '—',
+      cuenta: loc?.numero_cuenta || '—',
+    };
+  } catch {
+    return {
+      sb:0, valorHora:0, factorFinSemana:1.5,
+      totalHoras:0, totalHorasNormales:0, totalHorasFinSemana:0,
+      remuneracion:0, ret4:0, neto:0,
+      aplicaRetencion:true, banco:'—', cuenta:'—'
+    };
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// GENERADOR PDF
 // ══════════════════════════════════════════════════════════════════════════════
 function generarPDF(emp, c, mesStr, returnBase64 = false) {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
@@ -355,21 +527,26 @@ function generarPDF(emp, c, mesStr, returnBase64 = false) {
     ['Condicion de trabajo',     c.cProp > 0 ? fmt(c.cProp) : ''],
     ['Subsidio',                 c.sub > 0 ? fmt(c.sub) : ''],
   ];
-  if (c.af > 0) colRem.splice(1, 0, ['Asig. Familiar', fmt(c.af)]);
 
+  // ══════ ETIQUETAS FIJAS DE AFP ══════
   const colDesc = [
     ['ONP 13%',              c.tip === 'ONP' ? fmt(c.onp) : ''],
     ['  RENTA 5ta',          c.r5 > 0 ? fmt(c.r5) : ''],
     ['AFP Aport. 10%',       c.tip !== 'ONP' ? fmt(c.afpF) : ''],
     ['AFP Com. Seg.',        c.tip !== 'ONP' ? fmt(c.afpP) : ''],
-    ['AFP Com. Com.',        c.afpC > 0 ? fmt(c.afpC) : ''],
+  ];
+  // ⭐ AFP Com. Com. solo si la comisión es > 0
+  if (c.tip !== 'ONP' && c.afpC > 0) {
+    colDesc.push(['AFP Com. Com.', fmt(c.afpC)]);
+  }
+  colDesc.push(
     ['Adelanto.',            c.adel > 0 ? fmt(c.adel) : ''],
     ['Dscto pago exceso abr', c.dpe !== 0 ? fmt(c.dpe) : ''],
     ['Subsidio 35%',         ''],
     ['Obsequio al trabajador',''],
     ['Liq Benerf Soc',       ''],
-    ['Prestm.1ra.quinc',     c.d15 > 0 ? fmt(c.d15) : ''],
-  ];
+    ['Prestm.1ra.quinc',     c.d15 > 0 ? fmt(c.d15) : '']
+  );
   if (c.dFalt > 0) colDesc.splice(5, 0, ['Desc.Faltas Injust.', fmt(c.dFalt)]);
 
   const colAp = [
@@ -511,7 +688,7 @@ function generarPDF(emp, c, mesStr, returnBase64 = false) {
   }
 }
 
-// ─── MODAL BOLETA (sin cambios) ───────────────────────────────────────────
+// ─── MODAL BOLETA ─────────────
 function ModalBoleta({ emp, c, mesStr, onClose }) {
   const periodo = periodoLabel(mesStr);
   const nomCompleto = `${(emp.apellido || '').toUpperCase()} ${(emp.nombre || '').toUpperCase()}`;
@@ -540,7 +717,6 @@ function ModalBoleta({ emp, c, mesStr, onClose }) {
 
   const filasRem = [
     { lbl: 'Basico Mensual Jornal',    val: c.sProp, show: true },
-    { lbl: 'Asig. Familiar',           val: c.af,    show: c.af > 0 },
     { lbl: 'Horas Extras  25%',        val: c.he25,  show: true },
     { lbl: 'Horas Extras  35%',        val: c.he35,  show: true },
     { lbl: 'Descuentos por tardanzas', val: c.dTard,  show: true, neg: true },
@@ -553,12 +729,14 @@ function ModalBoleta({ emp, c, mesStr, onClose }) {
     { lbl: 'Subsidio',                 val: c.sub,   show: true },
   ];
 
+  // ══════ ETIQUETAS FIJAS DE AFP ══════
   const filasDesc = [
     { lbl: 'ONP 13%',               val: c.tip === 'ONP' ? c.onp : 0,  show: true },
     { lbl: '  RENTA 5ta',           val: c.r5,              show: true },
     { lbl: 'AFP Aport. 10%',        val: c.tip !== 'ONP' ? c.afpF : 0, show: true },
     { lbl: 'AFP Com. Seg.',         val: c.tip !== 'ONP' ? c.afpP : 0, show: true },
-    { lbl: 'AFP Com. Com.',         val: c.afpC,            show: true },
+    // ⭐ AFP Com. Com. solo si comisión > 0
+    ...(c.tip !== 'ONP' && c.afpC > 0 ? [{ lbl: 'AFP Com. Com.', val: c.afpC, show: true }] : []),
     { lbl: 'Adelanto.',             val: c.adel,            show: true },
     { lbl: 'Dscto pago exceso abr', val: c.dpe,             show: true },
     { lbl: 'Desc.Faltas Injust.',   val: c.dFalt,           show: c.dFalt > 0 },
@@ -599,8 +777,8 @@ function ModalBoleta({ emp, c, mesStr, onClose }) {
   );
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-2">
-      <div className="bg-white w-full max-w-3xl rounded-xl overflow-hidden shadow-2xl flex flex-col max-h-[98vh]">
+    <div className="fixed inset-0 bg-[#0a1930]/60 backdrop-blur-md z-50 flex items-center justify-center p-2">
+      <div className="bg-white w-full max-w-3xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[98vh] border border-gray-100 animate-in zoom-in-95 duration-200">
         <div className="bg-[#11284e] px-5 py-3 flex-shrink-0">
           <div className="flex justify-between items-start">
             <div className="text-white">
@@ -617,7 +795,7 @@ function ModalBoleta({ emp, c, mesStr, onClose }) {
                   <p className="text-[8px] text-white/40">D.S. Nro. 001-98-TR DEL 22.01.98</p>
                 </div>
                 <button onClick={onClose}
-                  className="hover:bg-white/10 p-1.5 rounded-full text-white/60 hover:text-white mt-0.5">
+                  className="hover:bg-white/10 p-1.5 rounded-full text-white/60 hover:text-white mt-0.5 transition-colors">
                   <X size={16}/>
                 </button>
               </div>
@@ -725,7 +903,7 @@ function ModalBoleta({ emp, c, mesStr, onClose }) {
           <div className="px-5 py-2 border-b bg-white">
             <p className="text-[8px] font-black text-gray-500 uppercase">Observaciones:</p>
             {c.obs ? (
-              <div className="flex items-start gap-1.5 mt-0.5 bg-red-50 border border-red-100 rounded px-3 py-1.5">
+              <div className="flex items-start gap-1.5 mt-0.5 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
                 <AlertCircle size={11} className="text-red-500 flex-shrink-0 mt-0.5"/>
                 <p className="text-[9px] font-bold text-red-700">{c.obs}</p>
               </div>
@@ -755,17 +933,17 @@ function ModalBoleta({ emp, c, mesStr, onClose }) {
 
         <div className="px-5 py-3 bg-gray-50 border-t flex gap-2 flex-shrink-0">
           <button onClick={() => generarPDF(emp, c, mesStr, false)}
-            className="flex-1 bg-[#11284e] text-white py-2.5 rounded-xl text-[10px] font-black uppercase
-                       hover:bg-[#185FA5] transition-colors flex items-center justify-center gap-1.5">
+            className="flex-1 bg-gradient-to-r from-[#11284e] to-[#185FA5] text-white py-2.5 rounded-xl text-[10px] font-black uppercase
+                       hover:from-[#185FA5] hover:to-[#1a6ab8] transition-all shadow-lg shadow-blue-500/20 flex items-center justify-center gap-1.5 active:scale-[0.98]">
             <Download size={13}/> Descargar PDF
           </button>
           <button onClick={enviarCorreo}
-            className="bg-indigo-600 text-white px-4 py-2.5 rounded-xl text-[10px] font-black
-                       hover:bg-indigo-700 transition-colors flex items-center gap-1.5">
+            className="bg-gradient-to-r from-indigo-600 to-indigo-700 text-white px-4 py-2.5 rounded-xl text-[10px] font-black
+                       hover:from-indigo-700 hover:to-indigo-800 transition-all shadow-lg shadow-indigo-500/20 flex items-center gap-1.5 active:scale-[0.98]">
             <Mail size={13}/> Enviar correo
           </button>
           <button onClick={onClose}
-            className="bg-gray-200 text-gray-700 px-5 py-2.5 rounded-xl text-[10px] font-black hover:bg-gray-300">
+            className="bg-gray-200 text-gray-700 px-5 py-2.5 rounded-xl text-[10px] font-black hover:bg-gray-300 transition-colors">
             Cerrar
           </button>
         </div>
@@ -774,20 +952,20 @@ function ModalBoleta({ emp, c, mesStr, onClose }) {
   );
 }
 
-// ─── MODAL LOCADOR ────────────────────────────────────────────────────────
+// ─── MODAL LOCADOR ──
 function ModalLocador({ loc, c, mesStr, onClose }) {
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white w-full max-w-md rounded-2xl overflow-hidden shadow-2xl">
+    <div className="fixed inset-0 bg-[#0a1930]/60 backdrop-blur-md z-50 flex items-center justify-center p-4">
+      <div className="bg-white w-full max-w-md rounded-2xl overflow-hidden shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-200">
         <div className="bg-[#11284e] px-5 py-4 flex justify-between items-center text-white">
           <div>
             <p className="font-black text-[11px] uppercase tracking-widest">COMPROBANTE DE PAGO — LOCADOR</p>
             <p className="text-[9px] text-blue-300 mt-0.5">{periodoLabel(mesStr)}</p>
           </div>
-          <button onClick={onClose} className="hover:bg-white/10 p-1.5 rounded-full"><X size={16}/></button>
+          <button onClick={onClose} className="hover:bg-white/10 p-1.5 rounded-full transition-colors"><X size={16}/></button>
         </div>
         <div className="p-5 space-y-3 text-[11px]">
-          <div className="bg-blue-50 rounded-xl px-4 py-3 grid grid-cols-2 gap-3 text-[10px]">
+          <div className="bg-blue-50 rounded-2xl px-4 py-3 grid grid-cols-2 gap-3 text-[10px]">
             <div>
               <p className="font-black text-blue-600 uppercase text-[8px] mb-0.5">Empresa</p>
               <p className="font-bold text-gray-800">CONSORCIO REBAGLIATI DIPLOMADOS SAC</p>
@@ -798,14 +976,39 @@ function ModalLocador({ loc, c, mesStr, onClose }) {
               <p className="font-bold text-gray-800">{loc.apellido}, {loc.nombre}</p>
               <p className="text-gray-500">DNI: {loc.dni || '—'}</p>
               <p className="text-gray-500">{c.banco} · {c.cuenta}</p>
+              {c.fechaCese && (
+                <p className="text-red-600 font-bold text-[9px] mt-1">
+                  Cesó el {fmtFecha(c.fechaCese)}
+                </p>
+              )}
+              {c.fechaInicio && mesStr === c.fechaInicio?.substring(0,7) && (
+                <p className="text-emerald-600 font-bold text-[9px] mt-1">
+                  Ingresó el {fmtFecha(c.fechaInicio)}
+                </p>
+              )}
             </div>
           </div>
-          <div className="border rounded-xl overflow-hidden text-[10px]">
+          <div className="border rounded-2xl overflow-hidden text-[10px]">
             <div className="bg-emerald-600 px-3 py-1.5 text-white font-black text-[8px] uppercase">Honorarios</div>
             <div className="divide-y">
               <div className="flex justify-between px-3 py-2">
-                <span className="text-gray-600">Sueldo Base</span>
+                <span className="text-gray-600">
+                  Sueldo Base
+                  {c.motivoAjuste ? (
+                    <span className="font-normal text-gray-500"> ({c.motivoAjuste} → {c.diasTrabajados} días)</span>
+                  ) : ''}
+                </span>
                 <span className="font-black text-gray-800 font-mono">S/ {fmt(c.sb)}</span>
+              </div>
+              {c.motivoAjuste && (
+                <div className="flex justify-between px-3 py-2 bg-yellow-50">
+                  <span className="text-gray-500 text-[9px]">Ajuste proporcional</span>
+                  <span className="font-mono text-yellow-700">{c.diasTrabajados} días</span>
+                </div>
+              )}
+              <div className="flex justify-between px-3 py-2">
+                <span className="text-gray-600">Honorario Proporcional</span>
+                <span className="font-black text-gray-800 font-mono">S/ {fmt(c.honorarioBase)}</span>
               </div>
               {c.dt > 0 && <div className="flex justify-between px-3 py-2">
                 <span className="text-gray-600">(-) Tardanzas ({c.t10}×S/{c.vt})</span>
@@ -815,28 +1018,37 @@ function ModalLocador({ loc, c, mesStr, onClose }) {
                 <span className="text-gray-600">(-) Faltas ({c.fi})</span>
                 <span className="text-red-600 font-mono">- S/ {fmt(c.df)}</span>
               </div>}
-              {c.ret4 > 0 && <div className="flex justify-between px-3 py-2">
-                <span className="text-gray-600">(-) Retención 4ta Categ. (8%)</span>
-                <span className="text-red-600 font-mono">- S/ {fmt(c.ret4)}</span>
-              </div>}
+              {c.aplicaRetencion ? (
+                c.ret4 > 0 && (
+                  <div className="flex justify-between px-3 py-2">
+                    <span className="text-gray-600">(-) Retención 4ta Categ. (8%)</span>
+                    <span className="text-red-600 font-mono">- S/ {fmt(c.ret4)}</span>
+                  </div>
+                )
+              ) : (
+                <div className="flex justify-between px-3 py-2 text-gray-400 italic">
+                  <span>Retención 4ta no aplica (suspendida)</span>
+                  <span>—</span>
+                </div>
+              )}
               <div className="flex justify-between px-3 py-2 bg-red-50">
                 <span className="font-black text-red-700">Total Descuentos</span>
                 <span className="font-black text-red-700 font-mono">S/ {fmt(c.td)}</span>
               </div>
             </div>
           </div>
-          <div className="bg-[#11284e] rounded-xl px-5 py-3 flex justify-between items-center">
+          <div className="bg-[#11284e] rounded-2xl px-5 py-3 flex justify-between items-center shadow-lg">
             <p className="text-white font-black uppercase">NETO A PAGAR</p>
             <p className="text-xl font-black text-white font-mono">S/ {fmt(c.neto)}</p>
           </div>
         </div>
         <div className="px-5 py-3 bg-gray-50 border-t flex gap-2">
-          <button className="flex-1 bg-[#11284e] text-white py-2 rounded-xl text-[10px] font-black
-                             hover:bg-[#185FA5] flex items-center justify-center gap-1.5">
+          <button className="flex-1 bg-gradient-to-r from-[#11284e] to-[#185FA5] text-white py-2 rounded-xl text-[10px] font-black
+                             hover:from-[#185FA5] hover:to-[#1a6ab8] transition-all shadow-lg shadow-blue-500/20 flex items-center justify-center gap-1.5 active:scale-[0.98]">
             <Download size={13}/> PDF
           </button>
           <button onClick={onClose}
-            className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-xl text-[10px] font-black hover:bg-gray-300">
+            className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-xl text-[10px] font-black hover:bg-gray-300 transition-colors">
             Cerrar
           </button>
         </div>
@@ -861,33 +1073,159 @@ export default function TabPlanillaPagos() {
   const [selEmp, setSelEmp]     = useState(null);
   const [selLoc, setSelLoc]     = useState(null);
 
-  // Filtro para locadores
   const [filtroModalidad, setFiltroModalidad] = useState('Todos');
+
+  // ── Estados de Practicantes ──
+  const [practicantes, setPracticantes] = useState([]);
+  const [horasPracticantes, setHorasPracticantes] = useState([]);
+  const [showModalPract, setShowModalPract] = useState(false);
+  const [selPractId, setSelPractId] = useState(null);
+  const [modoRegistro, setModoRegistro] = useState('semanal');
+  const [semanaInicio, setSemanaInicio] = useState(null);
+  const [horasGrid, setHorasGrid] = useState({});
+
+  // Días de la semana activa (L-V)
+  const diasSemana = useMemo(() => {
+    if (!semanaInicio) return [];
+    const lunes = new Date(semanaInicio + 'T12:00:00');
+    return [0, 1, 2, 3, 4].map(offset => {
+      const d = new Date(lunes);
+      d.setDate(d.getDate() + offset);
+      return d.toISOString().split('T')[0];
+    });
+  }, [semanaInicio]);
+
+  const diasDelMesActual = useMemo(() => {
+    if (!mes) return [];
+    const [y, m] = mes.split('-').map(Number);
+    const total = new Date(y, m, 0).getDate();
+    return Array.from({ length: total }, (_, i) => {
+      const d = new Date(y, m - 1, i + 1);
+      return d.toISOString().split('T')[0];
+    });
+  }, [mes]);
+
+  const cargarHorasGrid = async (practId) => {
+    const { data } = await supabase
+      .from('horas_practicantes')
+      .select('*')
+      .eq('locador_id', practId)
+      .gte('fecha', `${mes}-01`)
+      .lte('fecha', `${mes}-${diasDelMes(mes)}`);
+    const mapa = {};
+    (data || []).forEach(h => { mapa[h.fecha] = h.horas; });
+    setHorasGrid(mapa);
+  };
+
+  const iniciarSemana = () => {
+    const hoy = new Date();
+    const dia = hoy.getDay();
+    const lunes = new Date(hoy);
+    lunes.setDate(hoy.getDate() - (dia === 0 ? 6 : dia - 1));
+    setSemanaInicio(lunes.toISOString().split('T')[0]);
+  };
+
+  const abrirModalPract = (practId) => {
+    setSelPractId(practId);
+    iniciarSemana();
+    setModoRegistro('semanal');
+    cargarHorasGrid(practId);
+    setShowModalPract(true);
+  };
+
+  const cambiarSemana = (dir) => {
+    if (!semanaInicio) return;
+    const d = new Date(semanaInicio + 'T12:00:00');
+    d.setDate(d.getDate() + dir * 7);
+    setSemanaInicio(d.toISOString().split('T')[0]);
+  };
+
+  const handleHoraChange = (fecha, valor) => {
+    const v = valor === '' ? '' : Math.max(0, Number(valor));
+    setHorasGrid(prev => ({ ...prev, [fecha]: v }));
+  };
+
+  const guardarHorasMasivo = async () => {
+    if (!selPractId) return;
+    const entradas = Object.entries(horasGrid)
+      .filter(([_, h]) => h !== '' && Number(h) >= 0)
+      .map(([fecha, horas]) => ({
+        locador_id: selPractId,
+        fecha,
+        horas: Number(horas)
+      }));
+
+    try {
+      await supabase
+        .from('horas_practicantes')
+        .delete()
+        .eq('locador_id', selPractId)
+        .gte('fecha', `${mes}-01`)
+        .lte('fecha', `${mes}-${diasDelMes(mes)}`);
+
+      if (entradas.length > 0) {
+        const { error } = await supabase.from('horas_practicantes').insert(entradas);
+        if (error) throw error;
+      }
+      setShowModalPract(false);
+      cargar();
+    } catch (err) {
+      alert('Error al guardar: ' + err.message);
+    }
+  };
 
   const cargar = async () => {
     setLoading(true); setError(null);
     try {
       const { data: e, error: eE } = await supabase.from('empleados').select('*').eq('estado', 'activo');
       if (eE) throw eE;
-      const { data: l, error: lE } = await supabase.from('locadores').select('*').eq('estado', 'activo');
-      if (lE) throw lE;
-      const p1 = `${mes}-01`;
-      const p2 = new Date(mes.split('-')[0], mes.split('-')[1], 0).toISOString().slice(0, 10);
-      const { data: a, error: aE } = await supabase.from('asistencia').select('*').gte('fecha', p1).lte('fecha', p2);
-      if (aE) throw aE;
-      const { data: al, error: alE } = await supabase.from('asistencia_locadores').select('*').gte('fecha', p1).lte('fecha', p2);
-      if (alE) throw alE;
-      const { data: he, error: heE } = await supabase.from('horas_extras').select('*').gte('fecha', p1).lte('fecha', p2);
-      if (heE) throw heE;
+      setCols(e || []);
 
-      setCols(e || []); setLocs(l || []); setAsis(a || []); setAsisL(al || []); setHorasExtras(he || []);
+      const [year, month] = mes.split('-').map(Number);
+      const primerDia = `${mes}-01`;
+      const ultimoDia = new Date(year, month, 0).toISOString().slice(0, 10);
+
+      const { data: l, error: lE } = await supabase
+        .from('locadores')
+        .select('*')
+        .or(
+          `estado.eq.activo, ` +
+          `and(estado.eq.inactivo,fecha_cese.gte.${primerDia},fecha_cese.lte.${ultimoDia}), ` +
+          `and(fecha_inicio.gte.${primerDia},fecha_inicio.lte.${ultimoDia})`
+        );
+      if (lE) throw lE;
+      setLocs(l || []);
+
+      const { data: pract } = await supabase
+        .from('locadores')
+        .select('*')
+        .eq('modalidad', 'POR HORAS')
+        .eq('estado', 'activo');
+      setPracticantes(pract || []);
+
+      const { data: hp } = await supabase
+        .from('horas_practicantes')
+        .select('*')
+        .gte('fecha', primerDia)
+        .lte('fecha', ultimoDia);
+      setHorasPracticantes(hp || []);
+
+      const p1 = primerDia, p2 = ultimoDia;
+      const { data: a } = await supabase.from('asistencia').select('*').gte('fecha', p1).lte('fecha', p2);
+      setAsis(a || []);
+
+      const { data: al1 } = await supabase.from('asistencia_locadores').select('*').gte('fecha', p1).lte('fecha', p2);
+      const { data: al2 } = await supabase.from('asistencia').select('*').not('locador_id', 'is', null).gte('fecha', p1).lte('fecha', p2);
+      setAsisL([...(al1 || []), ...(al2 || [])]);
+
+      const { data: he } = await supabase.from('horas_extras').select('*').gte('fecha', p1).lte('fecha', p2);
+      setHorasExtras(he || []);
     } catch (err) { setError(err.message); }
     finally { setLoading(false); }
   };
 
   useEffect(() => { cargar(); }, [mes]);
 
-  // Función para cambiar modalidad de pago directamente
   const toggleModalidadPago = async (loc) => {
     const nuevaModalidad = loc.modalidad_pago === 'Efectivo' ? 'RHE' : 'Efectivo';
     const { error } = await supabase
@@ -895,42 +1233,68 @@ export default function TabPlanillaPagos() {
       .update({ modalidad_pago: nuevaModalidad })
       .eq('id', loc.id);
     if (!error) {
-      // Actualizar estado local
       setLocs(prev => prev.map(l => l.id === loc.id ? { ...l, modalidad_pago: nuevaModalidad } : l));
     } else {
       alert('Error al actualizar modalidad: ' + error.message);
     }
   };
 
+  const toggleRetencion4ta = async (loc) => {
+    const nuevoValor = loc.aplica_retencion === false ? true : false;
+    const { error } = await supabase
+      .from('locadores')
+      .update({ aplica_retencion: nuevoValor })
+      .eq('id', loc.id);
+    if (!error) {
+      setLocs(prev =>
+        prev.map(l => (l.id === loc.id ? { ...l, aplica_retencion: nuevoValor } : l))
+      );
+    } else {
+      alert('Error al actualizar retención: ' + error.message);
+    }
+  };
+
   const enviarFinanzas = async (tipo) => {
     let total = 0;
     let concepto = '';
-
     if (tipo === 'planilla') {
       total = cols.reduce((s, e) => s + calcularPlanilla(e, asis, mes).NETO, 0);
       concepto = `Planilla de Haberes - ${mes}`;
     } else if (tipo === 'locadores') {
       total = locs.filter(l => filtroModalidad === 'Todos' || (l.modalidad_pago || 'RHE') === filtroModalidad)
-        .reduce((s, l) => s + calcularLocador(l, asisL).neto, 0);
+        .reduce((s, l) => s + calcularLocador(l, asisL, mes).neto, 0);
       concepto = `Pago a Locadores - ${mes}`;
     } else if (tipo === 'horas_extras') {
       total = horasExtras.filter(h => h.estado === 'Aprobado')
-        .reduce((s, h) => s + (h.valor_hora * (h.horas_decimal || 0)), 0);
+        .reduce((s, h) => {
+          if (h.tipo_persona === 'planilla') {
+            const emp = cols.find(e => e.id === h.empleado_id);
+            if (emp) {
+              const plan = calcularPlanilla(emp, asis, mes);
+              const sinCompensacion = h.tipo_compensacion === 'Sin compensación (pago por horas)';
+              const valor = sinCompensacion ? plan.valorHoraBase : plan.hrExt25;
+              return s + (valor * (h.horas_decimal || 0));
+            }
+            return s;
+          } else {
+            return s + ((h.valor_hora || 0) * (h.horas_decimal || 0));
+          }
+        }, 0);
       concepto = `Pago de Horas Extras - ${mes}`;
+    } else if (tipo === 'practicantes') {
+      total = practicantes.reduce((s, p) => {
+        const hp = horasPracticantes.filter(h => h.locador_id === p.id);
+        return s + calcularPracticante(p, hp).neto;
+      }, 0);
+      concepto = `Pago a Practicantes - ${mes}`;
     }
-
-    if (total <= 0) {
-      alert('No hay montos para enviar a Finanzas.');
-      return;
-    }
-
+    if (total <= 0) { alert('No hay montos para enviar a Finanzas.'); return; }
     if (!window.confirm(`¿Enviar a Finanzas por S/ ${fmt(total)}?`)) return;
-
     await supabase.from('egresos').insert({
       fecha: new Date().toISOString().split('T')[0],
       concepto,
       area: 'RRHH',
-      categoria: tipo === 'planilla' ? 'Planilla' : tipo === 'locadores' ? 'Locadores' : 'Horas Extras',
+      categoria: tipo === 'practicantes' ? 'Practicantes' : tipo === 'planilla' ? 'Planilla' : tipo === 'locadores' ? 'Locadores' : 'Horas Extras',
       proveedor: 'Nómina',
       monto: total,
       estado: 'Pendiente',
@@ -961,12 +1325,28 @@ export default function TabPlanillaPagos() {
 
   const totP = cols.reduce((s, e) => s + calcularPlanilla(e, asis, mes).NETO, 0);
   const totL = locs.filter(l => filtroModalidad === 'Todos' || (l.modalidad_pago || 'RHE') === filtroModalidad)
-    .reduce((s, l) => s + calcularLocador(l, asisL).neto, 0);
+    .reduce((s, l) => s + calcularLocador(l, asisL, mes).neto, 0);
   const totEs = cols.reduce((s, e) => s + calcularPlanilla(e, asis, mes).es9, 0);
   const totHE = horasExtras.filter(h => h.estado === 'Aprobado')
-    .reduce((s, h) => s + (h.valor_hora * (h.horas_decimal || 0)), 0);
+    .reduce((s, h) => {
+      if (h.tipo_persona === 'planilla') {
+        const emp = cols.find(e => e.id === h.empleado_id);
+        if (emp) {
+          const plan = calcularPlanilla(emp, asis, mes);
+          const sinCompensacion = h.tipo_compensacion === 'Sin compensación (pago por horas)';
+          const valor = sinCompensacion ? plan.valorHoraBase : plan.hrExt25;
+          return s + (valor * (h.horas_decimal || 0));
+        }
+        return s;
+      } else {
+        return s + ((h.valor_hora || 0) * (h.horas_decimal || 0));
+      }
+    }, 0);
+  const totPract = practicantes.reduce((s, p) => {
+    const hp = horasPracticantes.filter(h => h.locador_id === p.id);
+    return s + calcularPracticante(p, hp).neto;
+  }, 0);
 
-  // Filtrar locadores según modalidad
   const locadoresFiltrados = useMemo(() => {
     if (filtroModalidad === 'Todos') return locs;
     return locs.filter(l => (l.modalidad_pago || 'RHE') === filtroModalidad);
@@ -975,53 +1355,255 @@ export default function TabPlanillaPagos() {
   if (loading) return (
     <div className="flex items-center justify-center h-64 gap-3 text-gray-400">
       <Loader2 className="animate-spin" size={24}/>
-      <span className="text-sm">Cargando planilla...</span>
+      <span className="text-sm font-medium">Cargando planilla...</span>
     </div>
   );
 
   if (error) return (
-    <div className="p-6 bg-red-50 border border-red-200 rounded-xl text-red-700 flex items-center gap-3 text-sm">
+    <div className="p-6 bg-red-50 border border-red-200 rounded-2xl text-red-700 flex items-center gap-3 text-sm">
       <AlertCircle size={18}/>
       Error al cargar: {error}
-      <button onClick={cargar} className="ml-auto bg-red-100 px-3 py-1 rounded-lg font-bold">Reintentar</button>
+      <button onClick={cargar} className="ml-auto bg-red-100 px-4 py-2 rounded-xl font-bold hover:bg-red-200 transition-colors">Reintentar</button>
     </div>
   );
 
+  // ── Vista de practicantes ──
+  const renderPracticantes = () => (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h3 className="font-black text-gray-800 text-sm uppercase flex items-center gap-2">
+          <UserPlus size={18} className="text-[#185FA5]" /> Practicantes (Pago por Horas)
+        </h3>
+      </div>
+      <div className="bg-white/80 backdrop-blur-sm rounded-3xl border border-blue-50 shadow-xl overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gradient-to-r from-gray-50 to-white border-b">
+              <th className="p-3 text-left text-[10px] font-black text-gray-400 uppercase">Practicante</th>
+              <th className="p-3 text-right text-[10px] font-black text-gray-400 uppercase">Sueldo Base</th>
+              <th className="p-3 text-right text-[10px] font-black text-gray-400 uppercase">Valor Hora</th>
+              <th className="p-3 text-right text-[10px] font-black text-gray-400 uppercase">Horas Norm.</th>
+              <th className="p-3 text-right text-[10px] font-black text-gray-400 uppercase">Horas Fin Sem.</th>
+              <th className="p-3 text-right text-[10px] font-black text-gray-400 uppercase">Remuneración</th>
+              <th className="p-3 text-right text-[10px] font-black text-gray-400 uppercase">Ret. 4ta</th>
+              <th className="p-3 text-right text-[10px] font-black text-gray-400 uppercase">Neto</th>
+              <th className="p-3 text-center text-[10px] font-black text-gray-400 uppercase">Registro</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {practicantes.map(p => {
+              const hp = horasPracticantes.filter(h => h.locador_id === p.id);
+              const c = calcularPracticante(p, hp);
+              return (
+                <tr key={p.id} className="hover:bg-blue-50/30">
+                  <td className="p-3 font-bold text-xs">{p.apellido} {p.nombre}</td>
+                  <td className="p-3 text-right font-mono text-xs">S/ {fmt(c.sb)}</td>
+                  <td className="p-3 text-right font-mono text-xs">S/ {fmt(c.valorHora)}</td>
+                  <td className="p-3 text-right font-mono text-xs">{c.totalHorasNormales}h</td>
+                  <td className="p-3 text-right font-mono text-xs">{c.totalHorasFinSemana}h</td>
+                  <td className="p-3 text-right font-mono text-xs">S/ {fmt(c.remuneracion)}</td>
+                  <td className="p-3 text-right font-mono text-xs text-red-500">S/ {fmt(c.ret4)}</td>
+                  <td className="p-3 text-right font-mono font-bold text-xs text-[#185FA5]">S/ {fmt(c.neto)}</td>
+                  <td className="p-3 text-center">
+                    <button
+                      onClick={() => abrirModalPract(p.id)}
+                      className="bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg text-[10px] font-bold hover:bg-blue-200 transition"
+                    >
+                      + Registrar
+                    </button>
+                    {hp.length > 0 && (
+                      <div className="mt-1 text-[10px] text-gray-500">
+                        {hp.length} día(s) registrados
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+            {practicantes.length === 0 && (
+              <tr><td colSpan={9} className="p-8 text-center text-gray-400">No hay practicantes registrados</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex justify-end text-sm font-bold mt-3">
+        Total practicantes: <span className="text-[#185FA5] text-lg ml-2">S/ {fmt(totPract)}</span>
+      </div>
+    </div>
+  );
+
+  // ── NUEVO MODAL VIP ──
+  const ModalPracticanteHoras = () => {
+    const practicante = practicantes.find(p => p.id === selPractId);
+    const nombrePract = practicante ? `${practicante.nombre} ${practicante.apellido}` : '';
+
+    return (
+      <div className="fixed inset-0 bg-[#0a1930]/70 backdrop-blur-md flex items-center justify-center z-50 p-4">
+        <div className="bg-white/90 backdrop-blur-xl rounded-3xl w-full max-w-4xl shadow-2xl border border-white/50 overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+          <div className="bg-gradient-to-r from-[#0B1527] to-[#185FA5] px-6 py-4 flex justify-between items-center">
+            <div className="text-white">
+              <h3 className="font-black text-lg uppercase tracking-tight">
+                <UserPlus size={18} className="inline mr-2" />
+                Registro de Horas — {nombrePract}
+              </h3>
+              <p className="text-[10px] text-blue-200 mt-0.5">{periodoLabel(mes)}</p>
+            </div>
+            <button onClick={() => setShowModalPract(false)} className="text-white/70 hover:text-white p-2 rounded-full hover:bg-white/10 transition">
+              <X size={20} />
+            </button>
+          </div>
+
+          <div className="flex gap-2 px-6 pt-5 pb-3 bg-white/60 backdrop-blur-sm border-b border-gray-100">
+            <button onClick={() => setModoRegistro('semanal')}
+              className={`px-5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${modoRegistro === 'semanal' ? 'bg-[#185FA5] text-white shadow-lg shadow-blue-500/20' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+              <List size={14} /> Vista Semanal
+            </button>
+            <button onClick={() => setModoRegistro('mensual')}
+              className={`px-5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${modoRegistro === 'mensual' ? 'bg-[#185FA5] text-white shadow-lg shadow-blue-500/20' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+              <Grid size={14} /> Vista Mensual
+            </button>
+          </div>
+
+          <div className="p-6 overflow-y-auto flex-1">
+            {modoRegistro === 'semanal' ? (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between bg-gray-50/80 rounded-2xl p-3 backdrop-blur-sm">
+                  <button onClick={() => cambiarSemana(-1)} className="p-2 bg-white rounded-xl shadow-sm hover:bg-gray-100 transition">
+                    <ChevronLeft size={18} className="text-[#185FA5]" />
+                  </button>
+                  <div className="text-center">
+                    <span className="font-black text-gray-800 text-sm">
+                      {diasSemana.length > 0 ? `${fmtFecha(diasSemana[0])} — ${fmtFecha(diasSemana[4])}` : '...'}
+                    </span>
+                    <p className="text-[10px] text-gray-400">Semana</p>
+                  </div>
+                  <button onClick={() => cambiarSemana(1)} className="p-2 bg-white rounded-xl shadow-sm hover:bg-gray-100 transition">
+                    <ChevronRight size={18} className="text-[#185FA5]" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-5 gap-3">
+                  {['Lun', 'Mar', 'Mié', 'Jue', 'Vie'].map((dia, idx) => {
+                    const fecha = diasSemana[idx] || '';
+                    const fueraDeMes = fecha && !fecha.startsWith(mes);
+                    return (
+                      <div key={idx} className="flex flex-col items-center space-y-2">
+                        <div className="text-xs font-black text-gray-500 uppercase">{dia}</div>
+                        <div className="text-[10px] text-gray-400 mb-1">{fecha ? fmtFecha(fecha) : '—'}</div>
+                        <input
+                          type="number"
+                          step="0.5"
+                          min="0"
+                          max="24"
+                          value={horasGrid[fecha] ?? ''}
+                          onChange={(e) => handleHoraChange(fecha, e.target.value)}
+                          disabled={!fecha || fueraDeMes}
+                          className={`w-16 text-center border-2 rounded-xl py-2 text-sm font-bold outline-none transition-all ${
+                            fueraDeMes ? 'bg-gray-100 border-gray-200 text-gray-300 cursor-not-allowed' :
+                            'bg-white border-gray-200 text-gray-800 focus:border-[#185FA5] focus:ring-4 focus:ring-blue-500/20'
+                          }`}
+                          placeholder="0.0"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="grid grid-cols-7 gap-2 text-center text-xs font-black text-gray-400 uppercase mb-2">
+                  {['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map(d => (
+                    <div key={d}>{d}</div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-7 gap-2">
+                  {diasDelMesActual.map(fecha => {
+                    const diaNum = new Date(fecha + 'T12:00:00').getUTCDay();
+                    const esFin = diaNum === 0 || diaNum === 6;
+                    return (
+                      <div key={fecha} className={`p-1 rounded-xl text-center ${esFin ? 'bg-red-50/50' : 'bg-white'}`}>
+                        <div className="text-[10px] text-gray-500 mb-1">{fecha.split('-')[2]}</div>
+                        <input
+                          type="number"
+                          step="0.5"
+                          min="0"
+                          max="24"
+                          value={horasGrid[fecha] ?? ''}
+                          onChange={(e) => handleHoraChange(fecha, e.target.value)}
+                          className={`w-full text-center border rounded-lg py-1.5 text-xs font-bold outline-none transition-all ${
+                            esFin ? 'border-red-200 bg-red-50/30 text-red-600' : 'border-gray-200 bg-gray-50 text-gray-700 focus:border-[#185FA5] focus:ring-2 focus:ring-blue-500/20'
+                          }`}
+                          placeholder="0"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="px-6 py-4 bg-gradient-to-r from-gray-50 to-white border-t flex justify-between items-center">
+            <div className="text-sm font-black text-gray-700">
+              Total horas: <span className="text-[#185FA5] text-xl ml-2">
+                {fmt(Object.values(horasGrid).reduce((s, h) => s + (Number(h) || 0), 0))}
+              </span>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setShowModalPract(false)} className="px-6 py-3 text-gray-600 font-bold hover:bg-gray-100 rounded-2xl transition-colors">
+                Cancelar
+              </button>
+              <button onClick={guardarHorasMasivo} className="px-6 py-3 bg-gradient-to-r from-[#185FA5] to-[#144b82] text-white rounded-2xl font-bold shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 transition-all active:scale-[0.98]">
+                Guardar Horas
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
-    <div className="p-4 bg-gray-50 min-h-screen">
-      <div className="flex flex-wrap justify-between items-center gap-3 mb-5">
+    <div className="p-6 lg:p-8 min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50/30">
+      {/* Header */}
+      <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
         <div>
-          <h2 className="text-xl font-black text-gray-800 tracking-tighter">PLANILLA & PAGOS</h2>
-          <p className="text-[#185FA5] font-bold text-[10px] uppercase tracking-widest">
+          <div className="flex items-center gap-3 mb-1">
+            <div className="p-2 bg-blue-50 rounded-xl shadow-sm">
+              <Users className="w-6 h-6 text-[#185FA5]" />
+            </div>
+            <h2 className="text-3xl font-black text-[#0B1527] tracking-tight">PLANILLA & PAGOS</h2>
+          </div>
+          <p className="text-[#185FA5] font-bold text-[10px] uppercase tracking-widest ml-12">
             Consorcio Rebagliati Diplomados S.A.C. — RUC 20601225175
           </p>
         </div>
         <div className="flex flex-wrap gap-2 items-center">
           <input type="month" value={mes} onChange={e => setMes(e.target.value)}
-            className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs font-bold outline-none focus:border-blue-500"/>
+            className="border-2 border-gray-100 rounded-xl px-4 py-2.5 text-sm font-bold bg-white outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 transition-all shadow-sm"/>
           <button onClick={exportCSV}
-            className="flex items-center gap-1.5 bg-white border border-gray-200 text-gray-700
-                       px-3 py-1.5 rounded-lg text-[10px] font-black hover:bg-gray-50">
-            <Download size={12}/> CSV
+            className="flex items-center gap-1.5 bg-white border-2 border-gray-100 text-gray-700
+                       px-4 py-2.5 rounded-xl text-xs font-bold hover:bg-gray-50 hover:border-gray-200 transition-all shadow-sm">
+            <Download size={14}/> CSV
           </button>
           <button onClick={() => enviarFinanzas(vista)}
-            className="flex items-center gap-1.5 bg-[#185FA5] text-white px-3 py-1.5
-                       rounded-lg text-[10px] font-black hover:bg-[#11284e]">
-            <Send size={12}/> Aprobar a Finanzas
+            className="flex items-center gap-1.5 bg-gradient-to-r from-[#185FA5] to-[#144b82] text-white px-4 py-2.5
+                       rounded-xl text-xs font-bold hover:from-[#1a6ab8] hover:to-[#15569c] transition-all shadow-lg shadow-blue-500/25 active:scale-[0.98]">
+            <Send size={14}/> Aprobar a Finanzas
           </button>
         </div>
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
         {[
-          { l: 'Neto Planilla',    v: `S/ ${fmt(totP)}`,       c: 'border-[#185FA5]' },
-          { l: 'Neto Locadores',   v: `S/ ${fmt(totL)}`,       c: 'border-purple-500' },
-          { l: 'EsSalud Emp. 9%',  v: `S/ ${fmt(totEs)}`,      c: 'border-emerald-500' },
-          { l: 'Horas Extras',     v: `S/ ${fmt(totHE)}`,      c: 'border-amber-500' },
-          { l: 'Total Nómina',     v: `S/ ${fmt(totP + totL + totHE)}`, c: 'border-[#11284e]' },
+          { l: 'Neto Planilla',    v: `S/ ${fmt(totP)}`,       c: 'border-[#185FA5] bg-blue-50/50' },
+          { l: 'Neto Locadores',   v: `S/ ${fmt(totL)}`,       c: 'border-purple-500 bg-purple-50/50' },
+          { l: 'EsSalud Emp. 9%',  v: `S/ ${fmt(totEs)}`,      c: 'border-emerald-500 bg-emerald-50/50' },
+          { l: 'Horas Extras',     v: `S/ ${fmt(totHE)}`,      c: 'border-amber-500 bg-amber-50/50' },
+          { l: 'Total Nómina',     v: `S/ ${fmt(totP + totL + totHE + totPract)}`, c: 'border-[#0B1527] bg-gray-100/50' },
         ].map(k => (
-          <div key={k.l} className={`bg-white rounded-xl border shadow-sm p-4 border-l-4 ${k.c}`}>
+          <div key={k.l} className={`bg-white rounded-2xl border shadow-sm p-5 border-l-4 ${k.c} backdrop-blur-sm`}>
             <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">{k.l}</p>
             <p className="text-lg font-black text-gray-800 mt-1">{k.v}</p>
           </div>
@@ -1029,250 +1611,264 @@ export default function TabPlanillaPagos() {
       </div>
 
       {/* Pestañas */}
-      <div className="flex gap-2 mb-4 bg-white p-1 w-max rounded-xl border border-gray-200 shadow-sm">
-        <button onClick={() => setVista('planilla')}
-          className={`px-4 py-2 text-xs font-black rounded-lg flex items-center gap-2 transition-all
-                      ${vista === 'planilla' ? 'bg-[#11284e] text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}>
-          <Users size={14}/> PLANILLA (Quinta Categ.)
-        </button>
-        <button onClick={() => setVista('locacion')}
-          className={`px-4 py-2 text-xs font-black rounded-lg flex items-center gap-2 transition-all
-                      ${vista === 'locacion' ? 'bg-[#185FA5] text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}>
-          <Briefcase size={14}/> LOCADORES (Cuarta Categ.)
-        </button>
-        <button onClick={() => setVista('horas_extras')}
-          className={`px-4 py-2 text-xs font-black rounded-lg flex items-center gap-2 transition-all
-                      ${vista === 'horas_extras' ? 'bg-amber-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}>
-          <Clock size={14}/> PAGO DE HORAS EXTRAS
-        </button>
+      <div className="flex gap-2 mb-5 bg-white/80 p-1.5 w-max rounded-2xl border border-blue-50 shadow-lg shadow-blue-100/20 backdrop-blur-sm">
+        <button onClick={() => setVista('planilla')} className={`px-5 py-2.5 text-xs font-bold rounded-xl flex items-center gap-2 transition-all duration-200 ${vista === 'planilla' ? 'bg-gradient-to-r from-[#11284e] to-[#0B1527] text-white shadow-md shadow-blue-500/20' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'}`}><Users size={14}/> PLANILLA (5ta Categ.)</button>
+        <button onClick={() => setVista('locacion')} className={`px-5 py-2.5 text-xs font-bold rounded-xl flex items-center gap-2 transition-all duration-200 ${vista === 'locacion' ? 'bg-gradient-to-r from-[#185FA5] to-[#144b82] text-white shadow-md shadow-blue-500/20' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'}`}><Briefcase size={14}/> LOCADORES (4ta Categ.)</button>
+        <button onClick={() => setVista('horas_extras')} className={`px-5 py-2.5 text-xs font-bold rounded-xl flex items-center gap-2 transition-all duration-200 ${vista === 'horas_extras' ? 'bg-gradient-to-r from-amber-600 to-amber-700 text-white shadow-md shadow-amber-500/20' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'}`}><Clock size={14}/> PAGO DE HORAS EXTRAS</button>
+        <button onClick={() => setVista('calculadora')} className={`px-5 py-2.5 text-xs font-bold rounded-xl flex items-center gap-2 transition-all duration-200 ${vista === 'calculadora' ? 'bg-gradient-to-r from-[#11284e] to-[#0B1527] text-white shadow-md shadow-blue-500/20' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'}`}><Calculator size={14}/> CALCULADORA COSTO</button>
+        <button onClick={() => setVista('practicantes')} className={`px-5 py-2.5 text-xs font-bold rounded-xl flex items-center gap-2 transition-all duration-200 ${vista === 'practicantes' ? 'bg-gradient-to-r from-[#11284e] to-[#0B1527] text-white shadow-md shadow-blue-500/20' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'}`}><UserPlus size={14}/> PRACTICANTES</button>
       </div>
 
       {/* Filtro para locadores */}
       {vista === 'locacion' && (
-        <div className="mb-3 flex items-center gap-2">
-          <Filter size={14} className="text-gray-400" />
+        <div className="mb-4 flex items-center gap-3 bg-white/80 rounded-2xl p-3 border border-blue-50 shadow-sm backdrop-blur-sm">
+          <Filter size={16} className="text-gray-400" />
           <span className="text-xs font-bold text-gray-500">Modalidad de Pago:</span>
-          <div className="flex gap-1">
+          <div className="flex gap-1.5">
             {['Todos', 'RHE', 'Efectivo'].map(m => (
-              <button
-                key={m}
-                onClick={() => setFiltroModalidad(m)}
-                className={`px-3 py-1 rounded-full text-[10px] font-black transition-all ${
-                  filtroModalidad === m ? 'bg-[#185FA5] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
+              <button key={m} onClick={() => setFiltroModalidad(m)}
+                className={`px-4 py-2 rounded-xl text-[11px] font-bold transition-all ${filtroModalidad === m ? 'bg-[#185FA5] text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
                 {m}
               </button>
             ))}
           </div>
+          <span className="text-xs text-gray-400 ml-4">({locadoresFiltrados.length} locadores, incluye ingresos y cesos del mes)</span>
         </div>
       )}
 
-      {/* TABLAS */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead className="bg-gray-50 border-b border-gray-100">
-              <tr className="text-[9px] text-gray-500 font-black uppercase tracking-widest">
-                <th className="px-5 py-4">Colaborador</th>
-                {vista === 'planilla' ? (
-                  <>
-                    <th className="px-4 py-4 text-right">Sueldo Base</th>
-                    <th className="px-4 py-4 text-right">Proporcional</th>
-                    <th className="px-4 py-4 text-center">Incidencias</th>
-                    <th className="px-4 py-4 text-center">Sistema</th>
-                    <th className="px-4 py-4 text-right">AFP/ONP</th>
-                    <th className="px-4 py-4 text-right">Otros Dsctos</th>
-                  </>
-                ) : vista === 'locacion' ? (
-                  <>
-                    <th className="px-4 py-4 text-right">Honorario</th>
-                    <th className="px-4 py-4 text-right">Retención (8%)</th>
-                    <th className="px-4 py-4 text-center">Modalidad Pago</th>
-                  </>
+      {vista === 'calculadora' && <CalculadoraCostos />}
+      {vista === 'practicantes' && renderPracticantes()}
+
+      {/* Tablas de planilla / locadores / horas extras */}
+      {vista !== 'calculadora' && vista !== 'practicantes' && (
+        <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl shadow-blue-100/20 border border-blue-50 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead className="bg-gradient-to-r from-gray-50 to-white border-b border-gray-100">
+                <tr className="text-[10px] text-gray-400 font-black uppercase tracking-wider">
+                  <th className="px-5 py-4">Colaborador</th>
+                  {vista === 'planilla' ? (
+                    <>
+                      <th className="px-4 py-4 text-right">Sueldo Base</th>
+                      <th className="px-4 py-4 text-right">Proporcional</th>
+                      <th className="px-4 py-4 text-center">Incidencias</th>
+                      <th className="px-4 py-4 text-center">Sistema</th>
+                      <th className="px-4 py-4 text-right">AFP/ONP</th>
+                      <th className="px-4 py-4 text-right">Otros Dsctos</th>
+                    </>
+                  ) : vista === 'locacion' ? (
+                    <>
+                      <th className="px-4 py-4 text-right">Honorario Base</th>
+                      <th className="px-4 py-4 text-right">Ajuste</th>
+                      <th className="px-4 py-4 text-center">Ret. 4ta</th>
+                      <th className="px-4 py-4 text-center">Modalidad Pago</th>
+                    </>
+                  ) : (
+                    <>
+                      <th className="px-4 py-4 text-center">Tipo</th>
+                      <th className="px-4 py-4 text-right">Horas</th>
+                      <th className="px-4 py-4 text-right">Valor Hora</th>
+                      <th className="px-4 py-4 text-right">Total</th>
+                      <th className="px-4 py-4 text-center">Estado</th>
+                    </>
+                  )}
+                  <th className="px-5 py-4 text-right">Neto a Pagar</th>
+                  {vista !== 'horas_extras' && <th className="px-5 py-4 text-center">Boleta</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50 text-xs">
+                {(vista === 'planilla' ? cols : vista === 'locacion' ? locadoresFiltrados : horasExtras).length === 0 ? (
+                  <tr><td colSpan={10} className="p-12 text-center text-gray-400 italic font-medium">Sin registros para este período</td></tr>
                 ) : (
-                  <>
-                    <th className="px-4 py-4 text-center">Tipo</th>
-                    <th className="px-4 py-4 text-right">Horas</th>
-                    <th className="px-4 py-4 text-right">Valor Hora</th>
-                    <th className="px-4 py-4 text-right">Total</th>
-                    <th className="px-4 py-4 text-center">Estado</th>
-                  </>
+                  (vista === 'planilla' ? cols : vista === 'locacion' ? locadoresFiltrados : horasExtras).map(item => {
+                    if (vista === 'planilla') {
+                      const c = calcularPlanilla(item, asis, mes);
+                      return (
+                        <tr key={item.id} className="hover:bg-blue-50/30 transition-colors">
+                          <td className="px-5 py-4">
+                            <div className="flex items-center gap-3">
+                              <img src={item.foto_url || `https://ui-avatars.com/api/?name=${encodeURIComponent((item.nombre||'')+' '+(item.apellido||''))}&background=185FA5&color=fff&size=56`}
+                                className="w-9 h-9 rounded-full object-cover border-2 border-white shadow-md" alt=""/>
+                              <div>
+                                <p className="font-black text-gray-800 text-xs">{item.apellido} {item.nombre}</p>
+                                <p className="text-[9px] text-gray-400 font-bold uppercase">{item.dni} | {item.cargo || 'EMPLEADO'}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-4 text-right font-mono text-gray-500 text-xs">S/ {fmt(c.sb)}</td>
+                          <td className={`px-4 py-4 text-right font-mono text-xs ${c.hayAus ? 'text-amber-600 font-bold' : 'text-gray-500'}`}>
+                            S/ {fmt(c.sProp)}
+                            {c.hayAus && <span className="text-[8px] block text-amber-500">{c.diasTrab}/{c.tdm}d</span>}
+                          </td>
+                          <td className="px-4 py-4 text-center">
+                            <div className="flex justify-center gap-1">
+                              {c.tard10 > 0 && <span className="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full text-[8px] font-black">{c.tard10}T</span>}
+                              {c.fInj   > 0 && <span className="bg-red-100   text-red-800   px-1.5 py-0.5 rounded-full text-[8px] font-black">{c.fInj}F</span>}
+                              {c.diasDM > 0 && <span className="bg-blue-100  text-blue-800  px-1.5 py-0.5 rounded-full text-[8px] font-black">{c.diasDM}DM</span>}
+                              {c.tard10 === 0 && c.fInj === 0 && c.diasDM === 0 && <span className="text-gray-300">—</span>}
+                            </div>
+                          </td>
+                          <td className="px-4 py-4 text-center">
+                            <span className={`text-[8px] font-black px-2 py-1 rounded-full uppercase ${c.tip === 'ONP' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}`}>
+                              {c.tip === 'ONP' ? 'ONP' : c.afpCortoNom}
+                            </span>
+                          </td>
+                          <td className="px-4 py-4 text-right text-red-500 font-mono text-xs">S/ {fmt(c.penT)}</td>
+                          <td className="px-4 py-4 text-right text-red-400 font-mono text-[10px]">
+                            {(c.r5 + c.adel + c.dpe + c.d15) > 0 ? `S/ ${fmt(c.r5 + c.adel + c.dpe + c.d15)}` : '—'}
+                          </td>
+                          <td className="px-5 py-4 text-right">
+                            <span className="text-sm font-black text-[#185FA5]">S/ {fmt(c.NETO)}</span>
+                          </td>
+                          <td className="px-5 py-4 text-center">
+                            <button onClick={() => setSelEmp(item)} className="p-2 bg-gray-100 hover:bg-[#185FA5] hover:text-white rounded-xl transition-colors">
+                              <Eye size={15}/>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    } else if (vista === 'locacion') {
+                      const c = calcularLocador(item, asisL, mes);
+                      const esCesado = item.estado === 'inactivo';
+                      const ingresoEnMes = item.fecha_inicio && mes === item.fecha_inicio.substring(0,7);
+                      return (
+                        <tr key={item.id} className={`hover:bg-purple-50/30 transition-colors ${esCesado ? 'bg-red-50/20' : ''}`}>
+                          <td className="px-5 py-4">
+                            <div className="flex items-center gap-3">
+                              <img src={item.foto_url || `https://ui-avatars.com/api/?name=${encodeURIComponent((item.nombre||'')+' '+(item.apellido||''))}&background=185FA5&color=fff&size=56`}
+                                className="w-9 h-9 rounded-full object-cover border-2 border-white shadow-md" alt=""/>
+                              <div>
+                                <p className="font-black text-gray-800 text-xs flex items-center gap-2">
+                                  {item.apellido} {item.nombre}
+                                  {esCesado && (
+                                    <span className="text-[8px] bg-red-100 text-red-800 px-1.5 py-0.5 rounded-full font-black">INACTIVO</span>
+                                  )}
+                                </p>
+                                <p className="text-[9px] text-gray-400 font-bold uppercase">
+                                  {item.dni} | LOCADOR
+                                  {esCesado && item.fecha_cese && (
+                                    <span className="text-red-500 ml-2"><CalendarDays size={10} className="inline mr-0.5"/>Cesó: {fmtFecha(item.fecha_cese)}</span>
+                                  )}
+                                  {!esCesado && ingresoEnMes && (
+                                    <span className="text-emerald-600 ml-2"><CalendarDays size={10} className="inline mr-0.5"/>Ingresó: {fmtFecha(item.fecha_inicio)}</span>
+                                  )}
+                                </p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-4 text-right font-mono text-gray-500 text-xs">
+                            S/ {fmt(c.honorarioBase)}
+                            {c.motivoAjuste && <span className="block text-[8px] text-yellow-600">{c.diasTrabajados} días</span>}
+                          </td>
+                          <td className="px-4 py-4 text-right text-red-500 text-xs">
+                            {c.motivoAjuste ? <span className="text-[9px] text-yellow-700 font-bold">{c.motivoAjuste}</span> : '—'}
+                          </td>
+                          <td className="px-4 py-4 text-center">
+                            <button onClick={() => toggleRetencion4ta(item)}
+                              className="group flex items-center gap-1 mx-auto cursor-pointer hover:opacity-80 transition-opacity"
+                              title={c.aplicaRetencion ? 'Retención activa – clic para suspender' : 'Retención suspendida – clic para activar'}>
+                              {c.aplicaRetencion ? (
+                                <>
+                                  <span className="text-xs font-black text-red-600">{fmt(c.ret4)}</span>
+                                  <span className="text-[8px] bg-red-100 text-red-800 px-1.5 py-0.5 rounded-full font-black">8%</span>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="text-xs font-black text-gray-300">S/ 0.00</span>
+                                  <span className="text-[8px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full font-black">—</span>
+                                </>
+                              )}
+                            </button>
+                          </td>
+                          <td className="px-4 py-4 text-center">
+                            <button onClick={() => toggleModalidadPago(item)}
+                              className={`text-[8px] font-black px-2 py-1 rounded-full cursor-pointer transition-all hover:opacity-80 ${
+                                item.modalidad_pago === 'Efectivo' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+                              }`} title="Clic para cambiar modalidad">
+                              {item.modalidad_pago || 'RHE'}
+                            </button>
+                          </td>
+                          <td className="px-5 py-4 text-right">
+                            <span className="text-sm font-black text-[#185FA5]">S/ {fmt(c.neto)}</span>
+                          </td>
+                          <td className="px-5 py-4 text-center">
+                            <button onClick={() => setSelLoc(item)} className="p-2 bg-gray-100 hover:bg-[#185FA5] hover:text-white rounded-xl transition-colors">
+                              <Eye size={15}/>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    } else {
+                      const esPlanilla = item.tipo_persona === 'planilla';
+                      const persona = esPlanilla ? cols.find(e => e.id === item.empleado_id) : locs.find(l => l.id === item.locador_id);
+                      const nombre = persona ? `${persona.nombre} ${persona.apellido}` : (item.empleado_nombre || '—');
+                      let valorHora, totalPagar, indicador = '';
+                      if (esPlanilla && persona) {
+                        const plan = calcularPlanilla(persona, asis, mes);
+                        const sinCompensacion = item.tipo_compensacion === 'Sin compensación (pago por horas)';
+                        valorHora = sinCompensacion ? plan.valorHoraBase : plan.hrExt25;
+                        indicador = sinCompensacion ? 'base' : '+25%';
+                        totalPagar = valorHora * (item.horas_decimal || 0);
+                      } else {
+                        valorHora = item.valor_hora || 0;
+                        totalPagar = valorHora * (item.horas_decimal || 0);
+                      }
+                      return (
+                        <tr key={item.id} className="hover:bg-amber-50/30 transition-colors">
+                          <td className="px-5 py-4">
+                            <div className="flex items-center gap-3">
+                              <img src={persona?.foto_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(nombre)}&background=185FA5&color=fff&size=56`}
+                                className="w-9 h-9 rounded-full object-cover border-2 border-white shadow-md" alt=""/>
+                              <div>
+                                <p className="font-black text-gray-800 text-xs">{nombre}</p>
+                                <p className="text-[9px] text-gray-400 font-bold uppercase">{item.fecha}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-4 text-center">
+                            <span className={`text-[8px] font-black px-2 py-1 rounded-full ${esPlanilla ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}`}>
+                              {esPlanilla ? 'Planilla' : 'Locador'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-4 text-right font-mono text-xs">{item.horas}h {item.minutos > 0 ? `${item.minutos}m` : ''}</td>
+                          <td className="px-4 py-4 text-right font-mono text-xs">S/ {fmt(valorHora)} {indicador && <span className={`block text-[8px] ${indicador === 'base' ? 'text-gray-500' : 'text-blue-600'}`}>{indicador}</span>}</td>
+                          <td className="px-4 py-4 text-right font-bold text-amber-700 text-xs">S/ {fmt(totalPagar)}</td>
+                          <td className="px-4 py-4 text-center">
+                            <span className={`text-[8px] font-black px-2 py-1 rounded-full ${
+                              item.estado === 'Aprobado' ? 'bg-green-100 text-green-800' :
+                              item.estado === 'Rechazado' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'
+                            }`}>{item.estado}</span>
+                          </td>
+                          <td className="px-5 py-4 text-right">
+                            <span className="text-sm font-black text-[#185FA5]">S/ {fmt(totalPagar)}</span>
+                          </td>
+                        </tr>
+                      );
+                    }
+                  })
                 )}
-                <th className="px-5 py-4 text-right">Neto a Pagar</th>
-                {vista !== 'horas_extras' && <th className="px-5 py-4 text-center">Boleta</th>}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50 text-xs">
-              {(vista === 'planilla' ? cols : vista === 'locacion' ? locadoresFiltrados : horasExtras).length === 0 ? (
-                <tr><td colSpan={10} className="p-8 text-center text-gray-400 italic">Sin registros</td></tr>
-              ) : (
-                (vista === 'planilla' ? cols : vista === 'locacion' ? locadoresFiltrados : horasExtras).map(item => {
-                  if (vista === 'planilla') {
-                    const c = calcularPlanilla(item, asis, mes);
-                    return (
-                      <tr key={item.id} className="hover:bg-blue-50/30">
-                        <td className="px-5 py-3">
-                          <div className="flex items-center gap-3">
-                            <img src={item.foto_url || `https://ui-avatars.com/api/?name=${encodeURIComponent((item.nombre||'')+' '+(item.apellido||''))}&background=185FA5&color=fff&size=56`}
-                              className="w-9 h-9 rounded-full object-cover border-2 border-white shadow-sm" alt=""/>
-                            <div>
-                              <p className="font-black text-gray-800">{item.apellido} {item.nombre}</p>
-                              <p className="text-[9px] text-gray-400 font-bold uppercase">{item.dni} | {item.cargo || 'EMPLEADO'}</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono text-gray-500">S/ {fmt(c.sb)}</td>
-                        <td className={`px-4 py-3 text-right font-mono ${c.hayAus ? 'text-amber-600 font-bold' : 'text-gray-500'}`}>
-                          S/ {fmt(c.sProp)}
-                          {c.hayAus && <span className="text-[8px] block text-amber-500">{c.diasTrab}/{c.tdm}d</span>}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <div className="flex justify-center gap-1">
-                            {c.tard10 > 0 && <span className="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded text-[8px] font-black">{c.tard10}T</span>}
-                            {c.fInj   > 0 && <span className="bg-red-100   text-red-800   px-1.5 py-0.5 rounded text-[8px] font-black">{c.fInj}F</span>}
-                            {c.diasDM > 0 && <span className="bg-blue-100  text-blue-800  px-1.5 py-0.5 rounded text-[8px] font-black">{c.diasDM}DM</span>}
-                            {c.tard10 === 0 && c.fInj === 0 && c.diasDM === 0 && <span className="text-gray-300">—</span>}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase ${c.tip === 'ONP' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}`}>
-                            {c.tip === 'ONP' ? 'ONP' : c.afpCortoNom}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-right text-red-500 font-mono">S/ {fmt(c.penT)}</td>
-                        <td className="px-4 py-3 text-right text-red-400 font-mono text-[10px]">
-                          {(c.r5 + c.adel + c.dpe + c.d15) > 0 ? `S/ ${fmt(c.r5 + c.adel + c.dpe + c.d15)}` : '—'}
-                        </td>
-                        <td className="px-5 py-3 text-right">
-                          <span className="text-sm font-black text-[#185FA5]">S/ {fmt(c.NETO)}</span>
-                        </td>
-                        <td className="px-5 py-3 text-center">
-                          <button onClick={() => setSelEmp(item)} className="p-2 bg-gray-100 hover:bg-[#185FA5] hover:text-white rounded-xl">
-                            <Eye size={15}/>
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  } else if (vista === 'locacion') {
-                    const c = calcularLocador(item, asisL);
-                    return (
-                      <tr key={item.id} className="hover:bg-purple-50/30">
-                        <td className="px-5 py-3">
-                          <div className="flex items-center gap-3">
-                            <img src={item.foto_url || `https://ui-avatars.com/api/?name=${encodeURIComponent((item.nombre||'')+' '+(item.apellido||''))}&background=185FA5&color=fff&size=56`}
-                              className="w-9 h-9 rounded-full object-cover border-2 border-white shadow-sm" alt=""/>
-                            <div>
-                              <p className="font-black text-gray-800">{item.apellido} {item.nombre}</p>
-                              <p className="text-[9px] text-gray-400 font-bold uppercase">{item.dni} | LOCADOR</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono text-gray-500">S/ {fmt(c.sb)}</td>
-                        <td className="px-4 py-3 text-right text-red-500">S/ {fmt(c.ret4)}</td>
-                        <td className="px-4 py-3 text-center">
-                          <button
-                            onClick={() => toggleModalidadPago(item)}
-                            className={`text-[8px] font-black px-2 py-1 rounded-full cursor-pointer transition-all hover:opacity-80 ${
-                              item.modalidad_pago === 'Efectivo' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
-                            }`}
-                            title="Clic para cambiar modalidad"
-                          >
-                            {item.modalidad_pago || 'RHE'}
-                          </button>
-                        </td>
-                        <td className="px-5 py-3 text-right">
-                          <span className="text-sm font-black text-[#185FA5]">S/ {fmt(c.neto)}</span>
-                        </td>
-                        <td className="px-5 py-3 text-center">
-                          <button onClick={() => setSelLoc(item)} className="p-2 bg-gray-100 hover:bg-[#185FA5] hover:text-white rounded-xl">
-                            <Eye size={15}/>
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  } else {
-                    // Vista horas extras
-                    const esPlanilla = item.tipo_persona === 'planilla';
-                    const persona = esPlanilla
-                      ? cols.find(e => e.id === item.empleado_id)
-                      : locs.find(l => l.id === item.locador_id);
-                    const nombre = persona ? `${persona.nombre} ${persona.apellido}` : (item.empleado_nombre || '—');
-                    const totalPagar = (item.valor_hora || 0) * (item.horas_decimal || 0);
-                    return (
-                      <tr key={item.id} className="hover:bg-amber-50/30">
-                        <td className="px-5 py-3">
-                          <div className="flex items-center gap-3">
-                            <img src={persona?.foto_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(nombre)}&background=185FA5&color=fff&size=56`}
-                              className="w-9 h-9 rounded-full object-cover border-2 border-white shadow-sm" alt=""/>
-                            <div>
-                              <p className="font-black text-gray-800">{nombre}</p>
-                              <p className="text-[9px] text-gray-400 font-bold uppercase">{item.fecha}</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <span className={`text-[8px] font-black px-2 py-1 rounded-full ${esPlanilla ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}`}>
-                            {esPlanilla ? 'Planilla' : 'Locador'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono">{item.horas}h {item.minutos > 0 ? `${item.minutos}m` : ''}</td>
-                        <td className="px-4 py-3 text-right font-mono">S/ {fmt(item.valor_hora || 0)}</td>
-                        <td className="px-4 py-3 text-right font-bold text-amber-700">S/ {fmt(totalPagar)}</td>
-                        <td className="px-4 py-3 text-center">
-                          <span className={`text-[8px] font-black px-2 py-1 rounded-full ${
-                            item.estado === 'Aprobado' ? 'bg-green-100 text-green-800' :
-                            item.estado === 'Rechazado' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'
-                          }`}>
-                            {item.estado}
-                          </span>
-                        </td>
-                        <td className="px-5 py-3 text-right">
-                          <span className="text-sm font-black text-[#185FA5]">S/ {fmt(totalPagar)}</span>
-                        </td>
-                      </tr>
-                    );
-                  }
-                })
-              )}
-            </tbody>
-          </table>
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
-
-      {/* Totales (más visibles) */}
-      <div className="mt-4 flex justify-end gap-8 text-sm font-bold pr-2 bg-white p-3 rounded-xl border border-gray-200 shadow-sm">
-        <span className="text-gray-600">
-          Total {vista === 'planilla' ? 'Planilla' : vista === 'locacion' ? 'Locadores' : 'Horas Extras'}:
-        </span>
-        <span className="text-[#185FA5] text-lg font-black">
-          S/ {fmt(vista === 'planilla' ? totP : vista === 'locacion' ? totL : totHE)}
-        </span>
-        {vista === 'planilla' && (
-          <>
-            <span className="text-gray-600">EsSalud Emp.:</span>
-            <span className="text-emerald-600 text-lg font-black">S/ {fmt(totEs)}</span>
-          </>
-        )}
-      </div>
-
-      {/* Modales */}
-      {selEmp && (
-        <ModalBoleta
-          emp={selEmp}
-          c={calcularPlanilla(selEmp, asis, mes)}
-          mesStr={mes}
-          onClose={() => setSelEmp(null)}
-        />
       )}
-      {selLoc && (
-        <ModalLocador
-          loc={selLoc}
-          c={calcularLocador(selLoc, asisL)}
-          mesStr={mes}
-          onClose={() => setSelLoc(null)}
-        />
+
+      {vista !== 'calculadora' && vista !== 'practicantes' && (
+        <div className="mt-5 flex justify-end gap-8 text-sm font-bold pr-2 bg-white/80 backdrop-blur-sm p-4 rounded-2xl border border-blue-50 shadow-lg shadow-blue-100/20">
+          <span className="text-gray-600">Total {vista === 'planilla' ? 'Planilla' : vista === 'locacion' ? 'Locadores' : 'Horas Extras'}:</span>
+          <span className="text-[#185FA5] text-lg font-black">S/ {fmt(vista === 'planilla' ? totP : vista === 'locacion' ? totL : totHE)}</span>
+          {vista === 'planilla' && (
+            <>
+              <span className="text-gray-600">EsSalud Emp.:</span>
+              <span className="text-emerald-600 text-lg font-black">S/ {fmt(totEs)}</span>
+            </>
+          )}
+        </div>
       )}
+
+      {selEmp && <ModalBoleta emp={selEmp} c={calcularPlanilla(selEmp, asis, mes)} mesStr={mes} onClose={() => setSelEmp(null)} />}
+      {selLoc && <ModalLocador loc={selLoc} c={calcularLocador(selLoc, asisL, mes)} mesStr={mes} onClose={() => setSelLoc(null)} />}
+      {showModalPract && <ModalPracticanteHoras />}
     </div>
   );
 }

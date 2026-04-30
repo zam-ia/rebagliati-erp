@@ -8,7 +8,9 @@ import {
   Briefcase, Package, ClipboardList, TrendingUp,
   Menu, ChevronRight, LogOut, ChevronLeft,
   ShieldCheck, DollarSign, ChevronDown,
-  Clock, Calendar, AlertCircle, FileText, UserPlus
+  Clock, Calendar, AlertCircle, FileText, UserPlus,
+  Target, Megaphone, CalendarDays, Palette,
+  FolderOpen, Bot, BarChart3, Building2, MessageSquare
 } from 'lucide-react';
 
 const NAV_GRUPOS = [
@@ -23,7 +25,26 @@ const NAV_GRUPOS = [
   {
     label: 'Gestión',
     items: [
-      { path: '/crm',           nombre: 'CRM Clientes', icon: Users, permiso: 'CRM' },
+      {
+        nombre: 'Marketing',
+        icon: TrendingUp,
+        permiso: 'Marketing',
+        subItems: [
+          { path: '/marketing/dashboard',        nombre: 'Dashboard',             icon: LayoutDashboard, permiso: 'marketing_dashboard' },
+          { path: '/marketing/planeacion',       nombre: 'Planeación Estratégica',icon: Target,           permiso: 'marketing_planeacion' },
+          { path: '/marketing/crm',              nombre: 'CRM',                   icon: Users,            permiso: 'marketing_crm' },
+          { path: '/marketing/campanas',         nombre: 'Gestión de Campañas',   icon: Megaphone,        permiso: 'marketing_campanas' },
+          { path: '/marketing/calendario',       nombre: 'Calendario de Contenido',icon: CalendarDays,    permiso: 'marketing_calendario' },
+          { path: '/marketing/produccion',       nombre: 'Producción Creativa',   icon: Palette,          permiso: 'marketing_produccion' },
+          { path: '/marketing/biblioteca',       nombre: 'Biblioteca de Activos', icon: FolderOpen,       permiso: 'marketing_biblioteca' },
+          { path: '/marketing/publicidad',       nombre: 'Publicidad y Ppto.',    icon: DollarSign,       permiso: 'marketing_publicidad' },
+          { path: '/marketing/automatizacion',   nombre: 'Automatización',        icon: Bot,              permiso: 'marketing_automatizacion' },
+          { path: '/marketing/metricas',         nombre: 'Métricas y Analytics',  icon: BarChart3,        permiso: 'marketing_metricas' },
+          { path: '/marketing/marca',            nombre: 'Gestión de Marca',      icon: Building2,        permiso: 'marketing_marca' },
+          { path: '/marketing/colaboracion',     nombre: 'Colaboración y Flujos', icon: MessageSquare,    permiso: 'marketing_colaboracion' },
+          { path: '/marketing/briefing',         nombre: 'Briefing de Contenido', icon: ClipboardList,    permiso: 'marketing_briefing' }, // ⭐ NUEVO
+        ],
+      },
       {
         nombre: 'RRHH',
         icon: Briefcase,
@@ -58,7 +79,7 @@ const NAV_GRUPOS = [
   },
 ];
 
-function MenuItem({ item, sidebarOpen, isMobile, location }) {
+function MenuItem({ item, sidebarOpen, isMobile, location, expandSidebar }) {
   const [submenuOpen, setSubmenuOpen] = useState(false);
   const Icon = item.icon;
   
@@ -75,7 +96,14 @@ function MenuItem({ item, sidebarOpen, isMobile, location }) {
     return (
       <div className="mb-0.5">
         <button
-          onClick={() => sidebarOpen || isMobile ? setSubmenuOpen(!submenuOpen) : null}
+          onClick={() => {
+            if (sidebarOpen || isMobile) {
+              setSubmenuOpen(!submenuOpen);
+            } else {
+              expandSidebar();
+              setSubmenuOpen(true);
+            }
+          }}
           className={`w-full flex items-center gap-3 py-2.5 px-3 rounded-xl transition-all duration-300 group ${
             isActive 
               ? 'bg-gradient-to-r from-[#185FA5] to-[#144b82] text-white shadow-lg shadow-[#185FA5]/25 border border-white/10' 
@@ -311,6 +339,7 @@ export default function Layout({ children }) {
                       sidebarOpen={sidebarOpen} 
                       isMobile={mobileOpen} 
                       location={location} 
+                      expandSidebar={() => { setSidebarOpen(true); localStorage.setItem('sidebarOpen', 'true'); }}
                     />
                   ))}
                 </div>

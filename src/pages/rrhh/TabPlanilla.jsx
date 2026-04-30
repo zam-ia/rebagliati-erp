@@ -29,6 +29,18 @@ const badgeIncidencia = (tipo) => TIPOS_INCIDENCIA.find(t => t.value === tipo)?.
 const badgeModalidad = (modalidad) => MODALIDADES_HE.find(m => m.value === modalidad)?.color || 'bg-gray-100 text-gray-700';
 const labelModalidad = (modalidad) => MODALIDADES_HE.find(m => m.value === modalidad)?.label || modalidad;
 
+// Mapeo de modalidad a tipo_compensacion para Planilla & Pagos
+const mapearTipoCompensacion = (modalidad) => {
+  const mapa = {
+    sin_compensacion: 'Sin compensación (pago por horas)',
+    pago_25: 'Pago 25% adicional',
+    pago_35: 'Pago 35% adicional',
+    compensacion_horas: 'Compensación con horas libres',
+    compensacion_dias: 'Compensación con días libres',
+  };
+  return mapa[modalidad] || null;
+};
+
 // Formularios vacíos
 const FORM_INC_VACIO = {
   tipo_persona: 'planilla', // 'planilla' | 'locador'
@@ -216,7 +228,7 @@ export default function TabPlanilla() {
     }
   };
 
-  // ─── GUARDAR HORA EXTRA (sin cambios, ya soporta locadores) ─────────────────
+  // ─── GUARDAR HORA EXTRA (CORREGIDO para incluir tipo_compensacion) ──────────
   const guardarHoraExtra = async () => {
     if (!formHE.fecha) {
       mostrarToast('Selecciona una fecha', 'error');
@@ -252,6 +264,9 @@ export default function TabPlanilla() {
       valorHora = (loc.sueldo_base || 0) / 240;
     }
 
+    // ── CORRECCIÓN: mapear modalidad a tipo_compensacion ──
+    const tipoCompensacion = mapearTipoCompensacion(formHE.modalidad);
+
     const registro = {
       tipo_persona: formHE.tipo_persona,
       empleado_id,
@@ -262,6 +277,7 @@ export default function TabPlanilla() {
       minutos,
       horas_decimal: horasDecimal,
       modalidad: formHE.modalidad,
+      tipo_compensacion: tipoCompensacion,      // ⭐ NUEVO
       observaciones: formHE.observaciones || null,
       aprobado_por: formHE.aprobado_por || null,
       estado: 'Pendiente',
@@ -1015,7 +1031,7 @@ export default function TabPlanilla() {
         </div>
       )}
 
-      {/* ─── MODAL HORAS EXTRAS (sin cambios) ──────────────────────────────────── */}
+      {/* ─── MODAL HORAS EXTRAS (sin cambios visuales) ────────────────────────── */}
       {modalHE && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl w-full max-w-lg p-6 my-4 max-h-[90vh] overflow-y-auto">
