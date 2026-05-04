@@ -1,237 +1,131 @@
-import { useEffect, useState } from 'react';
+// src/pages/rrhh/CalculoLiquidacion.jsx
+import { useMemo } from 'react';
 
-export default function CalculoLiquidacion({ empleado, fechaCese, ultimoDiaTrabajado, motivo, onCalculo }) {
-  const [resultado, setResultado] = useState(null);
+function mesesCompletos(fechaInicio, fechaFin) {
+  const ini = new Date(fechaInicio + 'T12:00:00');
+  const fin = new Date(fechaFin + 'T12:00:00');
+  const diff =
+    (fin.getFullYear() - ini.getFullYear()) * 12 +
+    (fin.getMonth() - ini.getMonth());
+  const diaIni = ini.getDate();
+  const diaFin = fin.getDate();
+  const ultimoDiaFin = new Date(fin.getFullYear(), fin.getMonth() + 1, 0).getDate();
+  return diaFin >= diaIni || diaFin === ultimoDiaFin ? diff + 1 : diff;
+}
 
-  useEffect(() => {
-    if (empleado && fechaCese) {
-      calcularLiquidacion();
-    }
-  }, [empleado, fechaCese, ultimoDiaTrabajado, motivo]);
+export default function useCalculoLiquidacion({
+  empleado,
+  fechaCese,
+  fechaInicioPlanilla,
+  ultimaGratificacion
+}) {
+  const calculo = useMemo(() => {
+    if (!empleado || !fechaCese) return null;
 
-  const calcularLiquidacion = () => {
-    if (!empleado) return;
+    const sueldoBruto = Number(empleado.sueldo_bruto || empleado.sueldo_total || 0);
+    const asignacionFamiliar = Number(empleado.asignacion_familiar || 0);
+    const sistemaPensionario = empleado.sistema_pensionario || '';
 
-    // ==================== DATOS BASE ====================
-    const sueldoBasico = Number(empleado.sueldo_bruto) || 0;
-    const asignacionFamiliar = (empleado.tiene_hijos && Number(empleado.asignacion_familiar)) || 0;
-    const comodato = Number(empleado.comodato) || 0;
-    const sueldoTotal = sueldoBasico + asignacionFamiliar + comodato;
+    const fechaIngresoEfectiva = fechaInicioPlanilla || empleado.fecha_inicio;
+    const fechaCeseObj = new Date(fechaCese + 'T12:00:00');
+    const fechaIngresoObj = fechaIngresoEfectiva ? new Date(fechaIngresoEfectiva + 'T12:00:00') : new Date();
+    const anioCese = fechaCeseObj.getFullYear();
+    const mesCese = fechaCeseObj.getMonth();
 
-    // ==================== FECHAS ====================
-    const fechaIngreso = new Date(empleado.fecha_inicio);
-    const fechaCeseDate = new Date(fechaCese);
-    const fechaUltimoDia = ultimoDiaTrabajado ? new Date(ultimoDiaTrabajado) : fechaCeseDate;
+    const RC_SIN_GRAT = sueldoBruto + asignacionFamiliar;
+    const baseGrat = RC_SIN_GRAT / 2;
 
-    // ==================== TIEMPO TRABAJADO ====================
-    let añosTrabajados = fechaCeseDate.getFullYear() - fechaIngreso.getFullYear();
-    let mesesTrabajados = fechaCeseDate.getMonth() - fechaIngreso.getMonth();
-    let diasTrabajados = fechaCeseDate.getDate() - fechaIngreso.getDate();
+    // ---- 1. Promedio de gratificación (1/6) ----
+    let promedioGratificacionCTS;
 
-    if (diasTrabajados < 0) {
-      mesesTrabajados--;
-      const ultimoDiaMesAnterior = new Date(fechaCeseDate.getFullYear(), fechaCeseDate.getMonth(), 0).getDate();
-      diasTrabajados += ultimoDiaMesAnterior;
-    }
-    if (mesesTrabajados < 0) {
-      añosTrabajados--;
-      mesesTrabajados += 12;
-    }
+    if (ultimaGratificacion != null && ultimaGratificacion !== '' && Number(ultimaGratificacion) > 0) {
+      promedioGratificacionCTS = Number(ultimaGratificacion);
+    } else {
+      let inicioSemGrat, finSemGrat;
+      if (mesCese <= 5) {
+        inicioSemGrat = new Date(anioCese - 1, 6, 1);
+        finSemGrat = new Date(anioCese - 1, 11, 31);
+      } else {
+        inicioSemGrat = new Date(anioCese, 0, 1);
+        finSemGrat = new Date(anioCese, 5, 30);
+      }
 
-    const totalMeses = añosTrabajados * 12 + mesesTrabajados;
+      const fechaInicioSem = fechaIngresoObj > inicioSemGrat ? fechaIngresoObj : inicioSemGrat;
+      const mesesEnSem = Math.min(6, mesesCompletos(
+        fechaInicioSem.toISOString().slice(0, 10),
+        finSemGrat.toISOString().slice(0, 10)
+      ));
 
-    // ==================== DÍAS LABORADOS EN EL MES DE CESE ====================
-    const primerDiaMes = new Date(fechaCeseDate.getFullYear(), fechaCeseDate.getMonth(), 1);
-    let diasEnMes = 31;
-    if ([4, 6, 9, 11].includes(fechaCeseDate.getMonth() + 1)) diasEnMes = 30;
-    if (fechaCeseDate.getMonth() === 1) {
-      const esBisiesto = (fechaCeseDate.getFullYear() % 4 === 0 && fechaCeseDate.getFullYear() % 100 !== 0) || fechaCeseDate.getFullYear() % 400 === 0;
-      diasEnMes = esBisiesto ? 29 : 28;
-    }
-
-    let diasLaborados = fechaCeseDate.getDate();
-    if (fechaUltimoDia < fechaCeseDate) {
-      diasLaborados = fechaUltimoDia.getDate();
-    }
-
-    const remuneracionDelMes = (sueldoTotal / diasEnMes) * diasLaborados;
-
-    // ==================== VACACIONES TRUNCAS (Ley: 30 días por año completo) ====================
-    // Para MYPE: se calcula proporcional según meses trabajados
-    const diasVacaciones = (totalMeses / 12) * 30;
-    const vacacionesTruncas = (sueldoTotal / 30) * diasVacaciones;
-
-    // ==================== GRATIFICACIONES TRUNCAS (Ley: 1 sueldo por Julio y Diciembre) ====================
-    // Para MYPE: las gratificaciones son el 100% del sueldo (si el trabajador está en planilla)
-    let gratificacionesTruncas = 0;
-    const mesesHastaJulio = Math.min(6, totalMeses);
-    const mesesHastaDiciembre = Math.min(12, totalMeses) - 6;
-    
-    if (mesesHastaJulio > 0) {
-      gratificacionesTruncas += (sueldoTotal / 6) * mesesHastaJulio;
-    }
-    if (mesesHastaDiciembre > 0) {
-      gratificacionesTruncas += (sueldoTotal / 6) * mesesHastaDiciembre;
+      const gratPrincipalSem = (baseGrat / 6) * mesesEnSem;
+      const bonifExtraSem = gratPrincipalSem * 0.09;
+      const gratTotalSem = gratPrincipalSem + bonifExtraSem;
+      promedioGratificacionCTS = gratTotalSem / 6;
     }
 
-    // ==================== CTS (Compensación por Tiempo de Servicios) ====================
-    // Para MYPE: la CTS es 1 sueldo por año completo (proporcional a meses trabajados)
-    const ctsTrunca = (sueldoTotal / 12) * totalMeses;
+    // ---- 2. CTS Trunca ----
+    const inicioPeriodoCTS = new Date(anioCese - 1, 10, 1);
+    const fechaInicioCTS = fechaIngresoObj > inicioPeriodoCTS ? fechaIngresoObj : inicioPeriodoCTS;
+    const mesesCTS = mesesCompletos(
+      fechaInicioCTS.toISOString().slice(0, 10),
+      fechaCese
+    );
 
-    // ==================== BONIFICACIÓN POR MOTIVO DE CESE ====================
-    let bonificacion = 0;
-    if (motivo === 'despido') {
-      bonificacion = sueldoTotal * 0.2; // 20% adicional por despido
-    } else if (motivo === 'jubilacion') {
-      bonificacion = sueldoTotal * 0.5; // 50% adicional por jubilación
+    const RC_CTS = sueldoBruto + asignacionFamiliar + promedioGratificacionCTS;
+    const baseCTS = RC_CTS / 2;
+    const ctsTrunca = (baseCTS / 12) * mesesCTS;
+
+    // ---- 3. Vacaciones Truncas ----
+    const mesesVac = Math.min(12, mesesCompletos(fechaIngresoEfectiva, fechaCese));
+    const baseVac = RC_SIN_GRAT / 2;
+    const vacacionesBruto = (baseVac / 12) * mesesVac;
+
+    let retencionVac = 0;
+    if (sistemaPensionario && sistemaPensionario !== 'ONP') {
+      retencionVac = vacacionesBruto * 0.1137;
+    } else if (sistemaPensionario === 'ONP') {
+      retencionVac = vacacionesBruto * 0.13;
     }
+    const vacacionesNeto = vacacionesBruto - retencionVac;
 
-    // ==================== TOTAL LIQUIDACIÓN BRUTA ====================
-    const totalLiquidacion = remuneracionDelMes + vacacionesTruncas + gratificacionesTruncas + ctsTrunca + bonificacion;
+    // ---- 4. Gratificaciones Truncas ----
+    const inicioPeriodoGrat = new Date(anioCese, 0, 1);
+    const fechaInicioGrat = fechaIngresoObj > inicioPeriodoGrat ? fechaIngresoObj : inicioPeriodoGrat;
+    const mesesGrat = Math.min(6, mesesCompletos(
+      fechaInicioGrat.toISOString().slice(0, 10),
+      fechaCese
+    ));
+    const gratificacionPrincipal = (baseGrat / 6) * mesesGrat;
+    const bonificacionExtra = gratificacionPrincipal * 0.09;
+    const totalGratificaciones = gratificacionPrincipal + bonificacionExtra;
 
-    // ==================== DESCUENTOS SEGÚN SISTEMA PENSIONARIO ====================
-    let descuentoAFP = 0;
-    let descuentoONP = 0;
-    let afpComision = 0;
-    let afpPrima = 0;
-    
-    if (empleado.sistema_pensionario === 'AFP') {
-      // AFP: 10% comisión + 1.7% prima de seguro (aprox)
-      afpComision = totalLiquidacion * 0.10;
-      afpPrima = totalLiquidacion * 0.017;
-      descuentoAFP = afpComision + afpPrima;
-    } else if (empleado.sistema_pensionario === 'ONP') {
-      descuentoONP = totalLiquidacion * 0.13; // 13% ONP
-    }
+    const bonificacionEspecial = 0;
 
-    // ==================== TOTAL NETO A PAGAR ====================
-    const totalFinal = totalLiquidacion - descuentoAFP - descuentoONP;
+    const totalFinal = ctsTrunca + vacacionesNeto + totalGratificaciones + bonificacionEspecial;
 
-    // ==================== RESULTADO FINAL ====================
-    const calculo = {
-      sueldoBasico,
+    return {
+      sueldoBruto,
       asignacionFamiliar,
-      comodato,
-      sueldoTotal,
-      añosTrabajados: añosTrabajados + (mesesTrabajados / 12),
-      mesesTrabajados,
-      diasLaborados,
-      remuneracionDelMes: Math.round(remuneracionDelMes),
-      vacacionesTruncas: Math.round(vacacionesTruncas),
-      gratificacionesTruncas: Math.round(gratificacionesTruncas),
-      ctsTrunca: Math.round(ctsTrunca),
-      bonificacion: Math.round(bonificacion),
-      totalLiquidacion: Math.round(totalLiquidacion),
-      afpComision: Math.round(afpComision),
-      afpPrima: Math.round(afpPrima),
-      descuentoAFP: Math.round(descuentoAFP),
-      descuentoONP: Math.round(descuentoONP),
-      totalFinal: Math.round(totalFinal)
+      fechaIngreso: fechaIngresoEfectiva,
+      RC_SIN_GRAT,
+      RC_CTS,
+      baseCTS,
+      baseVac,
+      baseGrat,
+      mesesCTS,
+      mesesVac,
+      mesesGrat,
+      promedioGratificacionCTS, // número sin formatear
+      ctsTrunca: ctsTrunca.toFixed(2),
+      vacacionesBruto: vacacionesBruto.toFixed(2),
+      retencionVac: retencionVac.toFixed(2),
+      vacacionesNeto: vacacionesNeto.toFixed(2),
+      gratificacionPrincipal: gratificacionPrincipal.toFixed(2),
+      bonificacionExtra: bonificacionExtra.toFixed(2),
+      totalGratificaciones: totalGratificaciones.toFixed(2),
+      bonificacionEspecial: bonificacionEspecial.toFixed(2),
+      totalFinal: totalFinal.toFixed(2),
     };
+  }, [empleado, fechaCese, fechaInicioPlanilla, ultimaGratificacion]);
 
-    setResultado(calculo);
-    if (onCalculo) onCalculo(calculo);
-  };
-
-  if (!resultado) {
-    return <div className="text-center py-4 text-gray-400">Selecciona empleado y fecha para calcular</div>;
-  }
-
-  return (
-    <div className="space-y-3">
-      {/* Datos base */}
-      <div className="grid grid-cols-2 gap-2 text-sm">
-        <div className="bg-gray-50 p-2 rounded">
-          <div className="text-xs text-gray-500">Sueldo bruto</div>
-          <div className="font-bold">S/ {resultado.sueldoBasico.toLocaleString()}</div>
-        </div>
-        <div className="bg-gray-50 p-2 rounded">
-          <div className="text-xs text-gray-500">Asignación familiar</div>
-          <div className="font-bold">S/ {resultado.asignacionFamiliar.toLocaleString()}</div>
-        </div>
-        <div className="bg-gray-50 p-2 rounded">
-          <div className="text-xs text-gray-500">Comodato</div>
-          <div className="font-bold">S/ {resultado.comodato.toLocaleString()}</div>
-        </div>
-        <div className="bg-gray-50 p-2 rounded">
-          <div className="text-xs text-gray-500">Total mensual</div>
-          <div className="font-bold text-blue-600">S/ {resultado.sueldoTotal.toLocaleString()}</div>
-        </div>
-      </div>
-
-      {/* Tiempo trabajado */}
-      <div className="border-t pt-2">
-        <div className="grid grid-cols-2 gap-2 text-sm">
-          <div>
-            <div className="text-xs text-gray-500">Años trabajados</div>
-            <div className="font-medium">{resultado.añosTrabajados.toFixed(2)} años</div>
-          </div>
-          <div>
-            <div className="text-xs text-gray-500">Meses trabajados</div>
-            <div className="font-medium">{resultado.mesesTrabajados} meses</div>
-          </div>
-          <div>
-            <div className="text-xs text-gray-500">Días laborados (mes cese)</div>
-            <div className="font-medium">{resultado.diasLaborados} días</div>
-          </div>
-          <div>
-            <div className="text-xs text-gray-500">Remuneración del mes</div>
-            <div className="font-medium">S/ {resultado.remuneracionDelMes.toLocaleString()}</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Beneficios sociales */}
-      <div className="bg-green-50 p-3 rounded-lg space-y-1">
-        <div className="flex justify-between text-sm">
-          <span>Vacaciones truncas (30 días/año)</span>
-          <span className="font-bold">S/ {resultado.vacacionesTruncas.toLocaleString()}</span>
-        </div>
-        <div className="flex justify-between text-sm">
-          <span>Gratificaciones truncas (Jul/Dic)</span>
-          <span className="font-bold">S/ {resultado.gratificacionesTruncas.toLocaleString()}</span>
-        </div>
-        <div className="flex justify-between text-sm">
-          <span>CTS trunca (1 sueldo/año)</span>
-          <span className="font-bold">S/ {resultado.ctsTrunca.toLocaleString()}</span>
-        </div>
-        <div className="flex justify-between text-sm">
-          <span>Bonificación por motivo</span>
-          <span className="font-bold">S/ {resultado.bonificacion.toLocaleString()}</span>
-        </div>
-        <div className="border-t pt-1 mt-1 flex justify-between font-bold">
-          <span>Total liquidación bruta</span>
-          <span className="text-green-700">S/ {resultado.totalLiquidacion.toLocaleString()}</span>
-        </div>
-      </div>
-
-      {/* Descuentos AFP/ONP */}
-      {(resultado.descuentoAFP > 0 || resultado.descuentoONP > 0) && (
-        <div className="bg-red-50 p-3 rounded-lg space-y-1">
-          {resultado.afpComision > 0 && (
-            <div className="flex justify-between text-sm">
-              <span>AFP - Comisión (10%)</span>
-              <span className="text-red-600">- S/ {resultado.afpComision.toLocaleString()}</span>
-            </div>
-          )}
-          {resultado.afpPrima > 0 && (
-            <div className="flex justify-between text-sm">
-              <span>AFP - Prima seguro (1.7%)</span>
-              <span className="text-red-600">- S/ {resultado.afpPrima.toLocaleString()}</span>
-            </div>
-          )}
-          {resultado.descuentoONP > 0 && (
-            <div className="flex justify-between text-sm">
-              <span>ONP (13%)</span>
-              <span className="text-red-600">- S/ {resultado.descuentoONP.toLocaleString()}</span>
-            </div>
-          )}
-          <div className="border-t pt-1 mt-1 flex justify-between font-bold">
-            <span>Total neto a pagar</span>
-            <span className="text-red-700">S/ {resultado.totalFinal.toLocaleString()}</span>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+  return calculo;
 }

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { Mail, Lock, Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, Loader2, ShieldCheck, CheckCircle, TrendingUp, Clock, BarChart3 } from 'lucide-react';
 
 export default function Login() {
   const [correo, setCorreo] = useState('');
@@ -42,12 +42,38 @@ export default function Login() {
     }
   };
 
+  // Mensaje dinámico según hora del día
+  const getMensajeHora = () => {
+    const hora = new Date().getHours();
+    if (hora >= 6 && hora < 12) {
+      return {
+        titular: 'Empieza el día con control total',
+        subtitulo: 'Toda tu operación lista para arrancar.',
+        icono: <Clock size={16} className="text-amber-400" />
+      };
+    } else if (hora >= 12 && hora < 18) {
+      return {
+        titular: 'Mantén el ritmo de tu negocio',
+        subtitulo: 'Decisiones rápidas, resultados claros.',
+        icono: <TrendingUp size={16} className="text-emerald-400" />
+      };
+    } else {
+      return {
+        titular: 'Cierra el día con claridad',
+        subtitulo: 'Revisa, controla y prepárate para mañana.',
+        icono: <BarChart3 size={16} className="text-indigo-400" />
+      };
+    }
+  };
+
+  const mensajeHora = getMensajeHora();
+
   return (
     <div className="min-h-screen flex font-sans bg-gradient-to-br from-slate-950 to-zinc-950 overflow-hidden">
       
       {/* PANEL IZQUIERDO: Identidad de Marca - Diseño VIP */}
       <div
-        className="hidden lg:flex flex-col justify-between w-[460px] flex-shrink-0 p-16 relative overflow-hidden"
+        className="hidden lg:flex flex-col justify-between w-[480px] flex-shrink-0 p-16 relative overflow-hidden"
         style={{ 
           backgroundImage: `linear-gradient(to bottom, rgba(10, 25, 48, 0.92), rgba(10, 25, 48, 0.96)), url('/fondo.jpg')`,
           backgroundSize: 'cover',
@@ -58,6 +84,7 @@ export default function Login() {
         {/* Efectos de luz premium */}
         <div className="absolute inset-0 bg-[radial-gradient(at_top_right,#185FA5_0%,transparent_60%)] opacity-30" />
         <div className="absolute top-12 -right-20 w-96 h-96 bg-[#185FA5] opacity-10 blur-[120px] rounded-full" />
+        <div className="absolute bottom-40 left-10 w-64 h-64 bg-blue-600 opacity-5 blur-[100px] rounded-full" />
         
         <div className="relative z-10">
           {/* Logo y Marca */}
@@ -77,41 +104,74 @@ export default function Login() {
             </div>
           </div>
 
-          {/* Título principal */}
-          <div className="mb-8">
+          {/* Título principal - Mejorado con hook emocional */}
+          <div className="mb-6">
             <h1 className="text-5xl font-black text-white leading-[1.05] tracking-tighter">
               Sistema ERP
             </h1>
             <p className="text-[#7eb3f5] text-4xl font-semibold tracking-tight mt-1">Rebagliati</p>
           </div>
 
-          <p className="text-lg leading-relaxed max-w-[340px] text-white/80">
-            Plataforma integral de gestión para inscripciones, finanzas, RRHH y operaciones.
+          {/* Subtítulo con beneficio - NUEVO */}
+          <p className="text-xl leading-relaxed max-w-[360px] text-white/90 font-medium">
+            Controla tu operación. Decide con datos. Crece sin caos.
+          </p>
+          
+          <p className="text-sm leading-relaxed max-w-[340px] text-white/60 mt-3">
+            Plataforma diseñada para centralizar y optimizar cada área de tu empresa, sin complicaciones.
           </p>
         </div>
 
-        {/* Capacidades del sistema */}
+        {/* Beneficios percibidos (antes "capacidades") - MEJORADO */}
         <div className="relative z-10 mt-auto">
-          <div className="uppercase text-xs tracking-[0.1em] text-white/50 font-medium mb-6">Capacidades del sistema</div>
-          <div className="space-y-6">
+          <div className="uppercase text-xs tracking-[0.1em] text-white/50 font-medium mb-6">Lo que puedes hacer aquí</div>
+          <div className="space-y-5">
             {[
-              'Gestión completa de inscripciones y pagos',
-              'CRM avanzado y seguimiento de prospectos',
-              'Administración profesional de RRHH y planillas',
-              'Analítica en tiempo real y reportes ejecutivos'
+              { icon: <CheckCircle size={16} />, texto: 'Evita errores en inscripciones y pagos' },
+              { icon: <TrendingUp size={16} />, texto: 'No pierdas prospectos en el seguimiento' },
+              { icon: <ShieldCheck size={16} />, texto: 'Ten tu planilla siempre bajo control' },
+              { icon: <BarChart3 size={16} />, texto: 'Toma decisiones sin adivinar' },
             ].map((item, idx) => (
-              <div key={idx} className="flex items-start gap-4 group">
-                <div className="mt-1.5 w-2 h-2 rounded-full bg-[#7eb3f5] group-hover:scale-125 transition-transform" />
-                <span className="text-white/90 text-[15px] leading-tight">
-                  {item}
+              <div key={idx} className="flex items-start gap-3 group cursor-default">
+                <div className="mt-0.5 text-[#7eb3f5] group-hover:scale-110 transition-transform">
+                  {item.icon}
+                </div>
+                <span className="text-white/90 text-[15px] leading-tight group-hover:text-white transition-colors">
+                  {item.texto}
                 </span>
               </div>
             ))}
           </div>
+
+          {/* Métrica de confianza - NUEVO */}
+          <div className="mt-8 pt-6 border-t border-white/10">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-[#7eb3f5]">
+                <TrendingUp size={20} />
+              </div>
+              <div>
+                <p className="text-white font-bold text-lg">+10,000</p>
+                <p className="text-white/50 text-xs uppercase tracking-wider">Procesos gestionados sin errores</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Mensaje vivo según hora - NUEVO */}
+        <div className="relative z-10 pt-8 border-t border-white/10">
+          <div className="flex items-center gap-3 bg-white/5 rounded-2xl px-5 py-4">
+            <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center">
+              {mensajeHora.icono}
+            </div>
+            <div>
+              <p className="text-white font-bold text-sm">{mensajeHora.titular}</p>
+              <p className="text-white/50 text-xs">{mensajeHora.subtitulo}</p>
+            </div>
+          </div>
         </div>
 
         {/* Footer sutil */}
-        <div className="relative z-10 pt-12 border-t border-white/10 text-[10px] text-white/40 tracking-widest">
+        <div className="relative z-10 pt-8 text-[10px] text-white/40 tracking-widest">
           Rebagliati Diplomados SAC • 2026
         </div>
       </div>
@@ -132,12 +192,12 @@ export default function Login() {
             
             <h2 className="text-4xl font-semibold text-gray-900 tracking-tight">Iniciar Sesión</h2>
             <p className="mt-3 text-gray-500 text-[15px]">
-              Accede al sistema de gestión empresarial
+              Accede a toda tu operación en segundos
             </p>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-7">
-            {/* Campo Correo */}
+            {/* Campo Correo - Microcopy mejorado */}
             <div>
               <label className="block text-xs font-semibold text-gray-500 mb-2.5 tracking-widest uppercase">
                 Correo Institucional
@@ -151,14 +211,14 @@ export default function Login() {
                   type="email"
                   value={correo}
                   onChange={e => setCorreo(e.target.value)}
-                  placeholder="tu.correo@rebagliati.com"
+                  placeholder="Ingresa tu correo de trabajo"
                   required
                   className="w-full bg-white border border-gray-200 rounded-3xl pl-14 pr-6 py-4 text-base outline-none transition-all focus:border-[#185FA5] focus:ring-4 focus:ring-blue-500/10 placeholder:text-gray-400"
                 />
               </div>
             </div>
 
-            {/* Campo Contraseña */}
+            {/* Campo Contraseña - Microcopy mejorado */}
             <div>
               <label className="block text-xs font-semibold text-gray-500 mb-2.5 tracking-widest uppercase">
                 Contraseña
@@ -194,7 +254,7 @@ export default function Login() {
               </div>
             )}
 
-            {/* Botón de Ingreso */}
+            {/* Botón de Ingreso - Microcopy mejorado */}
             <button
               type="submit"
               disabled={cargando}
@@ -206,7 +266,7 @@ export default function Login() {
                   <span>Verificando credenciales...</span>
                 </>
               ) : (
-                'Iniciar Sesión'
+                'Entrar al sistema'
               )}
             </button>
           </form>

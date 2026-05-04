@@ -1,12 +1,12 @@
 // src/pages/rrhh/TabPlanillaPagos.jsx
 // ─────────────────────────────────────────────────────────────────────────────
 // MEJORAS:
-// - Modalidad de pago en locadores editable desde la tabla (click en badge)
+// - Modalidad de pago en complementarios editable desde la tabla (click en badge)
 // - Filtro por modalidad (RHE / Efectivo / Todos)
 // - Totales más visibles
 // - Botón "Aprobar a Finanzas" en todas las pestañas
-// - Soporte para locadores que cesaron en el mes (cálculo proporcional automático)
-// - Soporte para locadores que ingresaron en el mes (cálculo proporcional automático)
+// - Soporte para complementarios que cesaron en el mes (cálculo proporcional automático)
+// - Soporte para complementarios que ingresaron en el mes (cálculo proporcional automático)
 // - Toggle de retención 4ta categoría (columna "Ret. 4ta" clickeable)
 // - Corrección horas extras: si la novedad es "Sin compensación (pago por horas)",
 //   se paga la hora ordinaria sin sobretasa del 25%/35%
@@ -15,13 +15,16 @@
 // - Cálculo correcto de descuentos AFP: fondo + prima de seguro + comisión flujo
 // - Etiquetas fijas según formato oficial de planilla:
 //   "AFP Aport. 10%", "AFP Com. Seg.", "AFP Com. Com."
-// - LOCADORES: ahora se consideran también las faltas/tardanzas registradas desde
-//   Novedades Planilla (tabla asistencia), además de asistencia_locadores
+// - COMPLEMENTARIOS: ahora se consideran también las faltas/tardanzas registradas desde
+//   Novedades Planilla (tabla asistencia), además de asistencia_complementarios
 // - ELIMINADO: Asignación Familiar (no aplica en régimen MYPE)
 // - NUEVA PESTAÑA: Practicantes (pago por horas) con tarifa diferenciada fines de semana
-// - NUEVO MODAL VIP: registro semanal / mensual con cuadrícula de horas
+// - NUEVO MODAL VIP: registro semanal / mensual con cuadrícula de horas (Lun-Dom y calendario real)
 // - CORRECCIÓN AFP DUPLICADA: búsqueda flexible de tasas y ocultación de
 //   "AFP Com. Com." cuando la comisión flujo es 0 (AFP mixta/saldo)
+// - ESTILO BRUTAL: modal de registro de horas con diseño oscuro y vanguardista
+// - PERSONALIZAR FACTOR FIN DE SEMANA: modal para cambiar el multiplicador
+// - PAGO DE HORAS EXTRAS: agrupado por persona, muestra número de cuenta y total acumulado
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useState, useMemo } from 'react';
@@ -90,36 +93,28 @@ const afpCorto = (tipoPension) => {
 };
 
 // ─── BÚSQUEDA FLEXIBLE DE TASAS AFP ───────────────────────────────────────
-// Para que coincida con nombres como "AFP INTEGRA" o "AFP INTEGRA/FLUJO"
 const buscarTasasAFP = (tipoPension) => {
-  if (!tipoPension) return { fondo: 0.10, poliza: 0.0137, comision: 0.0137 }; // seguro + comisión por defecto
+  if (!tipoPension) return { fondo: 0.10, poliza: 0.0137, comision: 0.0137 };
   const tipo = tipoPension.trim().toUpperCase();
 
-  // Búsqueda exacta primero
   if (AFP_TASAS[tipo]) return AFP_TASAS[tipo];
 
-  // Búsqueda flexible: extraer el nombre de la AFP y si es MIXTA o FLUJO
   const esFlujo = /FLUJO/i.test(tipo);
   const esMixta = /MIXTA/i.test(tipo);
 
-  // Intenta identificar la AFP por nombre conocido
   for (const [clave, tasas] of Object.entries(AFP_TASAS)) {
     const nombreAfp = clave.replace(/\s+MIXTA\s*\/\s*SALDO/i, '').replace(/\s*\/\s*FLUJO$/i, '').replace(/\s+FLUJO$/i, '').trim();
     if (tipo.includes(nombreAfp.toUpperCase())) {
-      // Si el tipo original no especifica, asumimos MIXTA si no dice FLUJO
       if (esFlujo) {
-        // Buscar la versión FLUJO de esa AFP
         const claveFlujo = `${nombreAfp} FLUJO`.toUpperCase().replace(/\s+/g, ' ');
         if (AFP_TASAS[claveFlujo]) return AFP_TASAS[claveFlujo];
       } else {
-        // MIXTA (o sin especificar) -> devolver la MIXTA de esa AFP
         const claveMixta = `${nombreAfp} MIXTA / SALDO`.toUpperCase().replace(/\s+/g, ' ');
         if (AFP_TASAS[claveMixta]) return AFP_TASAS[claveMixta];
       }
     }
   }
 
-  // Fallback: si no se encontró, asumir MIXTA con comision=0 para no duplicar valores
   return { fondo: 0.10, poliza: 0.0137, comision: 0.0000 };
 };
 
@@ -176,7 +171,7 @@ function calcularPlanilla(emp, asistencias = [], mesStr) {
     if (tip === 'ONP') {
       onp = TRA * ONP_TASA;
     } else {
-      const t = buscarTasasAFP(tip);   // ⭐ usa búsqueda flexible
+      const t = buscarTasasAFP(tip);
       afpF = TRA * t.fondo;
       afpP = TRA * t.poliza;
       afpC = TRA * t.comision;
@@ -247,7 +242,7 @@ function calcularPlanilla(emp, asistencias = [], mesStr) {
   }
 }
 
-// ── Cálculo locadores ──
+// ── Cálculo complementarios ──
 function calcularLocador(loc, asis = [], mesStr = null) {
   try {
     const sb = Number(loc?.sueldo_base || loc?.monto_mensual || 0);
@@ -338,7 +333,7 @@ function calcularPracticante(loc, horas = []) {
   try {
     const sb = Number(loc?.sueldo_base || 0);
     const valorHora = sb / 240;
-    const factorFinSemana = Number(loc?.factor_fin_semana) || 1.5;
+    const factorFinSemana = Number(loc?.factor_fin_semana) || 1.0;
 
     let totalHorasNormales = 0;
     let totalHorasFinSemana = 0;
@@ -372,7 +367,7 @@ function calcularPracticante(loc, horas = []) {
     };
   } catch {
     return {
-      sb:0, valorHora:0, factorFinSemana:1.5,
+      sb:0, valorHora:0, factorFinSemana:1.0,
       totalHoras:0, totalHorasNormales:0, totalHorasFinSemana:0,
       remuneracion:0, ret4:0, neto:0,
       aplicaRetencion:true, banco:'—', cuenta:'—'
@@ -528,14 +523,12 @@ function generarPDF(emp, c, mesStr, returnBase64 = false) {
     ['Subsidio',                 c.sub > 0 ? fmt(c.sub) : ''],
   ];
 
-  // ══════ ETIQUETAS FIJAS DE AFP ══════
   const colDesc = [
     ['ONP 13%',              c.tip === 'ONP' ? fmt(c.onp) : ''],
     ['  RENTA 5ta',          c.r5 > 0 ? fmt(c.r5) : ''],
     ['AFP Aport. 10%',       c.tip !== 'ONP' ? fmt(c.afpF) : ''],
     ['AFP Com. Seg.',        c.tip !== 'ONP' ? fmt(c.afpP) : ''],
   ];
-  // ⭐ AFP Com. Com. solo si la comisión es > 0
   if (c.tip !== 'ONP' && c.afpC > 0) {
     colDesc.push(['AFP Com. Com.', fmt(c.afpC)]);
   }
@@ -729,13 +722,11 @@ function ModalBoleta({ emp, c, mesStr, onClose }) {
     { lbl: 'Subsidio',                 val: c.sub,   show: true },
   ];
 
-  // ══════ ETIQUETAS FIJAS DE AFP ══════
   const filasDesc = [
     { lbl: 'ONP 13%',               val: c.tip === 'ONP' ? c.onp : 0,  show: true },
     { lbl: '  RENTA 5ta',           val: c.r5,              show: true },
     { lbl: 'AFP Aport. 10%',        val: c.tip !== 'ONP' ? c.afpF : 0, show: true },
     { lbl: 'AFP Com. Seg.',         val: c.tip !== 'ONP' ? c.afpP : 0, show: true },
-    // ⭐ AFP Com. Com. solo si comisión > 0
     ...(c.tip !== 'ONP' && c.afpC > 0 ? [{ lbl: 'AFP Com. Com.', val: c.afpC, show: true }] : []),
     { lbl: 'Adelanto.',             val: c.adel,            show: true },
     { lbl: 'Dscto pago exceso abr', val: c.dpe,             show: true },
@@ -952,14 +943,14 @@ function ModalBoleta({ emp, c, mesStr, onClose }) {
   );
 }
 
-// ─── MODAL LOCADOR ──
+// ─── MODAL COMPLEMENTARIO ──
 function ModalLocador({ loc, c, mesStr, onClose }) {
   return (
     <div className="fixed inset-0 bg-[#0a1930]/60 backdrop-blur-md z-50 flex items-center justify-center p-4">
       <div className="bg-white w-full max-w-md rounded-2xl overflow-hidden shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-200">
         <div className="bg-[#11284e] px-5 py-4 flex justify-between items-center text-white">
           <div>
-            <p className="font-black text-[11px] uppercase tracking-widest">COMPROBANTE DE PAGO — LOCADOR</p>
+            <p className="font-black text-[11px] uppercase tracking-widest">COMPROBANTE DE PAGO — COMPLEMENTARIO</p>
             <p className="text-[9px] text-blue-300 mt-0.5">{periodoLabel(mesStr)}</p>
           </div>
           <button onClick={onClose} className="hover:bg-white/10 p-1.5 rounded-full transition-colors"><X size={16}/></button>
@@ -972,7 +963,7 @@ function ModalLocador({ loc, c, mesStr, onClose }) {
               <p className="text-gray-500">RUC: 20601225175</p>
             </div>
             <div>
-              <p className="font-black text-blue-600 uppercase text-[8px] mb-0.5">Locador</p>
+              <p className="font-black text-blue-600 uppercase text-[8px] mb-0.5">Complementario</p>
               <p className="font-bold text-gray-800">{loc.apellido}, {loc.nombre}</p>
               <p className="text-gray-500">DNI: {loc.dni || '—'}</p>
               <p className="text-gray-500">{c.banco} · {c.cuenta}</p>
@@ -1084,25 +1075,49 @@ export default function TabPlanillaPagos() {
   const [semanaInicio, setSemanaInicio] = useState(null);
   const [horasGrid, setHorasGrid] = useState({});
 
-  // Días de la semana activa (L-V)
+  // ── Estados para el modal de factor fin de semana ──
+  const [showModalFactor, setShowModalFactor] = useState(false);
+  const [practFactorId, setPractFactorId] = useState(null);
+  const [nuevoFactor, setNuevoFactor] = useState('');
+
+  // ═══ Días de la semana completa ═══
   const diasSemana = useMemo(() => {
     if (!semanaInicio) return [];
     const lunes = new Date(semanaInicio + 'T12:00:00');
-    return [0, 1, 2, 3, 4].map(offset => {
+    return Array.from({ length: 7 }, (_, i) => {
       const d = new Date(lunes);
-      d.setDate(d.getDate() + offset);
+      d.setDate(d.getDate() + i);
       return d.toISOString().split('T')[0];
     });
   }, [semanaInicio]);
 
-  const diasDelMesActual = useMemo(() => {
+  // ═══ Calendario mensual real ═══
+  const calendarioMensual = useMemo(() => {
     if (!mes) return [];
     const [y, m] = mes.split('-').map(Number);
-    const total = new Date(y, m, 0).getDate();
-    return Array.from({ length: total }, (_, i) => {
-      const d = new Date(y, m - 1, i + 1);
-      return d.toISOString().split('T')[0];
-    });
+    const totalDias = new Date(y, m, 0).getDate();
+    const primerDiaSemana = new Date(y, m - 1, 1).getUTCDay();
+    const inicioSemana = primerDiaSemana === 0 ? 6 : primerDiaSemana - 1;
+
+    const semanas = [];
+    let diaActual = 1;
+    while (diaActual <= totalDias) {
+      const semana = [];
+      for (let i = 0; i < 7; i++) {
+        if (semanas.length === 0 && i < inicioSemana) {
+          semana.push(null);
+        } else if (diaActual > totalDias) {
+          semana.push(null);
+        } else {
+          const fecha = `${y}-${String(m).padStart(2, '0')}-${String(diaActual).padStart(2, '0')}`;
+          semana.push(fecha);
+          diaActual++;
+        }
+      }
+      semanas.push(semana);
+      if (diaActual > totalDias) break;
+    }
+    return semanas;
   }, [mes]);
 
   const cargarHorasGrid = async (practId) => {
@@ -1133,6 +1148,33 @@ export default function TabPlanillaPagos() {
     setShowModalPract(true);
   };
 
+  const abrirModalFactor = (practId, factorActual) => {
+    setPractFactorId(practId);
+    setNuevoFactor(String(factorActual || 1.0));
+    setShowModalFactor(true);
+  };
+
+  const guardarFactor = async () => {
+    const factor = parseFloat(nuevoFactor);
+    if (isNaN(factor) || factor < 0) {
+      alert('Ingrese un número válido');
+      return;
+    }
+    const { error } = await supabase
+      .from('locadores')
+      .update({ factor_fin_semana: factor })
+      .eq('id', practFactorId);
+    if (!error) {
+      setPracticantes(prev => prev.map(p =>
+        p.id === practFactorId ? { ...p, factor_fin_semana: factor } : p
+      ));
+      setShowModalFactor(false);
+      cargar();
+    } else {
+      alert('Error al guardar factor: ' + error.message);
+    }
+  };
+
   const cambiarSemana = (dir) => {
     if (!semanaInicio) return;
     const d = new Date(semanaInicio + 'T12:00:00');
@@ -1148,7 +1190,7 @@ export default function TabPlanillaPagos() {
   const guardarHorasMasivo = async () => {
     if (!selPractId) return;
     const entradas = Object.entries(horasGrid)
-      .filter(([_, h]) => h !== '' && Number(h) >= 0)
+      .filter(([_, h]) => h !== '' && Number(h) > 0)
       .map(([fecha, horas]) => ({
         locador_id: selPractId,
         fecha,
@@ -1263,7 +1305,7 @@ export default function TabPlanillaPagos() {
     } else if (tipo === 'locadores') {
       total = locs.filter(l => filtroModalidad === 'Todos' || (l.modalidad_pago || 'RHE') === filtroModalidad)
         .reduce((s, l) => s + calcularLocador(l, asisL, mes).neto, 0);
-      concepto = `Pago a Locadores - ${mes}`;
+      concepto = `Pago a Complementarios - ${mes}`;
     } else if (tipo === 'horas_extras') {
       total = horasExtras.filter(h => h.estado === 'Aprobado')
         .reduce((s, h) => {
@@ -1294,7 +1336,7 @@ export default function TabPlanillaPagos() {
       fecha: new Date().toISOString().split('T')[0],
       concepto,
       area: 'RRHH',
-      categoria: tipo === 'practicantes' ? 'Practicantes' : tipo === 'planilla' ? 'Planilla' : tipo === 'locadores' ? 'Locadores' : 'Horas Extras',
+      categoria: tipo === 'practicantes' ? 'Practicantes' : tipo === 'planilla' ? 'Planilla' : tipo === 'locadores' ? 'Complementarios' : 'Horas Extras',
       proveedor: 'Nómina',
       monto: total,
       estado: 'Pendiente',
@@ -1352,6 +1394,62 @@ export default function TabPlanillaPagos() {
     return locs.filter(l => (l.modalidad_pago || 'RHE') === filtroModalidad);
   }, [locs, filtroModalidad]);
 
+  // ═══════════════════════════════════════════════════════════
+  // AGRUPACIÓN DE HORAS EXTRAS (por persona)
+  // ═══════════════════════════════════════════════════════════
+  const horasExtrasAgrupadas = useMemo(() => {
+    const aprobadas = horasExtras.filter(h => h.estado === 'Aprobado');
+    const grupos = {};
+    aprobadas.forEach(h => {
+      const key = h.tipo_persona === 'planilla' ? `emp_${h.empleado_id}` : `loc_${h.locador_id}`;
+      if (!grupos[key]) {
+        grupos[key] = {
+          tipo_persona: h.tipo_persona,
+          id_ref: h.tipo_persona === 'planilla' ? h.empleado_id : h.locador_id,
+          horas: 0,
+          total: 0,
+          registros: []
+        };
+      }
+      grupos[key].registros.push(h);
+      const horasDec = Number(h.horas_decimal || 0);
+      grupos[key].horas += horasDec;
+      let totalReg = 0;
+      if (h.tipo_persona === 'planilla') {
+        const emp = cols.find(e => e.id === h.empleado_id);
+        if (emp) {
+          const plan = calcularPlanilla(emp, asis, mes);
+          const sinComp = h.tipo_compensacion === 'Sin compensación (pago por horas)';
+          const valor = sinComp ? plan.valorHoraBase : plan.hrExt25;
+          totalReg = valor * horasDec;
+        }
+      } else {
+        totalReg = (Number(h.valor_hora) || 0) * horasDec;
+      }
+      grupos[key].total += totalReg;
+    });
+
+    return Object.values(grupos).map(g => {
+      let nombre = '', dni = '', cuenta = '';
+      if (g.tipo_persona === 'planilla') {
+        const emp = cols.find(e => e.id === g.id_ref);
+        if (emp) {
+          nombre = `${emp.apellido} ${emp.nombre}`;
+          dni = emp.dni || '';
+          cuenta = emp.numero_cuenta || '';
+        }
+      } else {
+        const loc = locs.find(l => l.id === g.id_ref);
+        if (loc) {
+          nombre = `${loc.apellido} ${loc.nombre}`;
+          dni = loc.dni || '';
+          cuenta = loc.numero_cuenta || '';
+        }
+      }
+      return { ...g, nombre, dni, cuenta };
+    });
+  }, [horasExtras, cols, locs, asis, mes]);
+
   if (loading) return (
     <div className="flex items-center justify-center h-64 gap-3 text-gray-400">
       <Loader2 className="animate-spin" size={24}/>
@@ -1387,6 +1485,7 @@ export default function TabPlanillaPagos() {
               <th className="p-3 text-right text-[10px] font-black text-gray-400 uppercase">Remuneración</th>
               <th className="p-3 text-right text-[10px] font-black text-gray-400 uppercase">Ret. 4ta</th>
               <th className="p-3 text-right text-[10px] font-black text-gray-400 uppercase">Neto</th>
+              <th className="p-3 text-center text-[10px] font-black text-gray-400 uppercase">Factor Fin Sem.</th>
               <th className="p-3 text-center text-[10px] font-black text-gray-400 uppercase">Registro</th>
             </tr>
           </thead>
@@ -1404,6 +1503,18 @@ export default function TabPlanillaPagos() {
                   <td className="p-3 text-right font-mono text-xs">S/ {fmt(c.remuneracion)}</td>
                   <td className="p-3 text-right font-mono text-xs text-red-500">S/ {fmt(c.ret4)}</td>
                   <td className="p-3 text-right font-mono font-bold text-xs text-[#185FA5]">S/ {fmt(c.neto)}</td>
+                  <td className="p-3 text-right font-mono text-xs">
+                    <div className="flex items-center justify-end gap-2">
+                      <span>{p.factor_fin_semana || '1.0'}</span>
+                      <button
+                        onClick={() => abrirModalFactor(p.id, p.factor_fin_semana)}
+                        className="p-1 bg-gray-100 hover:bg-blue-100 rounded-lg text-gray-500 hover:text-blue-600 transition"
+                        title="Personalizar factor fin de semana"
+                      >
+                        <Edit size={12} />
+                      </button>
+                    </div>
+                  </td>
                   <td className="p-3 text-center">
                     <button
                       onClick={() => abrirModalPract(p.id)}
@@ -1421,7 +1532,7 @@ export default function TabPlanillaPagos() {
               );
             })}
             {practicantes.length === 0 && (
-              <tr><td colSpan={9} className="p-8 text-center text-gray-400">No hay practicantes registrados</td></tr>
+              <tr><td colSpan={10} className="p-8 text-center text-gray-400">No hay practicantes registrados</td></tr>
             )}
           </tbody>
         </table>
@@ -1432,64 +1543,93 @@ export default function TabPlanillaPagos() {
     </div>
   );
 
-  // ── NUEVO MODAL VIP ──
+  // ── NUEVO MODAL VIP (BRUTAL) ──
   const ModalPracticanteHoras = () => {
     const practicante = practicantes.find(p => p.id === selPractId);
     const nombrePract = practicante ? `${practicante.nombre} ${practicante.apellido}` : '';
 
     return (
-      <div className="fixed inset-0 bg-[#0a1930]/70 backdrop-blur-md flex items-center justify-center z-50 p-4">
-        <div className="bg-white/90 backdrop-blur-xl rounded-3xl w-full max-w-4xl shadow-2xl border border-white/50 overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
-          <div className="bg-gradient-to-r from-[#0B1527] to-[#185FA5] px-6 py-4 flex justify-between items-center">
+      <div className="fixed inset-0 bg-[#0a0f1a]/80 backdrop-blur-md flex items-center justify-center z-50 p-4">
+        <div className="bg-gradient-to-b from-[#0f172a] to-[#0b1120] rounded-[2.5rem] w-full max-w-5xl shadow-2xl border border-white/10 overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[95vh]">
+          
+          {/* Encabezado Brutal */}
+          <div className="bg-gradient-to-r from-[#1e293b] via-[#0f172a] to-[#1e293b] px-8 py-5 flex justify-between items-center border-b border-white/5">
             <div className="text-white">
-              <h3 className="font-black text-lg uppercase tracking-tight">
-                <UserPlus size={18} className="inline mr-2" />
+              <h3 className="font-black text-2xl uppercase tracking-tight flex items-center gap-3">
+                <div className="p-2 bg-[#185FA5]/20 rounded-2xl">
+                  <UserPlus size={22} className="text-[#3b82f6]" />
+                </div>
                 Registro de Horas — {nombrePract}
               </h3>
-              <p className="text-[10px] text-blue-200 mt-0.5">{periodoLabel(mes)}</p>
+              <p className="text-xs text-blue-200/70 mt-1 ml-14">{periodoLabel(mes)}</p>
             </div>
-            <button onClick={() => setShowModalPract(false)} className="text-white/70 hover:text-white p-2 rounded-full hover:bg-white/10 transition">
-              <X size={20} />
+            <button onClick={() => setShowModalPract(false)} 
+              className="text-white/50 hover:text-white p-2 rounded-full hover:bg-white/10 transition">
+              <X size={22} />
             </button>
           </div>
 
-          <div className="flex gap-2 px-6 pt-5 pb-3 bg-white/60 backdrop-blur-sm border-b border-gray-100">
+          {/* Selector de modo */}
+          <div className="flex gap-3 px-8 pt-6 pb-4 bg-white/5 border-b border-white/5">
             <button onClick={() => setModoRegistro('semanal')}
-              className={`px-5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${modoRegistro === 'semanal' ? 'bg-[#185FA5] text-white shadow-lg shadow-blue-500/20' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-              <List size={14} /> Vista Semanal
+              className={`px-6 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${
+                modoRegistro === 'semanal' 
+                  ? 'bg-gradient-to-r from-[#185FA5] to-[#0ea5e9] text-white shadow-lg shadow-blue-500/20' 
+                  : 'bg-white/5 text-gray-400 hover:bg-white/10'
+              }`}>
+              <List size={16} /> Vista Semanal
             </button>
             <button onClick={() => setModoRegistro('mensual')}
-              className={`px-5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${modoRegistro === 'mensual' ? 'bg-[#185FA5] text-white shadow-lg shadow-blue-500/20' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-              <Grid size={14} /> Vista Mensual
+              className={`px-6 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${
+                modoRegistro === 'mensual' 
+                  ? 'bg-gradient-to-r from-[#185FA5] to-[#0ea5e9] text-white shadow-lg shadow-blue-500/20' 
+                  : 'bg-white/5 text-gray-400 hover:bg-white/10'
+              }`}>
+              <Grid size={16} /> Vista Mensual
             </button>
           </div>
 
-          <div className="p-6 overflow-y-auto flex-1">
+          {/* Contenido del calendario */}
+          <div className="p-8 overflow-y-auto flex-1">
             {modoRegistro === 'semanal' ? (
-              <div className="space-y-6">
-                <div className="flex items-center justify-between bg-gray-50/80 rounded-2xl p-3 backdrop-blur-sm">
-                  <button onClick={() => cambiarSemana(-1)} className="p-2 bg-white rounded-xl shadow-sm hover:bg-gray-100 transition">
-                    <ChevronLeft size={18} className="text-[#185FA5]" />
+              /* ─── VISTA SEMANAL (Lun a Dom) ─── */
+              <div className="space-y-8">
+                {/* Navegador de semana */}
+                <div className="flex items-center justify-between bg-white/5 rounded-2xl p-4 backdrop-blur-sm">
+                  <button onClick={() => cambiarSemana(-1)} 
+                    className="p-3 bg-white/5 rounded-xl hover:bg-white/10 text-white transition">
+                    <ChevronLeft size={20} />
                   </button>
                   <div className="text-center">
-                    <span className="font-black text-gray-800 text-sm">
-                      {diasSemana.length > 0 ? `${fmtFecha(diasSemana[0])} — ${fmtFecha(diasSemana[4])}` : '...'}
+                    <span className="font-black text-white text-lg">
+                      {diasSemana.length > 0 
+                        ? `${fmtFecha(diasSemana[0])} — ${fmtFecha(diasSemana[6])}` 
+                        : '...'}
                     </span>
-                    <p className="text-[10px] text-gray-400">Semana</p>
+                    <p className="text-xs text-blue-300/60 mt-0.5">Semana</p>
                   </div>
-                  <button onClick={() => cambiarSemana(1)} className="p-2 bg-white rounded-xl shadow-sm hover:bg-gray-100 transition">
-                    <ChevronRight size={18} className="text-[#185FA5]" />
+                  <button onClick={() => cambiarSemana(1)} 
+                    className="p-3 bg-white/5 rounded-xl hover:bg-white/10 text-white transition">
+                    <ChevronRight size={20} />
                   </button>
                 </div>
 
-                <div className="grid grid-cols-5 gap-3">
-                  {['Lun', 'Mar', 'Mié', 'Jue', 'Vie'].map((dia, idx) => {
+                {/* Cuadrícula 7 columnas */}
+                <div className="grid grid-cols-7 gap-4">
+                  {['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map((dia, idx) => {
                     const fecha = diasSemana[idx] || '';
                     const fueraDeMes = fecha && !fecha.startsWith(mes);
+                    const esFin = idx === 5 || idx === 6;
                     return (
-                      <div key={idx} className="flex flex-col items-center space-y-2">
-                        <div className="text-xs font-black text-gray-500 uppercase">{dia}</div>
-                        <div className="text-[10px] text-gray-400 mb-1">{fecha ? fmtFecha(fecha) : '—'}</div>
+                      <div key={idx} className={`flex flex-col items-center space-y-3 p-4 rounded-2xl transition-all ${
+                        esFin ? 'bg-amber-500/5 ring-1 ring-amber-500/20' : 'bg-white/5'
+                      } ${fueraDeMes ? 'opacity-40' : ''}`}>
+                        <div className={`text-xs font-black uppercase ${
+                          esFin ? 'text-amber-400' : 'text-gray-400'
+                        }`}>{dia}</div>
+                        <div className="text-xs text-gray-500 mb-1">
+                          {fecha ? fmtFecha(fecha) : '—'}
+                        </div>
                         <input
                           type="number"
                           step="0.5"
@@ -1498,9 +1638,12 @@ export default function TabPlanillaPagos() {
                           value={horasGrid[fecha] ?? ''}
                           onChange={(e) => handleHoraChange(fecha, e.target.value)}
                           disabled={!fecha || fueraDeMes}
-                          className={`w-16 text-center border-2 rounded-xl py-2 text-sm font-bold outline-none transition-all ${
-                            fueraDeMes ? 'bg-gray-100 border-gray-200 text-gray-300 cursor-not-allowed' :
-                            'bg-white border-gray-200 text-gray-800 focus:border-[#185FA5] focus:ring-4 focus:ring-blue-500/20'
+                          className={`w-20 text-center border-2 rounded-xl py-3 text-sm font-bold outline-none transition-all ${
+                            fueraDeMes 
+                              ? 'bg-gray-800/20 border-gray-700 text-gray-600 cursor-not-allowed' 
+                              : esFin 
+                                ? 'bg-amber-500/10 border-amber-500/30 text-amber-300 focus:border-amber-400 focus:ring-4 focus:ring-amber-500/20' 
+                                : 'bg-white/10 border-white/10 text-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20'
                           }`}
                           placeholder="0.0"
                         />
@@ -1510,50 +1653,74 @@ export default function TabPlanillaPagos() {
                 </div>
               </div>
             ) : (
-              <div className="space-y-3">
-                <div className="grid grid-cols-7 gap-2 text-center text-xs font-black text-gray-400 uppercase mb-2">
-                  {['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map(d => (
-                    <div key={d}>{d}</div>
+              /* ─── VISTA MENSUAL CALENDARIO REAL ─── */
+              <div className="space-y-4">
+                {/* Cabecera de días */}
+                <div className="grid grid-cols-7 gap-2 text-center text-sm font-black uppercase tracking-wider">
+                  {['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map((d, i) => (
+                    <div key={d} className={`py-3 rounded-xl ${i >= 5 ? 'text-amber-400 bg-amber-400/5' : 'text-gray-400 bg-white/5'}`}>
+                      {d}
+                    </div>
                   ))}
                 </div>
-                <div className="grid grid-cols-7 gap-2">
-                  {diasDelMesActual.map(fecha => {
-                    const diaNum = new Date(fecha + 'T12:00:00').getUTCDay();
-                    const esFin = diaNum === 0 || diaNum === 6;
-                    return (
-                      <div key={fecha} className={`p-1 rounded-xl text-center ${esFin ? 'bg-red-50/50' : 'bg-white'}`}>
-                        <div className="text-[10px] text-gray-500 mb-1">{fecha.split('-')[2]}</div>
-                        <input
-                          type="number"
-                          step="0.5"
-                          min="0"
-                          max="24"
-                          value={horasGrid[fecha] ?? ''}
-                          onChange={(e) => handleHoraChange(fecha, e.target.value)}
-                          className={`w-full text-center border rounded-lg py-1.5 text-xs font-bold outline-none transition-all ${
-                            esFin ? 'border-red-200 bg-red-50/30 text-red-600' : 'border-gray-200 bg-gray-50 text-gray-700 focus:border-[#185FA5] focus:ring-2 focus:ring-blue-500/20'
-                          }`}
-                          placeholder="0"
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
+
+                {/* Semanas del mes */}
+                {calendarioMensual.map((semana, idxSem) => (
+                  <div key={idxSem} className="grid grid-cols-7 gap-2">
+                    {semana.map((fecha, idxDia) => {
+                      if (!fecha) {
+                        return (
+                          <div key={`empty-${idxSem}-${idxDia}`} 
+                            className="p-2 rounded-xl bg-transparent min-h-[80px]" />
+                        );
+                      }
+                      const diaNum = new Date(fecha + 'T12:00:00').getUTCDay();
+                      const esFin = diaNum === 0 || diaNum === 6;
+                      const diaStr = fecha.split('-')[2];
+                      return (
+                        <div key={fecha} className={`p-2 rounded-xl flex flex-col items-center justify-center min-h-[80px] transition-all ${
+                          esFin ? 'bg-amber-500/5 ring-1 ring-amber-500/20' : 'bg-white/5 hover:bg-white/10'
+                        }`}>
+                          <span className={`text-xs font-bold mb-1 ${
+                            esFin ? 'text-amber-400' : 'text-gray-400'
+                          }`}>{parseInt(diaStr)}</span>
+                          <input
+                            type="number"
+                            step="0.5"
+                            min="0"
+                            max="24"
+                            value={horasGrid[fecha] ?? ''}
+                            onChange={(e) => handleHoraChange(fecha, e.target.value)}
+                            className={`w-16 text-center border-2 rounded-lg py-1.5 text-xs font-bold outline-none transition-all ${
+                              esFin 
+                                ? 'bg-amber-500/10 border-amber-500/30 text-amber-300 focus:border-amber-400' 
+                                : 'bg-white/10 border-white/10 text-white focus:border-blue-500'
+                            } focus:ring-2 focus:ring-blue-500/20`}
+                            placeholder="0"
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
               </div>
             )}
           </div>
 
-          <div className="px-6 py-4 bg-gradient-to-r from-gray-50 to-white border-t flex justify-between items-center">
-            <div className="text-sm font-black text-gray-700">
-              Total horas: <span className="text-[#185FA5] text-xl ml-2">
+          {/* Footer */}
+          <div className="px-8 py-5 bg-white/5 border-t border-white/5 flex justify-between items-center">
+            <div className="text-lg font-black text-white">
+              Total horas: <span className="text-[#38bdf8] text-2xl ml-3">
                 {fmt(Object.values(horasGrid).reduce((s, h) => s + (Number(h) || 0), 0))}
               </span>
             </div>
-            <div className="flex gap-3">
-              <button onClick={() => setShowModalPract(false)} className="px-6 py-3 text-gray-600 font-bold hover:bg-gray-100 rounded-2xl transition-colors">
+            <div className="flex gap-4">
+              <button onClick={() => setShowModalPract(false)} 
+                className="px-8 py-3.5 bg-white/5 text-gray-300 font-bold rounded-2xl hover:bg-white/10 transition-colors">
                 Cancelar
               </button>
-              <button onClick={guardarHorasMasivo} className="px-6 py-3 bg-gradient-to-r from-[#185FA5] to-[#144b82] text-white rounded-2xl font-bold shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 transition-all active:scale-[0.98]">
+              <button onClick={guardarHorasMasivo} 
+                className="px-8 py-3.5 bg-gradient-to-r from-[#185FA5] to-[#0ea5e9] text-white rounded-2xl font-bold shadow-lg shadow-blue-500/30 hover:shadow-blue-500/50 transition-all active:scale-[0.98]">
                 Guardar Horas
               </button>
             </div>
@@ -1598,7 +1765,7 @@ export default function TabPlanillaPagos() {
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
         {[
           { l: 'Neto Planilla',    v: `S/ ${fmt(totP)}`,       c: 'border-[#185FA5] bg-blue-50/50' },
-          { l: 'Neto Locadores',   v: `S/ ${fmt(totL)}`,       c: 'border-purple-500 bg-purple-50/50' },
+          { l: 'Neto Complementarios',   v: `S/ ${fmt(totL)}`,       c: 'border-purple-500 bg-purple-50/50' },
           { l: 'EsSalud Emp. 9%',  v: `S/ ${fmt(totEs)}`,      c: 'border-emerald-500 bg-emerald-50/50' },
           { l: 'Horas Extras',     v: `S/ ${fmt(totHE)}`,      c: 'border-amber-500 bg-amber-50/50' },
           { l: 'Total Nómina',     v: `S/ ${fmt(totP + totL + totHE + totPract)}`, c: 'border-[#0B1527] bg-gray-100/50' },
@@ -1613,13 +1780,13 @@ export default function TabPlanillaPagos() {
       {/* Pestañas */}
       <div className="flex gap-2 mb-5 bg-white/80 p-1.5 w-max rounded-2xl border border-blue-50 shadow-lg shadow-blue-100/20 backdrop-blur-sm">
         <button onClick={() => setVista('planilla')} className={`px-5 py-2.5 text-xs font-bold rounded-xl flex items-center gap-2 transition-all duration-200 ${vista === 'planilla' ? 'bg-gradient-to-r from-[#11284e] to-[#0B1527] text-white shadow-md shadow-blue-500/20' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'}`}><Users size={14}/> PLANILLA (5ta Categ.)</button>
-        <button onClick={() => setVista('locacion')} className={`px-5 py-2.5 text-xs font-bold rounded-xl flex items-center gap-2 transition-all duration-200 ${vista === 'locacion' ? 'bg-gradient-to-r from-[#185FA5] to-[#144b82] text-white shadow-md shadow-blue-500/20' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'}`}><Briefcase size={14}/> LOCADORES (4ta Categ.)</button>
+        <button onClick={() => setVista('locacion')} className={`px-5 py-2.5 text-xs font-bold rounded-xl flex items-center gap-2 transition-all duration-200 ${vista === 'locacion' ? 'bg-gradient-to-r from-[#185FA5] to-[#144b82] text-white shadow-md shadow-blue-500/20' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'}`}><Briefcase size={14}/> COMPLEMENTARIOS (4ta Categ.)</button>
         <button onClick={() => setVista('horas_extras')} className={`px-5 py-2.5 text-xs font-bold rounded-xl flex items-center gap-2 transition-all duration-200 ${vista === 'horas_extras' ? 'bg-gradient-to-r from-amber-600 to-amber-700 text-white shadow-md shadow-amber-500/20' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'}`}><Clock size={14}/> PAGO DE HORAS EXTRAS</button>
         <button onClick={() => setVista('calculadora')} className={`px-5 py-2.5 text-xs font-bold rounded-xl flex items-center gap-2 transition-all duration-200 ${vista === 'calculadora' ? 'bg-gradient-to-r from-[#11284e] to-[#0B1527] text-white shadow-md shadow-blue-500/20' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'}`}><Calculator size={14}/> CALCULADORA COSTO</button>
         <button onClick={() => setVista('practicantes')} className={`px-5 py-2.5 text-xs font-bold rounded-xl flex items-center gap-2 transition-all duration-200 ${vista === 'practicantes' ? 'bg-gradient-to-r from-[#11284e] to-[#0B1527] text-white shadow-md shadow-blue-500/20' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'}`}><UserPlus size={14}/> PRACTICANTES</button>
       </div>
 
-      {/* Filtro para locadores */}
+      {/* Filtro para complementarios */}
       {vista === 'locacion' && (
         <div className="mb-4 flex items-center gap-3 bg-white/80 rounded-2xl p-3 border border-blue-50 shadow-sm backdrop-blur-sm">
           <Filter size={16} className="text-gray-400" />
@@ -1632,14 +1799,14 @@ export default function TabPlanillaPagos() {
               </button>
             ))}
           </div>
-          <span className="text-xs text-gray-400 ml-4">({locadoresFiltrados.length} locadores, incluye ingresos y cesos del mes)</span>
+          <span className="text-xs text-gray-400 ml-4">({locadoresFiltrados.length} complementarios, incluye ingresos y cesos del mes)</span>
         </div>
       )}
 
       {vista === 'calculadora' && <CalculadoraCostos />}
       {vista === 'practicantes' && renderPracticantes()}
 
-      {/* Tablas de planilla / locadores / horas extras */}
+      {/* Tablas de planilla / complementarios / horas extras */}
       {vista !== 'calculadora' && vista !== 'practicantes' && (
         <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl shadow-blue-100/20 border border-blue-50 overflow-hidden">
           <div className="overflow-x-auto">
@@ -1655,6 +1822,8 @@ export default function TabPlanillaPagos() {
                       <th className="px-4 py-4 text-center">Sistema</th>
                       <th className="px-4 py-4 text-right">AFP/ONP</th>
                       <th className="px-4 py-4 text-right">Otros Dsctos</th>
+                      <th className="px-5 py-4 text-right">Neto a Pagar</th>
+                      <th className="px-5 py-4 text-center">Boleta</th>
                     </>
                   ) : vista === 'locacion' ? (
                     <>
@@ -1662,25 +1831,25 @@ export default function TabPlanillaPagos() {
                       <th className="px-4 py-4 text-right">Ajuste</th>
                       <th className="px-4 py-4 text-center">Ret. 4ta</th>
                       <th className="px-4 py-4 text-center">Modalidad Pago</th>
+                      <th className="px-5 py-4 text-right">Neto a Pagar</th>
+                      <th className="px-5 py-4 text-center">Boleta</th>
                     </>
                   ) : (
                     <>
                       <th className="px-4 py-4 text-center">Tipo</th>
-                      <th className="px-4 py-4 text-right">Horas</th>
-                      <th className="px-4 py-4 text-right">Valor Hora</th>
+                      <th className="px-4 py-4 text-right">Cuenta</th>
+                      <th className="px-4 py-4 text-right">Horas Tot.</th>
                       <th className="px-4 py-4 text-right">Total</th>
-                      <th className="px-4 py-4 text-center">Estado</th>
+                      <th className="px-5 py-4 text-right">Neto a Pagar</th>
                     </>
                   )}
-                  <th className="px-5 py-4 text-right">Neto a Pagar</th>
-                  {vista !== 'horas_extras' && <th className="px-5 py-4 text-center">Boleta</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50 text-xs">
-                {(vista === 'planilla' ? cols : vista === 'locacion' ? locadoresFiltrados : horasExtras).length === 0 ? (
-                  <tr><td colSpan={10} className="p-12 text-center text-gray-400 italic font-medium">Sin registros para este período</td></tr>
+                {(vista === 'planilla' ? cols : vista === 'locacion' ? locadoresFiltrados : horasExtrasAgrupadas).length === 0 ? (
+                  <tr><td colSpan={vista === 'planilla' ? 9 : vista === 'locacion' ? 7 : 6} className="p-12 text-center text-gray-400 italic font-medium">Sin registros para este período</td></tr>
                 ) : (
-                  (vista === 'planilla' ? cols : vista === 'locacion' ? locadoresFiltrados : horasExtras).map(item => {
+                  (vista === 'planilla' ? cols : vista === 'locacion' ? locadoresFiltrados : horasExtrasAgrupadas).map(item => {
                     if (vista === 'planilla') {
                       const c = calcularPlanilla(item, asis, mes);
                       return (
@@ -1745,7 +1914,7 @@ export default function TabPlanillaPagos() {
                                   )}
                                 </p>
                                 <p className="text-[9px] text-gray-400 font-bold uppercase">
-                                  {item.dni} | LOCADOR
+                                  {item.dni} | COMPLEMENTARIO
                                   {esCesado && item.fecha_cese && (
                                     <span className="text-red-500 ml-2"><CalendarDays size={10} className="inline mr-0.5"/>Cesó: {fmtFecha(item.fecha_cese)}</span>
                                   )}
@@ -1799,48 +1968,36 @@ export default function TabPlanillaPagos() {
                         </tr>
                       );
                     } else {
-                      const esPlanilla = item.tipo_persona === 'planilla';
-                      const persona = esPlanilla ? cols.find(e => e.id === item.empleado_id) : locs.find(l => l.id === item.locador_id);
-                      const nombre = persona ? `${persona.nombre} ${persona.apellido}` : (item.empleado_nombre || '—');
-                      let valorHora, totalPagar, indicador = '';
-                      if (esPlanilla && persona) {
-                        const plan = calcularPlanilla(persona, asis, mes);
-                        const sinCompensacion = item.tipo_compensacion === 'Sin compensación (pago por horas)';
-                        valorHora = sinCompensacion ? plan.valorHoraBase : plan.hrExt25;
-                        indicador = sinCompensacion ? 'base' : '+25%';
-                        totalPagar = valorHora * (item.horas_decimal || 0);
-                      } else {
-                        valorHora = item.valor_hora || 0;
-                        totalPagar = valorHora * (item.horas_decimal || 0);
-                      }
+                      // Horas Extras Agrupadas
+                      const grupo = item;
                       return (
-                        <tr key={item.id} className="hover:bg-amber-50/30 transition-colors">
+                        <tr key={grupo.id_ref} className="hover:bg-amber-50/30 transition-colors">
                           <td className="px-5 py-4">
                             <div className="flex items-center gap-3">
-                              <img src={persona?.foto_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(nombre)}&background=185FA5&color=fff&size=56`}
+                              <img src={`https://ui-avatars.com/api/?name=${encodeURIComponent(grupo.nombre)}&background=185FA5&color=fff&size=56`}
                                 className="w-9 h-9 rounded-full object-cover border-2 border-white shadow-md" alt=""/>
                               <div>
-                                <p className="font-black text-gray-800 text-xs">{nombre}</p>
-                                <p className="text-[9px] text-gray-400 font-bold uppercase">{item.fecha}</p>
+                                <p className="font-black text-gray-800 text-xs">{grupo.nombre}</p>
+                                <p className="text-[9px] text-gray-400 font-bold uppercase">
+                                  {grupo.dni} | {grupo.tipo_persona === 'planilla' ? 'Planilla' : 'Complementario'}
+                                </p>
                               </div>
                             </div>
                           </td>
                           <td className="px-4 py-4 text-center">
-                            <span className={`text-[8px] font-black px-2 py-1 rounded-full ${esPlanilla ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}`}>
-                              {esPlanilla ? 'Planilla' : 'Locador'}
+                            <span className={`text-[8px] font-black px-2 py-1 rounded-full ${
+                              grupo.tipo_persona === 'planilla' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'
+                            }`}>
+                              {grupo.tipo_persona === 'planilla' ? 'Planilla' : 'Complementario'}
                             </span>
                           </td>
-                          <td className="px-4 py-4 text-right font-mono text-xs">{item.horas}h {item.minutos > 0 ? `${item.minutos}m` : ''}</td>
-                          <td className="px-4 py-4 text-right font-mono text-xs">S/ {fmt(valorHora)} {indicador && <span className={`block text-[8px] ${indicador === 'base' ? 'text-gray-500' : 'text-blue-600'}`}>{indicador}</span>}</td>
-                          <td className="px-4 py-4 text-right font-bold text-amber-700 text-xs">S/ {fmt(totalPagar)}</td>
-                          <td className="px-4 py-4 text-center">
-                            <span className={`text-[8px] font-black px-2 py-1 rounded-full ${
-                              item.estado === 'Aprobado' ? 'bg-green-100 text-green-800' :
-                              item.estado === 'Rechazado' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'
-                            }`}>{item.estado}</span>
+                          <td className="px-4 py-4 text-right font-mono text-xs">
+                            {grupo.cuenta ? <span className="text-gray-700">{grupo.cuenta}</span> : <span className="text-gray-400 italic">—</span>}
                           </td>
+                          <td className="px-4 py-4 text-right font-mono text-xs">{grupo.horas.toFixed(2)}h</td>
+                          <td className="px-4 py-4 text-right font-bold text-amber-700 text-xs">S/ {fmt(grupo.total)}</td>
                           <td className="px-5 py-4 text-right">
-                            <span className="text-sm font-black text-[#185FA5]">S/ {fmt(totalPagar)}</span>
+                            <span className="text-sm font-black text-[#185FA5]">S/ {fmt(grupo.total)}</span>
                           </td>
                         </tr>
                       );
@@ -1855,7 +2012,7 @@ export default function TabPlanillaPagos() {
 
       {vista !== 'calculadora' && vista !== 'practicantes' && (
         <div className="mt-5 flex justify-end gap-8 text-sm font-bold pr-2 bg-white/80 backdrop-blur-sm p-4 rounded-2xl border border-blue-50 shadow-lg shadow-blue-100/20">
-          <span className="text-gray-600">Total {vista === 'planilla' ? 'Planilla' : vista === 'locacion' ? 'Locadores' : 'Horas Extras'}:</span>
+          <span className="text-gray-600">Total {vista === 'planilla' ? 'Planilla' : vista === 'locacion' ? 'Complementarios' : 'Horas Extras'}:</span>
           <span className="text-[#185FA5] text-lg font-black">S/ {fmt(vista === 'planilla' ? totP : vista === 'locacion' ? totL : totHE)}</span>
           {vista === 'planilla' && (
             <>
@@ -1869,6 +2026,37 @@ export default function TabPlanillaPagos() {
       {selEmp && <ModalBoleta emp={selEmp} c={calcularPlanilla(selEmp, asis, mes)} mesStr={mes} onClose={() => setSelEmp(null)} />}
       {selLoc && <ModalLocador loc={selLoc} c={calcularLocador(selLoc, asisL, mes)} mesStr={mes} onClose={() => setSelLoc(null)} />}
       {showModalPract && <ModalPracticanteHoras />}
+
+      {/* ═══ MODAL FACTOR FIN DE SEMANA ═══ */}
+      {showModalFactor && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-black text-gray-800">Factor Fin de Semana</h3>
+              <button onClick={() => setShowModalFactor(false)} className="p-1 hover:bg-gray-100 rounded-lg">
+                <X size={18} />
+              </button>
+            </div>
+            <p className="text-sm text-gray-500 mb-4">
+              Multiplicador para horas trabajadas en sábados y domingos (ej: 1.0 = sin recargo, 1.5 = 50% extra).
+            </p>
+            <input
+              type="number"
+              step="0.1"
+              min="0"
+              value={nuevoFactor}
+              onChange={(e) => setNuevoFactor(e.target.value)}
+              className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-blue-500"
+            />
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => setShowModalFactor(false)} className="flex-1 py-2.5 bg-gray-100 rounded-xl font-bold">Cancelar</button>
+              <button onClick={guardarFactor} className="flex-1 py-2.5 bg-gradient-to-r from-[#185FA5] to-[#144b82] text-white rounded-xl font-bold shadow-lg">
+                Guardar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+// src/App.jsx
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { supabase } from './lib/supabase';
 import Layout from './components/Layout';
@@ -30,6 +31,9 @@ import Reportes from './pages/Reportes';
 import GestionEstrategica from './pages/GestionEstrategica';
 import AdminUsuarios from './pages/AdminUsuarios';
 import Finanzas from './pages/finanzas';
+
+// ═══ NUEVO: Formulario de autoevaluación 360° ═══
+import FormularioAutoevaluacion from './pages/rrhh/FormularioAutoevaluacion';
 
 // ==========================================
 // CONFIGURACIÓN DE ENRUTAMIENTO
@@ -172,12 +176,15 @@ export default function App() {
   ];
 
   return (
-    <BrowserRouter>
+    <HashRouter>
       <Routes>
         {/* Rutas Públicas */}
         <Route path="/login" element={<Login />} />
         <Route path="/" element={<SmartHome />} />
         
+        {/* ═══ RUTA PÚBLICA: Formulario de autoevaluación (no requiere Layout ni ProtectedRoute) ═══ */}
+        <Route path="/evaluacion/:token" element={<FormularioAutoevaluacion />} />
+
         {/* Generador Dinámico de Rutas Protegidas */}
         {rutasPrivadas.map(({ path, component }) => (
           <Route 
@@ -194,6 +201,6 @@ export default function App() {
         {/* Catch-all: Redirecciona cualquier URL inválida al SmartHome */}
         <Route path="*" element={<SmartHome />} />
       </Routes>
-    </BrowserRouter>
+    </HashRouter>
   );
 }

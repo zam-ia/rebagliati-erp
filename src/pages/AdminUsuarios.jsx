@@ -12,7 +12,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import {
   Save, UserPlus, Lock, RefreshCw, Shield,
-  Search, X, User
+  Search, X, User, Loader2   // ⭐ Loader2 agregado
 } from 'lucide-react';
 
 // ─── Helpers para el árbol de módulos ────────────────────────────────────────
@@ -354,7 +354,7 @@ export default function AdminUsuarios() {
   // ── RENDER ────────────────────────────────────────────────────────────────
   if (loading) return (
     <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
-      <Loader2 className="animate-spin text-[#185FA5]" size={28} />
+      <Loader2 className="animate-spin text-[#185FA5]" size={28} />  {/* ⭐ Ahora sí está definido */}
       <p className="text-gray-500 font-medium">Cargando usuarios...</p>
     </div>
   );

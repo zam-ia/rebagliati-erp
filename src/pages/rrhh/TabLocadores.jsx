@@ -4,14 +4,17 @@
 // · Tabla refinada con columnas equilibradas
 // · Modales premium con fondo difuminado
 // · Formulario con inputs redondeados y focus rings
+// · Columna N° y orden por apellido
+// · Modal de recorte de foto de perfil (crop) antes de subir
 // ─────────────────────────────────────────────────────────────────────────────
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
   PlusCircle, ArrowRightCircle, FileText, Upload, Trash2, Eye, Camera,
   AlertCircle, XCircle, CheckCircle, Info, CalendarDays, Search,
-  UserPlus, Briefcase, MapPin, Mail, Phone, CreditCard, Building2
+  UserPlus, Briefcase, MapPin, Mail, Phone, CreditCard, Building2, ZoomIn, ZoomOut, RotateCw, Check, X
 } from 'lucide-react';
+import Cropper from 'react-easy-crop';
 
 const BANCOS_INICIALES = ['BCP', 'BBVA', 'Interbank'];
 const ESTADOS_CIVILES  = ['Soltero(a)', 'Casado(a)', 'Viudo(a)', 'Divorciado(a)'];
@@ -34,6 +37,36 @@ const formatFecha = (s) => {
     const [y, m, d] = s.split('-');
     return `${d}/${m}/${y}`;
   } catch { return s; }
+};
+
+// ─── Helper para crear un blob recortado desde un canvas ────────────────────
+const createCroppedImage = (imageSrc, pixelCrop) => {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = pixelCrop.width;
+      canvas.height = pixelCrop.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(
+        image,
+        pixelCrop.x,
+        pixelCrop.y,
+        pixelCrop.width,
+        pixelCrop.height,
+        0,
+        0,
+        pixelCrop.width,
+        pixelCrop.height
+      );
+      canvas.toBlob((blob) => {
+        if (!blob) reject(new Error('No se pudo crear la imagen'));
+        else resolve(blob);
+      }, 'image/jpeg', 0.95);
+    };
+    image.onerror = () => reject(new Error('Error al cargar la imagen'));
+    image.src = imageSrc;
+  });
 };
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -65,6 +98,14 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
   // ── Foto de perfil ────────────────────────────────────────────────────────
   const [subiendoFoto, setSubiendoFoto] = useState(false);
 
+  // ── Crop states ──────────────────────────────────────────────────────────
+  const [showCropModal, setShowCropModal] = useState(false);
+  const [cropImageSrc, setCropImageSrc]   = useState(null);
+  const [crop, setCrop]                   = useState({ x: 0, y: 0 });
+  const [zoom, setZoom]                   = useState(1);
+  const [rotation, setRotation]            = useState(0);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
+
   // ── Formulario principal ──────────────────────────────────────────────────
   const initialForm = {
     nombre: '', apellido: '', dni: '', ruc: '', telefono: '', correo: '',
@@ -95,7 +136,7 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
       if (error) throw error;
       setLocadores(data || []);
     } catch (err) {
-      console.error('Error cargando locadores:', err.message);
+      console.error('Error cargando complementarios:', err.message);
     } finally {
       setLoading(false);
     }
@@ -131,21 +172,21 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
     return true;
   };
 
-  // ── Subir foto ────────────────────────────────────────────────────────────
-  const subirFoto = async (file) => {
-    if (!file) return null;
+  // ── Subir foto (recibe Blob en lugar de File) ────────────────────────────
+  const subirFoto = async (blob) => {
+    if (!blob) return null;
     setSubiendoFoto(true);
-    const fileExt = file.name.split('.').pop();
+    const fileExt = 'jpg';
     const filePath = `locadores/${Date.now()}.${fileExt}`;
     const { error: uploadError } = await supabase.storage
-      .from('locadores-fotos').upload(filePath, file);
+      .from('locadores-fotos').upload(filePath, blob, { contentType: 'image/jpeg' });
     if (uploadError) { alert('Error al subir imagen: ' + uploadError.message); setSubiendoFoto(false); return null; }
     const { data: { publicUrl } } = supabase.storage.from('locadores-fotos').getPublicUrl(filePath);
     setSubiendoFoto(false);
     return publicUrl;
   };
 
-  // ── Guardar locador (crear / editar) ──────────────────────────────────────
+  // ── Guardar complementario ──────────────────────────────────────────────
   const guardarLocador = async () => {
     if (!validarFormulario()) return;
     setLoading(true);
@@ -211,14 +252,14 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
   };
 
   const eliminarLocador = async (id) => {
-    if (window.confirm('¿Eliminar este locador permanentemente?')) {
+    if (window.confirm('¿Eliminar este complementario permanentemente?')) {
       const { error } = await supabase.from('locadores').delete().eq('id', id);
       if (error) alert('Error: ' + error.message);
       else cargarLocadores();
     }
   };
 
-  // ── Cambio de estado (activo ↔ inactivo) ──────────────────────────────────
+  // ── Cambio de estado ──────────────────────────────────────────────────────
   const iniciarCambioEstado = (locador) => {
     if (locador.estado === 'activo') {
       setLocadorCese(locador);
@@ -228,7 +269,7 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
       setShowCeseModal(true);
     } else {
       if (window.confirm(
-        '¿Reactivar este locador? Se eliminarán los datos de cese registrados.'
+        '¿Reactivar este complementario? Se eliminarán los datos de cese registrados.'
       )) confirmarReactivacion(locador.id);
     }
   };
@@ -239,7 +280,7 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
       .update({ estado: 'activo', motivo_cese: null, observaciones_cese: null, fecha_cese: null })
       .eq('id', id);
     if (error) alert('Error al reactivar: ' + error.message);
-    else { alert('Locador reactivado correctamente'); cargarLocadores(); }
+    else { alert('Complementario reactivado correctamente'); cargarLocadores(); }
     setLoading(false);
   };
 
@@ -258,7 +299,7 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
     if (error) {
       alert('Error al actualizar estado: ' + error.message);
     } else {
-      alert(`Locador marcado como inactivo con fecha de cese ${formatFecha(fechaCese)}`);
+      alert(`Complementario marcado como inactivo con fecha de cese ${formatFecha(fechaCese)}`);
       setShowCeseModal(false);
       cargarLocadores();
     }
@@ -288,13 +329,53 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
     } else if (nuevo?.trim()) alert('Ese banco ya existe en la lista');
   };
 
+  // ── Manejo de archivo de foto (abre modal de crop) ──────────────────────
   const manejarArchivoFoto = async (e) => {
     const file = e.target.files[0];
     if (file) {
-      const url = await subirFoto(file);
-      if (url) setForm({ ...form, foto_url: url });
+      // Validar tipo de archivo
+      if (!file.type.startsWith('image/')) {
+        alert('Por favor selecciona una imagen válida');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        setCropImageSrc(reader.result);
+        setCrop({ x: 0, y: 0 });
+        setZoom(1);
+        setRotation(0);
+        setShowCropModal(true);
+      };
+      reader.readAsDataURL(file);
+      // Limpiar input para permitir re-seleccionar el mismo archivo
+      e.target.value = '';
     }
   };
+
+  // ── Crop handlers ────────────────────────────────────────────────────────
+  const onCropComplete = useCallback((croppedArea, croppedAreaPixels) => {
+    setCroppedAreaPixels(croppedAreaPixels);
+  }, []);
+
+  const handleCropConfirm = async () => {
+    if (!cropImageSrc || !croppedAreaPixels) return;
+    try {
+      const croppedBlob = await createCroppedImage(cropImageSrc, croppedAreaPixels);
+      const url = await subirFoto(croppedBlob);
+      if (url) {
+        setForm({ ...form, foto_url: url });
+      }
+    } catch (err) {
+      alert('Error al recortar la imagen: ' + err.message);
+    } finally {
+      setShowCropModal(false);
+      setCropImageSrc(null);
+    }
+  };
+
+  const handleZoomIn = () => setZoom(prev => Math.min(prev + 0.5, 5));
+  const handleZoomOut = () => setZoom(prev => Math.max(prev - 0.5, 0.5));
+  const handleRotate = () => setRotation(prev => (prev + 90) % 360);
 
   // ── Documentos ────────────────────────────────────────────────────────────
   const subirDocumento = async () => {
@@ -333,6 +414,14 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
     else alert('Error: ' + error.message);
   };
 
+  // ✅ NUEVO: refrescar lista después de migrar exitosamente
+  const handleMigrar = async (loc) => {
+    if (onMigrarAPlanilla) {
+      await onMigrarAPlanilla(loc);
+      cargarLocadores(); // Recargar para que el locador migrado desaparezca de activos
+    }
+  };
+
   // ─────────────────────────────────────────────────────────────────────────
   // RENDER
   // ─────────────────────────────────────────────────────────────────────────
@@ -345,9 +434,9 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
             <div className="p-2 bg-blue-50 rounded-xl shadow-sm">
               <Briefcase className="w-6 h-6 text-[#185FA5]" />
             </div>
-            <h2 className="text-3xl font-black text-[#0B1527] tracking-tight">Gestión de Locadores</h2>
+            <h2 className="text-3xl font-black text-[#0B1527] tracking-tight">Gestión de Complementarios</h2>
           </div>
-          <p className="text-gray-500 text-sm font-medium ml-12">Administración profesional de personal por locación</p>
+          <p className="text-gray-500 text-sm font-medium ml-12">Administración profesional de personal complementario</p>
         </div>
         <div className="flex gap-4 w-full md:w-auto">
           <div className="relative flex-1 md:w-80">
@@ -367,7 +456,7 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
                        text-white px-5 py-3 rounded-2xl text-sm font-semibold shadow-lg shadow-blue-500/25
                        hover:shadow-blue-500/40 flex items-center gap-2 transition-all active:scale-[0.98]"
           >
-            <UserPlus size={18} /> Nuevo Locador
+            <UserPlus size={18} /> Nuevo Complementario
           </button>
         </div>
       </div>
@@ -399,7 +488,8 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
-                {['Locador', 'Documento', 'Modalidad', 'Sueldo', 'Estado', 'F. Cese', 'Motivo / Obs.', 'Contacto', 'Acciones'].map(h => (
+                <th className="p-4 text-center font-bold text-gray-400 text-[11px] uppercase tracking-wider w-10">N°</th>
+                {['Complementario', 'Documento', 'Modalidad', 'Sueldo', 'Estado', 'F. Cese', 'Motivo / Obs.', 'Contacto', 'Acciones'].map(h => (
                   <th key={h} className="p-4 text-left font-bold text-gray-400 text-[11px] uppercase tracking-wider whitespace-nowrap">
                     {h}
                   </th>
@@ -409,15 +499,16 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
             <tbody className="divide-y divide-gray-50">
               {loading && locadores.length === 0 ? (
                 <tr>
-                  <td colSpan="9" className="p-14 text-center text-gray-400">
+                  <td colSpan="10" className="p-14 text-center text-gray-400">
                     <Briefcase size={32} className="mx-auto mb-3 opacity-30" />
                     <p className="font-medium">Cargando información...</p>
                   </td>
                 </tr>
-              ) : locadores.map((loc) => (
+              ) : locadores.map((loc, index) => (
                 <tr key={loc.id} className="hover:bg-blue-50/30 transition-all duration-200 group">
-
-                  {/* Nombre */}
+                  <td className="p-4 text-center text-xs text-gray-400 font-mono font-bold">
+                    {index + 1}
+                  </td>
                   <td className="p-4 min-w-[200px]">
                     <div className="flex items-center gap-3">
                       {loc.foto_url ? (
@@ -430,35 +521,29 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
                         </div>
                       )}
                       <div>
-                        <div className="font-semibold text-gray-900">{loc.nombre} {loc.apellido}</div>
+                        <div className="font-semibold text-gray-900">
+                          {loc.apellido}, {loc.nombre}
+                        </div>
                         <div className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
                           <MapPin size={10} /> {loc.distrito || 'Sin distrito'}
                         </div>
                       </div>
                     </div>
                   </td>
-
-                  {/* Documento */}
                   <td className="p-4 min-w-[120px]">
                     <div className="text-gray-700 font-medium text-xs">DNI: {loc.dni || '—'}</div>
                     <div className="text-[11px] text-gray-400 font-mono tracking-tight">RUC: {loc.ruc || '—'}</div>
                   </td>
-
-                  {/* Modalidad */}
                   <td className="p-4 min-w-[100px]">
                     <span className={`inline-block px-3 py-1 rounded-2xl text-[11px] font-semibold tracking-wide shadow-sm ${getModalidadColor(loc.modalidad)}`}>
                       {loc.modalidad}
                     </span>
                   </td>
-
-                  {/* Sueldo */}
                   <td className="p-4 min-w-[110px]">
                     <div className="font-bold text-emerald-700 text-sm">
                       S/ {Number(loc.sueldo_base || 0).toLocaleString('es-PE')}
                     </div>
                   </td>
-
-                  {/* Estado */}
                   <td className="p-4 text-center min-w-[90px]">
                     <button
                       onClick={() => iniciarCambioEstado(loc)}
@@ -471,8 +556,6 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
                       {loc.estado === 'activo' ? '● Activo' : '○ Inactivo'}
                     </button>
                   </td>
-
-                  {/* Fecha Cese */}
                   <td className="p-4 min-w-[100px]">
                     {loc.estado === 'inactivo' && loc.fecha_cese ? (
                       <div className="flex items-center gap-1.5 text-xs text-red-600 font-medium">
@@ -483,8 +566,6 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
                       <span className="text-xs text-gray-400">—</span>
                     )}
                   </td>
-
-                  {/* Motivo / Observaciones */}
                   <td className="p-4 max-w-[150px]">
                     {loc.estado === 'inactivo' && (loc.motivo_cese || loc.observaciones_cese) ? (
                       <div className="flex items-center gap-1.5">
@@ -507,8 +588,6 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
                       <span className="text-xs text-gray-400">—</span>
                     )}
                   </td>
-
-                  {/* Contacto */}
                   <td className="p-4 min-w-[140px]">
                     <div className="flex items-center gap-1.5 text-xs text-gray-700 mb-1">
                       <Phone size={11} className="text-gray-400" />
@@ -519,8 +598,6 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
                       {loc.correo || '—'}
                     </div>
                   </td>
-
-                  {/* Acciones */}
                   <td className="p-4 min-w-[180px]">
                     <div className="flex gap-1.5">
                       <button
@@ -539,7 +616,7 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
                       </button>
                       {onMigrarAPlanilla && (
                         <button
-                          onClick={() => onMigrarAPlanilla(loc)}
+                          onClick={() => handleMigrar(loc)}
                           className="p-2 text-emerald-600 hover:bg-emerald-50 border border-emerald-200
                                      hover:border-emerald-300 rounded-2xl transition-all active:scale-95"
                           title="Migrar a Planilla"
@@ -553,9 +630,9 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
               ))}
               {locadores.length === 0 && !loading && (
                 <tr>
-                  <td colSpan="9" className="p-14 text-center text-gray-400">
+                  <td colSpan="10" className="p-14 text-center text-gray-400">
                     <UserPlus size={32} className="mx-auto mb-3 opacity-30" />
-                    <p className="font-medium">No se encontraron locadores con los criterios seleccionados</p>
+                    <p className="font-medium">No se encontraron complementarios con los criterios seleccionados</p>
                   </td>
                 </tr>
               )}
@@ -575,7 +652,7 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
                 <AlertCircle className="text-red-500" size={24} />
               </div>
               <div>
-                <h3 className="text-xl font-black text-gray-900">Registrar cese del locador</h3>
+                <h3 className="text-xl font-black text-gray-900">Registrar cese del complementario</h3>
                 <p className="text-sm text-gray-500 mt-0.5">Inactivación con fecha personalizada</p>
               </div>
             </div>
@@ -583,7 +660,7 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
             <div className="bg-red-50 rounded-2xl p-4 mb-6 border border-red-100">
               <p className="text-sm text-red-700">
                 Vas a marcar como <strong>INACTIVO</strong> a{' '}
-                <strong>{locadorCese?.nombre} {locadorCese?.apellido}</strong>.{' '}
+                <strong>{locadorCese?.apellido}, {locadorCese?.nombre}</strong>.{' '}
                 La fecha de cese se usará para calcular el pago proporcional en la planilla.
               </p>
             </div>
@@ -655,6 +732,110 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════
+          MODAL DE RECORTE DE FOTO (CROP)
+      ═══════════════════════════════════════════════════════════════════ */}
+      {showCropModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
+          <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] border border-gray-100 animate-in zoom-in-95 duration-200">
+            <div className="px-6 py-4 border-b bg-gradient-to-r from-gray-50 to-white flex justify-between items-center">
+              <h3 className="text-lg font-black text-gray-900 flex items-center gap-2">
+                <Camera size={20} className="text-[#185FA5]" />
+                Recortar foto de perfil
+              </h3>
+              <button
+                onClick={() => {
+                  setShowCropModal(false);
+                  setCropImageSrc(null);
+                }}
+                className="w-10 h-10 flex items-center justify-center text-gray-400
+                           hover:text-gray-600 hover:bg-gray-100 rounded-2xl transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Área de recorte */}
+            <div className="relative flex-1 min-h-[400px] bg-gray-900">
+              <Cropper
+                image={cropImageSrc}
+                crop={crop}
+                zoom={zoom}
+                rotation={rotation}
+                aspect={1}
+                cropShape="round"
+                showGrid={false}
+                onCropChange={setCrop}
+                onZoomChange={setZoom}
+                onRotationChange={setRotation}
+                onCropComplete={onCropComplete}
+              />
+            </div>
+
+            {/* Controles de zoom y rotación */}
+            <div className="px-6 py-4 bg-gray-50 border-t flex items-center justify-center gap-6">
+              <button
+                onClick={handleZoomOut}
+                className="p-3 bg-white rounded-2xl shadow-sm border border-gray-200 hover:bg-gray-100 transition"
+                title="Alejar"
+              >
+                <ZoomOut size={18} className="text-gray-600" />
+              </button>
+              <input
+                type="range"
+                min={0.5}
+                max={5}
+                step={0.1}
+                value={zoom}
+                onChange={(e) => setZoom(Number(e.target.value))}
+                className="w-48 h-2 bg-gray-200 rounded-full appearance-none cursor-pointer
+                           accent-[#185FA5] hover:accent-[#1a6ab8]"
+              />
+              <button
+                onClick={handleZoomIn}
+                className="p-3 bg-white rounded-2xl shadow-sm border border-gray-200 hover:bg-gray-100 transition"
+                title="Acercar"
+              >
+                <ZoomIn size={18} className="text-gray-600" />
+              </button>
+              <button
+                onClick={handleRotate}
+                className="p-3 bg-white rounded-2xl shadow-sm border border-gray-200 hover:bg-gray-100 transition"
+                title="Rotar 90°"
+              >
+                <RotateCw size={18} className="text-gray-600" />
+              </button>
+            </div>
+
+            {/* Botones de acción */}
+            <div className="px-6 py-4 bg-white border-t flex gap-3">
+              <button
+                onClick={() => {
+                  setShowCropModal(false);
+                  setCropImageSrc(null);
+                }}
+                className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-2xl font-semibold transition-all"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleCropConfirm}
+                disabled={subiendoFoto}
+                className="flex-1 py-3 bg-gradient-to-r from-[#185FA5] to-[#144b82] hover:from-[#1a6ab8] hover:to-[#15569c]
+                           text-white rounded-2xl font-semibold shadow-lg shadow-blue-500/25
+                           hover:shadow-blue-500/40 transition-all disabled:opacity-70 flex items-center justify-center gap-2"
+              >
+                {subiendoFoto ? (
+                  <>Subiendo...</>
+                ) : (
+                  <><Check size={18} /> Recortar y guardar</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════
           MODAL PRINCIPAL (Crear / Editar)
       ═══════════════════════════════════════════════════════════════════ */}
       {modal && (
@@ -662,7 +843,7 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
           <div className="bg-white rounded-3xl w-full max-w-5xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] border border-gray-100 animate-in zoom-in-95 duration-200">
             <div className="px-8 py-5 border-b bg-gradient-to-r from-gray-50 to-white flex justify-between items-center">
               <h3 className="text-xl font-black text-gray-900">
-                {modoEdicion ? 'Editar Perfil del Locador' : 'Nuevo Registro de Locador'}
+                {modoEdicion ? 'Editar Complementario' : 'Nuevo Registro Complementario'}
               </h3>
               <button
                 onClick={() => setModal(false)}

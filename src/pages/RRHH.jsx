@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 
 // Importación de todos los tabs
+import DashboardRRHH from './rrhh/DashboardRRHH';
 import TabPerfilEmpleado from './rrhh/TabPerfilEmpleado';
 import TabBase from './rrhh/TabBase';
 import TabDirectorio from './rrhh/TabDirectorio';
@@ -15,7 +16,8 @@ import TabEvaluacion from './rrhh/TabEvaluacion';
 import TabLocadores from './rrhh/TabLocadores';
 import TabPlanillaPagos from './rrhh/TabPlanillaPagos';
 import TabPlanilla from './rrhh/TabPlanilla';
-import TabDocumentos from './rrhh/TabDocumentos'; // ✅ Importar nuevo componente
+import TabDocumentos from './rrhh/TabDocumentos';
+import TabCeses from './rrhh/TabCeses'; // ⭐ NUEVO
 
 export default function RRHH() {
   const [primerRuta, setPrimerRuta] = useState(null);
@@ -38,15 +40,14 @@ export default function RRHH() {
 
       const permisosModulos = permisos?.map(p => p.modulo) || [];
 
-      // Si tiene el módulo padre 'RRHH', acceso total -> redirige a perfil
       if (permisosModulos.includes('RRHH')) {
-        setPrimerRuta('/rrhh/perfil');
+        setPrimerRuta('/rrhh/dashboard');
         setLoading(false);
         return;
       }
 
-      // Si no, busca el primer permiso específico disponible
       const rutasDisponibles = [
+        { modulo: 'rrhh_dashboard', ruta: '/rrhh/dashboard' },
         { modulo: 'rrhh_perfil', ruta: '/rrhh/perfil' },
         { modulo: 'rrhh_base', ruta: '/rrhh/base' },
         { modulo: 'rrhh_directorio', ruta: '/rrhh/directorio' },
@@ -58,10 +59,11 @@ export default function RRHH() {
         { modulo: 'rrhh_locadores', ruta: '/rrhh/locadores' },
         { modulo: 'rrhh_planilla_pagos', ruta: '/rrhh/planilla_pagos' },
         { modulo: 'rrhh_novedades', ruta: '/rrhh/novedades' },
-        { modulo: 'rrhh_documentos', ruta: '/rrhh/documentos' }, // ✅ Nueva ruta
+        { modulo: 'rrhh_documentos', ruta: '/rrhh/documentos' },
+        { modulo: 'rrhh_ceses', ruta: '/rrhh/ceses' }, // ⭐ NUEVO
       ];
 
-      const primera = rutasDisponibles.find(r => permisosModulos.includes(r.modulo))?.ruta || '/rrhh/perfil';
+      const primera = rutasDisponibles.find(r => permisosModulos.includes(r.modulo))?.ruta || '/rrhh/dashboard';
       setPrimerRuta(primera);
       setLoading(false);
     };
@@ -81,6 +83,7 @@ export default function RRHH() {
   return (
     <Routes>
       <Route path="/" element={<Navigate to={primerRuta} replace />} />
+      <Route path="dashboard" element={<DashboardRRHH />} />
       <Route path="perfil" element={<TabPerfilEmpleado />} />
       <Route path="base" element={<TabBase />} />
       <Route path="directorio" element={<TabDirectorio />} />
@@ -92,7 +95,8 @@ export default function RRHH() {
       <Route path="locadores" element={<TabLocadores />} />
       <Route path="planilla_pagos" element={<TabPlanillaPagos />} />
       <Route path="novedades" element={<TabPlanilla />} />
-      <Route path="documentos" element={<TabDocumentos />} /> {/* ✅ Nueva ruta */}
+      <Route path="documentos" element={<TabDocumentos />} />
+      <Route path="ceses" element={<TabCeses />} /> {/* ⭐ NUEVO */}
     </Routes>
   );
 }
