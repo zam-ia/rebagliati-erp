@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
   Plus, Edit, Trash2, X, Save, Loader2, CalendarDays,
-  Filter, ChevronLeft, ChevronRight, Eye, Clock
+  Filter, ChevronLeft, ChevronRight, Eye, Clock, Lightbulb
 } from 'lucide-react';
 
 // ─── Constantes ───────────────────────────────────────────────────────────
@@ -33,6 +33,10 @@ const badgeEstado = (estado) => {
   return map[estado] || 'bg-gray-100 text-gray-600 border-gray-200';
 };
 
+// ─── Constantes para Banco de Ideas Virales ──────────────────────────────
+const FORMATOS_VIRALES = ['Encuesta', 'Trivia', 'Behind the Scenes', 'Meme profesional', 'Colaboración ponente', 'Dato curioso', 'Reto interactivo'];
+const ESTADOS_VIRALES = ['Idea', 'Aprobado', 'En producción', 'Publicado'];
+
 // ─── Helpers ──────────────────────────────────────────────────────────────
 const hoy = () => new Date().toISOString().split('T')[0];
 const fmtFecha = (s) => {
@@ -56,19 +60,31 @@ const FORM_VACIO = {
   observaciones: '',
 };
 
+const FORM_VIRAL_VACIO = {
+  titulo: '',
+  formato: 'Encuesta',
+  estado: 'Idea',
+  fecha_sugerida: hoy(),
+  notas: '',
+  publicacion_id: null,
+};
+
 // ═══════════════════════════════════════════════════════════════════════════
 export default function TabCalendarioContenido() {
   const [publicaciones, setPublicaciones] = useState([]);
+  const [ideasVirales, setIdeasVirales] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [vista, setVista] = useState('mensual');         // 'mensual' | 'lista'
+  const [vista, setVista] = useState('mensual');         // 'mensual' | 'lista' | 'banco_viral'
   const [mesActual, setMesActual] = useState(new Date().toISOString().slice(0,7));
   const [showModal, setShowModal] = useState(false);
+  const [showModalViral, setShowModalViral] = useState(false);
   const [editandoId, setEditandoId] = useState(null);
   const [form, setForm] = useState(FORM_VACIO);
+  const [formViral, setFormViral] = useState(FORM_VIRAL_VACIO);
   const [filtroPilar, setFiltroPilar] = useState('Todos');
 
   // ─── Cargar publicaciones ───────────────────────────────────────────────
-  const cargar = async () => {
+  const cargarPublicaciones = async () => {
     setLoading(true);
     const inicio = `${mesActual}-01`;
     const fin = new Date(mesActual.split('-')[0], mesActual.split('-')[1], 0).toISOString().slice(0,10);
@@ -79,7 +95,16 @@ export default function TabCalendarioContenido() {
     setLoading(false);
   };
 
-  useEffect(() => { cargar(); }, [mesActual, filtroPilar]);
+  // ─── Cargar ideas virales ───────────────────────────────────────────────
+  const cargarIdeasVirales = async () => {
+    const { data, error } = await supabase.from('banco_ideas_virales').select('*').order('fecha_sugerida', { ascending: false });
+    if (!error) setIdeasVirales(data || []);
+  };
+
+  useEffect(() => {
+    if (vista !== 'banco_viral') cargarPublicaciones();
+    else cargarIdeasVirales();
+  }, [mesActual, filtroPilar, vista]);
 
   // ─── Navegación de mes ─────────────────────────────────────────────────
   const cambiarMes = (dir) => {
@@ -88,7 +113,7 @@ export default function TabCalendarioContenido() {
     setMesActual(date.toISOString().slice(0,7));
   };
 
-  // ─── Abrir modal ────────────────────────────────────────────────────────
+  // ─── Abrir modal de publicación ────────────────────────────────────────
   const abrirModal = (item = null) => {
     if (item) {
       setEditandoId(item.id);
@@ -113,8 +138,8 @@ export default function TabCalendarioContenido() {
     setShowModal(true);
   };
 
-  // ─── Guardar ────────────────────────────────────────────────────────────
-  const guardar = async () => {
+  // ─── Guardar publicación ────────────────────────────────────────────────
+  const guardarPublicacion = async () => {
     if (!form.titulo || !form.fecha_publicacion) {
       alert('El título y la fecha son obligatorios');
       return;
@@ -126,17 +151,62 @@ export default function TabCalendarioContenido() {
         await supabase.from('calendario_contenido').insert([form]);
       }
       setShowModal(false);
-      cargar();
+      cargarPublicaciones();
     } catch (err) {
       alert('Error al guardar: ' + err.message);
     }
   };
 
-  // ─── Eliminar ───────────────────────────────────────────────────────────
-  const eliminar = async (id) => {
+  // ─── Eliminar publicación ───────────────────────────────────────────────
+  const eliminarPublicacion = async (id) => {
     if (!confirm('¿Eliminar esta publicación?')) return;
     await supabase.from('calendario_contenido').delete().eq('id', id);
-    cargar();
+    cargarPublicaciones();
+  };
+
+  // ─── Abrir modal de idea viral ─────────────────────────────────────────
+  const abrirModalViral = (item = null) => {
+    if (item) {
+      setEditandoId(item.id);
+      setFormViral({
+        titulo: item.titulo || '',
+        formato: item.formato || 'Encuesta',
+        estado: item.estado || 'Idea',
+        fecha_sugerida: item.fecha_sugerida || hoy(),
+        notas: item.notas || '',
+        publicacion_id: item.publicacion_id || null,
+      });
+    } else {
+      setEditandoId(null);
+      setFormViral(FORM_VIRAL_VACIO);
+    }
+    setShowModalViral(true);
+  };
+
+  // ─── Guardar idea viral ────────────────────────────────────────────────
+  const guardarIdeaViral = async () => {
+    if (!formViral.titulo) {
+      alert('El título es obligatorio');
+      return;
+    }
+    try {
+      if (editandoId) {
+        await supabase.from('banco_ideas_virales').update(formViral).eq('id', editandoId);
+      } else {
+        await supabase.from('banco_ideas_virales').insert([formViral]);
+      }
+      setShowModalViral(false);
+      cargarIdeasVirales();
+    } catch (err) {
+      alert('Error al guardar: ' + err.message);
+    }
+  };
+
+  // ─── Eliminar idea viral ────────────────────────────────────────────────
+  const eliminarIdeaViral = async (id) => {
+    if (!confirm('¿Eliminar esta idea?')) return;
+    await supabase.from('banco_ideas_virales').delete().eq('id', id);
+    cargarIdeasVirales();
   };
 
   // ─── Días del mes ───────────────────────────────────────────────────────
@@ -157,7 +227,7 @@ export default function TabCalendarioContenido() {
   });
 
   // ─── RENDER ─────────────────────────────────────────────────────────────
-  if (loading) return (
+  if (loading && vista !== 'banco_viral') return (
     <div className="flex items-center justify-center h-64 gap-3">
       <Loader2 className="animate-spin text-[#185FA5]" size={24} />
       <span className="text-gray-500 font-medium">Cargando calendario...</span>
@@ -175,28 +245,53 @@ export default function TabCalendarioContenido() {
           <h2 className="text-xl font-black text-[#0B1527] uppercase tracking-tight">Calendario de Contenido</h2>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button onClick={() => cambiarMes(-1)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors text-gray-600"><ChevronLeft size={16}/></button>
-          <span className="font-bold text-sm min-w-[140px] text-center text-gray-800">
-            {MESES[parseInt(mesActual.split('-')[1])-1]} {mesActual.split('-')[0]}
-          </span>
-          <button onClick={() => cambiarMes(1)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors text-gray-600"><ChevronRight size={16}/></button>
-          <button onClick={() => setVista(v => v === 'mensual' ? 'lista' : 'mensual')}
-            className="text-xs border-2 border-gray-100 px-3 py-1.5 rounded-xl font-bold text-gray-500 hover:bg-gray-50 hover:border-gray-200 transition-all">
-            {vista === 'mensual' ? 'Vista lista' : 'Vista mensual'}
-          </button>
-          <Filter size={14} className="text-gray-400 ml-2"/>
-          {['Todos', ...PILARES].map(p => (
-            <button key={p} onClick={() => setFiltroPilar(p)}
-              className={`text-xs px-3 py-1.5 rounded-xl font-bold transition-all ${
-                filtroPilar === p ? 'bg-gradient-to-r from-[#11284e] to-[#185FA5] text-white shadow-md' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-              }`}>
-              {p}
+          {vista !== 'banco_viral' && (
+            <>
+              <button onClick={() => cambiarMes(-1)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors text-gray-600"><ChevronLeft size={16}/></button>
+              <span className="font-bold text-sm min-w-[140px] text-center text-gray-800">
+                {MESES[parseInt(mesActual.split('-')[1])-1]} {mesActual.split('-')[0]}
+              </span>
+              <button onClick={() => cambiarMes(1)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors text-gray-600"><ChevronRight size={16}/></button>
+            </>
+          )}
+
+          {/* Selector de vista mejorado */}
+          <div className="bg-gray-100 p-1 rounded-xl flex gap-1">
+            {['mensual', 'lista', 'banco_viral'].map(v => (
+              <button
+                key={v}
+                onClick={() => setVista(v)}
+                className={`text-xs px-3 py-1.5 font-bold rounded-lg transition-all ${
+                  vista === v ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {v === 'mensual' ? 'Mes' : v === 'lista' ? 'Lista' : 'Viral'}
+              </button>
+            ))}
+          </div>
+
+          {vista !== 'banco_viral' ? (
+            <>
+              <Filter size={14} className="text-gray-400 ml-2"/>
+              {['Todos', ...PILARES].map(p => (
+                <button key={p} onClick={() => setFiltroPilar(p)}
+                  className={`text-xs px-3 py-1.5 rounded-xl font-bold transition-all ${
+                    filtroPilar === p ? 'bg-gradient-to-r from-[#11284e] to-[#185FA5] text-white shadow-md' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                  }`}>
+                  {p}
+                </button>
+              ))}
+              <button onClick={() => abrirModal()}
+                className="bg-gradient-to-r from-[#185FA5] to-[#144b82] hover:from-[#1a6ab8] hover:to-[#15569c] text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-lg shadow-blue-500/25 flex items-center gap-2 transition-all active:scale-[0.98]">
+                <Plus size={14} /> Nueva Publicación
+              </button>
+            </>
+          ) : (
+            <button onClick={() => abrirModalViral()}
+              className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-lg shadow-purple-500/25 flex items-center gap-2 transition-all active:scale-[0.98]">
+              <Lightbulb size={14} /> Nueva Idea Viral
             </button>
-          ))}
-          <button onClick={() => abrirModal()}
-            className="bg-gradient-to-r from-[#185FA5] to-[#144b82] hover:from-[#1a6ab8] hover:to-[#15569c] text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-lg shadow-blue-500/25 flex items-center gap-2 transition-all active:scale-[0.98]">
-            <Plus size={14} /> Nueva Publicación
-          </button>
+          )}
         </div>
       </div>
 
@@ -209,7 +304,6 @@ export default function TabCalendarioContenido() {
             ))}
           </div>
           <div className="grid grid-cols-7">
-            {/* Espacios vacíos al inicio */}
             {Array.from({length: primerDiaSemana}).map((_, i) => (
               <div key={'empty'+i} className="border border-gray-50 min-h-[110px] p-1.5 bg-gray-50/30" />
             ))}
@@ -240,7 +334,7 @@ export default function TabCalendarioContenido() {
         </div>
       )}
 
-      {/* Vista Lista */}
+      {/* Vista Lista (publicaciones) */}
       {vista === 'lista' && (
         <div className="bg-white/80 backdrop-blur-sm rounded-3xl border border-blue-50 shadow-xl shadow-blue-100/20 overflow-hidden">
           <table className="w-full text-sm">
@@ -278,7 +372,7 @@ export default function TabCalendarioContenido() {
                   <td className="p-4 text-center">
                     <div className="flex justify-center gap-1">
                       <button onClick={() => abrirModal(p)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"><Edit size={14}/></button>
-                      <button onClick={() => eliminar(p.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-colors"><Trash2 size={14}/></button>
+                      <button onClick={() => eliminarPublicacion(p.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-colors"><Trash2 size={14}/></button>
                     </div>
                   </td>
                 </tr>
@@ -291,7 +385,51 @@ export default function TabCalendarioContenido() {
         </div>
       )}
 
-      {/* ════════════════════ MODAL ════════════════════ */}
+      {/* Vista Banco de Ideas Virales */}
+      {vista === 'banco_viral' && (
+        <div className="bg-white/80 backdrop-blur-sm rounded-3xl border border-blue-50 shadow-xl shadow-blue-100/20 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gradient-to-r from-gray-50 to-white border-b border-gray-100">
+                <th className="p-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-wider">Título</th>
+                <th className="p-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-wider">Formato</th>
+                <th className="p-4 text-center text-[10px] font-black text-gray-400 uppercase tracking-wider">Estado</th>
+                <th className="p-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-wider">Fecha Sugerida</th>
+                <th className="p-4 text-center text-[10px] font-black text-gray-400 uppercase tracking-wider">Acciones</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {ideasVirales.map(idea => (
+                <tr key={idea.id} className="hover:bg-purple-50/30 transition-colors">
+                  <td className="p-4 font-bold text-xs text-gray-800">{idea.titulo}</td>
+                  <td className="p-4 text-xs text-gray-600">{idea.formato}</td>
+                  <td className="p-4 text-center">
+                    <span className={`text-[10px] font-black px-2.5 py-1 rounded-full border ${
+                      idea.estado === 'Publicado' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
+                      idea.estado === 'Aprobado' ? 'bg-blue-100 text-blue-700 border-blue-200' :
+                      'bg-gray-100 text-gray-600 border-gray-200'
+                    }`}>
+                      {idea.estado}
+                    </span>
+                  </td>
+                  <td className="p-4 text-xs text-gray-500">{fmtFecha(idea.fecha_sugerida)}</td>
+                  <td className="p-4 text-center">
+                    <div className="flex justify-center gap-1">
+                      <button onClick={() => abrirModalViral(idea)} className="p-2 text-purple-600 hover:bg-purple-50 rounded-xl transition-colors"><Edit size={14}/></button>
+                      <button onClick={() => eliminarIdeaViral(idea.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-colors"><Trash2 size={14}/></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {ideasVirales.length === 0 && (
+                <tr><td colSpan={5} className="p-10 text-center text-gray-400 font-medium">Aún no hay ideas virales. Crea la primera.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ════════════════════ MODAL PUBLICACIÓN ════════════════════ */}
       {showModal && (
         <div className="fixed inset-0 bg-[#0a1930]/60 backdrop-blur-md flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
@@ -322,9 +460,36 @@ export default function TabCalendarioContenido() {
               <Textarea label="Observaciones" value={form.observaciones} onChange={e => setForm({...form, observaciones: e.target.value})} />
             </div>
             <div className="p-6 pt-2 border-t border-gray-100">
-              <button onClick={guardar}
+              <button onClick={guardarPublicacion}
                 className="w-full bg-gradient-to-r from-[#11284e] to-[#185FA5] text-white py-3.5 rounded-xl font-black text-sm hover:from-[#185FA5] hover:to-[#1a6ab8] transition-all shadow-lg shadow-blue-500/20 active:scale-[0.98] flex items-center justify-center gap-2">
                 <Save size={16} /> Guardar Publicación
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ════════════════════ MODAL IDEA VIRAL ════════════════════ */}
+      {showModalViral && (
+        <div className="fixed inset-0 bg-[#0a1930]/60 backdrop-blur-md flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
+            <div className="flex justify-between items-center p-6 pb-4 border-b border-gray-100 sticky top-0 bg-white rounded-t-3xl z-10">
+              <h3 className="text-lg font-black text-[#11284e]">{editandoId ? 'Editar' : 'Nueva'} Idea Viral</h3>
+              <button onClick={() => setShowModalViral(false)} className="p-1.5 hover:bg-gray-100 rounded-xl"><X size={18}/></button>
+            </div>
+            <div className="overflow-y-auto p-6 pt-4 space-y-5">
+              <Input label="Título *" value={formViral.titulo} onChange={e => setFormViral({...formViral, titulo: e.target.value})} placeholder="Ej: ¿Cuál es el mito más común sobre la anestesia?" />
+              <div className="grid grid-cols-2 gap-4">
+                <Select label="Formato" value={formViral.formato} onChange={e => setFormViral({...formViral, formato: e.target.value})} options={FORMATOS_VIRALES} />
+                <Select label="Estado" value={formViral.estado} onChange={e => setFormViral({...formViral, estado: e.target.value})} options={ESTADOS_VIRALES} />
+              </div>
+              <Input label="Fecha Sugerida" type="date" value={formViral.fecha_sugerida} onChange={e => setFormViral({...formViral, fecha_sugerida: e.target.value})} />
+              <Textarea label="Notas / Guión rápido" value={formViral.notas} onChange={e => setFormViral({...formViral, notas: e.target.value})} />
+            </div>
+            <div className="p-6 pt-2 border-t border-gray-100">
+              <button onClick={guardarIdeaViral}
+                className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white py-3.5 rounded-xl font-black text-sm hover:from-purple-700 hover:to-indigo-700 transition-all shadow-lg shadow-purple-500/20 active:scale-[0.98] flex items-center justify-center gap-2">
+                <Save size={16} /> Guardar Idea Viral
               </button>
             </div>
           </div>

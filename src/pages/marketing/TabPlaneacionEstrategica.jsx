@@ -2,21 +2,19 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
-  Plus, Edit, Trash2, Target, Users, UserCheck, X,
-  Save, Loader2, TrendingUp, DollarSign, BarChart3,
-  Calendar, Flag, PieChart, Radio, Lightbulb, Eye,
-  ChevronDown, ChevronRight
+  Plus, Edit, Trash2, X, Save, Loader2, TrendingUp,
+  Calendar, Flag, PieChart, Radio, Lightbulb,
+  BarChart3, UserCheck, Search, Zap
 } from 'lucide-react';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
-const mesActual = () => new Date().toISOString().slice(0, 7);
 const fmt = (n) => {
   const num = Number(n);
   if (isNaN(num)) return '0';
   return new Intl.NumberFormat('es-PE').format(num);
 };
 
-// ─── Secciones del módulo ─────────────────────────────────────────────────
+// ─── Secciones del módulo (con competencia agregada) ────────────────────
 const SECCIONES = [
   { id: 'periodos',        label: 'Periodos',          icon: <Calendar size={15} /> },
   { id: 'objetivos',       label: 'Objetivos',         icon: <Flag size={15} /> },
@@ -25,6 +23,7 @@ const SECCIONES = [
   { id: 'buyer_personas',  label: 'Buyer Personas',    icon: <UserCheck size={15} /> },
   { id: 'propuesta_valor', label: 'Propuesta de Valor',icon: <Lightbulb size={15} /> },
   { id: 'estrategias',     label: 'Estrategias',       icon: <Radio size={15} /> },
+  { id: 'competencia',     label: 'Competencia',       icon: <Search size={15} /> },
   { id: 'roi',             label: 'Proyección ROI',    icon: <TrendingUp size={15} /> },
 ];
 
@@ -32,6 +31,7 @@ const SECCIONES = [
 const TIPOS_META = ['leads','ventas','ingresos','conversion','CPL','CPA','ROI'];
 const CANALES = ['Facebook Ads','Instagram','TikTok','WhatsApp','Email'];
 const PRIORIDADES = ['alta','media','baja'];
+const REDES_COMPETENCIA = ['Facebook', 'Instagram', 'TikTok', 'LinkedIn', 'YouTube'];
 
 // ═════════════════════════════════════════════════════════════════════════
 export default function TabPlaneacionEstrategica() {
@@ -49,6 +49,11 @@ export default function TabPlaneacionEstrategica() {
   const [propuestas, setPropuestas] = useState([]);
   const [estrategias, setEstrategias] = useState([]);
   const [roiData, setRoiData] = useState([]);
+
+  // Competidores y Tendencias
+  const [competidores, setCompetidores] = useState([]);
+  const [tendencias, setTendencias] = useState([]);
+  const [subTabCompetencia, setSubTabCompetencia] = useState('competidores');
 
   // Modal genérico
   const [showModal, setShowModal] = useState(false);
@@ -69,17 +74,11 @@ export default function TabPlaneacionEstrategica() {
     setLoading(false);
   };
 
-  // CORREGIDO: se usa periodo_id en todas las consultas
   const cargarDatosDePeriodo = async (periodoId) => {
     try {
       const [
-        { data: obj, error: errObj },
-        { data: met, error: errMet },
-        { data: seg, error: errSeg },
-        { data: buy, error: errBuy },
-        { data: prop, error: errProp },
-        { data: est, error: errEst },
-        { data: roi, error: errRoi }
+        { data: obj }, { data: met }, { data: seg }, { data: buy },
+        { data: prop }, { data: est }, { data: roi }
       ] = await Promise.all([
         supabase.from('objetivos_generales').select('*').eq('periodo_id', periodoId),
         supabase.from('metas_kpi').select('*').eq('periodo_id', periodoId),
@@ -89,31 +88,21 @@ export default function TabPlaneacionEstrategica() {
         supabase.from('estrategias_canal').select('*').eq('periodo_id', periodoId),
         supabase.from('proyeccion_roi').select('*').eq('periodo_id', periodoId),
       ]);
-
-      if (errObj) console.error('Error cargando objetivos:', errObj);
-      if (errMet) console.error('Error cargando metas:', errMet);
-      if (errSeg) console.error('Error cargando segmentos:', errSeg);
-      if (errBuy) console.error('Error cargando buyer personas:', errBuy);
-      if (errProp) console.error('Error cargando propuestas:', errProp);
-      if (errEst) console.error('Error cargando estrategias:', errEst);
-      if (errRoi) console.error('Error cargando ROI:', errRoi);
-
-      setObjetivos(obj || []);
-      setMetas(met || []);
-      setSegmentos(seg || []);
-      setBuyerPersonas(buy || []);
-      setPropuestas(prop || []);
-      setEstrategias(est || []);
+      setObjetivos(obj || []); setMetas(met || []); setSegmentos(seg || []);
+      setBuyerPersonas(buy || []); setPropuestas(prop || []); setEstrategias(est || []);
       setRoiData(roi || []);
-
-      console.log(`Datos recargados para periodo ${periodoId}:`, {
-        objetivos: obj?.length || 0,
-        metas: met?.length || 0,
-        segmentos: seg?.length || 0,
-      });
     } catch (err) {
       console.error('Error al cargar datos del periodo:', err);
     }
+  };
+
+  const cargarCompetidoresYTendencias = async () => {
+    const [{ data: comp }, { data: tend }] = await Promise.all([
+      supabase.from('competidores').select('*').order('nombre', { ascending: true }),
+      supabase.from('tendencias').select('*').order('fecha_sugerida', { ascending: false }),
+    ]);
+    setCompetidores(comp || []);
+    setTendencias(tend || []);
   };
 
   const cambiarPeriodoActivo = async (periodo) => {
@@ -132,19 +121,20 @@ export default function TabPlaneacionEstrategica() {
   const valoresDefault = (tipo) => {
     switch (tipo) {
       case 'periodo':     return { nombre: '', fecha_inicio: '', fecha_fin: '', estado: 'activo' };
-      // CORREGIDO: se usa periodo_id en lugar de period_id
       case 'objetivo':    return { periodo_id: periodoActivo?.id, nombre: '', descripcion: '', prioridad: 'media', estado: 'activo' };
       case 'kpi':         return { periodo_id: periodoActivo?.id, tipo_meta: 'leads', valor_objetivo: 0, valor_real: 0 };
       case 'segmento':    return { periodo_id: periodoActivo?.id, nombre: '', descripcion: '', profesion: '', edad_min: 0, edad_max: 0, ubicacion: '', nivel_educativo: '', problema_principal: '' };
       case 'buyer':       return { id_segmento: '', nombre_ficticio: '', edad: 0, profesion: '', objetivo: '', frustraciones: '', motivaciones: '', objeciones: '', canales_preferidos: '', tipo_contenido: '' };
       case 'propuesta':   return { id_segmento: '', problema: '', solucion: '', diferenciador: '', mensaje_clave: '' };
       case 'estrategia':  return { periodo_id: periodoActivo?.id, canal: 'Facebook Ads', objetivo: '', tipo_contenido: '', frecuencia: '', presupuesto: 0 };
+      case 'competidor':  return { nombre: '', red_social: 'Facebook', url: '', descripcion: '' };
+      case 'tendencia':   return { titulo: '', formato: 'Hashtag', descripcion: '', estado: 'Activo', fecha_sugerida: new Date().toISOString().slice(0,10), notas: '' };
       case 'roi':         return { periodo_id: periodoActivo?.id, inversion_total: 0, leads_estimados: 0, ventas_estimadas: 0, ingreso_estimado: 0 };
       default: return {};
     }
   };
 
-  // ─── Guardar (con manejo de errores y recarga total) ───────────────────
+  // ─── Guardar ───────────────────────────────────────────────────────────
   const guardar = async () => {
     const tabla = mapearTabla(modalTipo);
     if (!tabla) return;
@@ -157,8 +147,11 @@ export default function TabPlaneacionEstrategica() {
         if (error) throw error;
       }
       setShowModal(false);
-      // Recarga completa: vuelve a consultar todos los periodos y el periodo activo
-      await cargarPeriodos();
+      if (modalTipo === 'competidor' || modalTipo === 'tendencia') {
+        cargarCompetidoresYTendencias();
+      } else {
+        await cargarPeriodos();
+      }
     } catch (err) {
       alert('Error al guardar: ' + err.message);
     }
@@ -168,15 +161,21 @@ export default function TabPlaneacionEstrategica() {
     if (!confirm('¿Eliminar este registro?')) return;
     const tabla = mapearTabla(tipo);
     await supabase.from(tabla).delete().eq('id', id);
-    if (tipo === 'periodo') await cargarPeriodos();
-    else await cargarDatosDePeriodo(periodoActivo.id);
+    if (tipo === 'competidor' || tipo === 'tendencia') {
+      cargarCompetidoresYTendencias();
+    } else if (tipo === 'periodo') {
+      await cargarPeriodos();
+    } else {
+      await cargarDatosDePeriodo(periodoActivo.id);
+    }
   };
 
   const mapearTabla = (tipo) => {
     const map = {
       periodo: 'periodos_planificacion', objetivo: 'objetivos_generales', kpi: 'metas_kpi',
       segmento: 'segmentos_cliente', buyer: 'buyer_personas', propuesta: 'propuesta_valor',
-      estrategia: 'estrategias_canal', roi: 'proyeccion_roi'
+      estrategia: 'estrategias_canal', competidor: 'competidores', tendencia: 'tendencias',
+      roi: 'proyeccion_roi'
     };
     return map[tipo] || null;
   };
@@ -201,12 +200,13 @@ export default function TabPlaneacionEstrategica() {
       case 'buyer_personas':  return renderBuyerPersonas();
       case 'propuesta_valor': return renderTabla('propuesta_valor', 'propuesta', ['problema','solucion','diferenciador','mensaje_clave']);
       case 'estrategias':     return renderEstrategias();
+      case 'competencia':     return renderCompetencia();
       case 'roi':             return renderROI();
       default: return null;
     }
   };
 
-  // ─── Render Periodos ──────────────────────────────────────────────────
+  // ─── PERIODOS ─────────────────────────────────────────────────────────
   const renderPeriodos = () => (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
@@ -218,22 +218,22 @@ export default function TabPlaneacionEstrategica() {
           <Plus size={14} /> Nuevo Periodo
         </button>
       </div>
-      <div className="bg-white/80 backdrop-blur-sm rounded-3xl border border-blue-50 shadow-xl shadow-blue-100/20 overflow-hidden">
+      <div className="bg-white/80 backdrop-blur-sm rounded-3xl border border-blue-50 shadow-xl overflow-hidden">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-gradient-to-r from-gray-50 to-white border-b border-gray-100">
-              <th className="p-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-wider">Nombre</th>
-              <th className="p-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-wider">Inicio</th>
-              <th className="p-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-wider">Fin</th>
-              <th className="p-4 text-center text-[10px] font-black text-gray-400 uppercase tracking-wider">Estado</th>
-              <th className="p-4 text-center text-[10px] font-black text-gray-400 uppercase tracking-wider">Acciones</th>
+              <th className="p-4 text-left text-[10px] font-black text-gray-400 uppercase">Nombre</th>
+              <th className="p-4 text-left text-[10px] font-black text-gray-400 uppercase">Inicio</th>
+              <th className="p-4 text-left text-[10px] font-black text-gray-400 uppercase">Fin</th>
+              <th className="p-4 text-center text-[10px] font-black text-gray-400 uppercase">Estado</th>
+              <th className="p-4 text-center text-[10px] font-black text-gray-400 uppercase">Acciones</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
             {periodos.map(p => (
               <tr key={p.id} className={`hover:bg-blue-50/30 transition-colors cursor-pointer ${periodoActivo?.id === p.id ? 'bg-blue-50/50' : ''}`}
                 onClick={() => cambiarPeriodoActivo(p)}>
-                <td className="p-4 font-bold text-gray-700 text-xs">{p.nombre}</td>
+                <td className="p-4 font-bold text-xs text-gray-700">{p.nombre}</td>
                 <td className="p-4 text-xs text-gray-600">{p.fecha_inicio}</td>
                 <td className="p-4 text-xs text-gray-600">{p.fecha_fin}</td>
                 <td className="p-4 text-center">
@@ -241,8 +241,8 @@ export default function TabPlaneacionEstrategica() {
                 </td>
                 <td className="p-4 text-center">
                   <div className="flex justify-center gap-1">
-                    <button onClick={(e) => { e.stopPropagation(); abrirModal('periodo', p); }} className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"><Edit size={14}/></button>
-                    <button onClick={(e) => { e.stopPropagation(); eliminar('periodo', p.id); }} className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-colors"><Trash2 size={14}/></button>
+                    <button onClick={(e) => { e.stopPropagation(); abrirModal('periodo', p); }} className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl"><Edit size={14}/></button>
+                    <button onClick={(e) => { e.stopPropagation(); eliminar('periodo', p.id); }} className="p-2 text-red-500 hover:bg-red-50 rounded-xl"><Trash2 size={14}/></button>
                   </div>
                 </td>
               </tr>
@@ -254,7 +254,7 @@ export default function TabPlaneacionEstrategica() {
     </div>
   );
 
-  // ─── Render KPIs ──────────────────────────────────────────────────────
+  // ─── KPIs ─────────────────────────────────────────────────────────────
   const renderKPIs = () => (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
@@ -266,15 +266,15 @@ export default function TabPlaneacionEstrategica() {
           <Plus size={14} /> Nueva Meta
         </button>
       </div>
-      <div className="bg-white/80 backdrop-blur-sm rounded-3xl border border-blue-50 shadow-xl shadow-blue-100/20 overflow-hidden">
+      <div className="bg-white/80 backdrop-blur-sm rounded-3xl border border-blue-50 shadow-xl overflow-hidden">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-gradient-to-r from-gray-50 to-white border-b border-gray-100">
-              <th className="p-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-wider">Tipo</th>
-              <th className="p-4 text-right text-[10px] font-black text-gray-400 uppercase tracking-wider">Objetivo</th>
-              <th className="p-4 text-right text-[10px] font-black text-gray-400 uppercase tracking-wider">Real</th>
-              <th className="p-4 text-right text-[10px] font-black text-gray-400 uppercase tracking-wider">% Cumpl.</th>
-              <th className="p-4 text-center text-[10px] font-black text-gray-400 uppercase tracking-wider">Acciones</th>
+              <th className="p-4 text-left text-[10px] font-black text-gray-400 uppercase">Tipo</th>
+              <th className="p-4 text-right text-[10px] font-black text-gray-400 uppercase">Objetivo</th>
+              <th className="p-4 text-right text-[10px] font-black text-gray-400 uppercase">Real</th>
+              <th className="p-4 text-right text-[10px] font-black text-gray-400 uppercase">% Cumpl.</th>
+              <th className="p-4 text-center text-[10px] font-black text-gray-400 uppercase">Acciones</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
@@ -286,8 +286,8 @@ export default function TabPlaneacionEstrategica() {
                 <td className="p-4 text-right font-bold text-xs text-[#185FA5]">{m.porcentaje_cumplimiento?.toFixed(1)}%</td>
                 <td className="p-4 text-center">
                   <div className="flex justify-center gap-1">
-                    <button onClick={() => abrirModal('kpi', m)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"><Edit size={14}/></button>
-                    <button onClick={() => eliminar('kpi', m.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-colors"><Trash2 size={14}/></button>
+                    <button onClick={() => abrirModal('kpi', m)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl"><Edit size={14}/></button>
+                    <button onClick={() => eliminar('kpi', m.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-xl"><Trash2 size={14}/></button>
                   </div>
                 </td>
               </tr>
@@ -299,9 +299,9 @@ export default function TabPlaneacionEstrategica() {
     </div>
   );
 
-  // ─── Tablas genéricas ─────────────────────────────────────────────────
+  // ─── TABLA GENÉRICA ───────────────────────────────────────────────────
   const renderTabla = (tabla, tipo, campos) => {
-    const datos = tipo === 'objetivo' ? objetivos : tipo === 'segmento' ? segmentos : tipo === 'propuesta' ? propuestas : [];
+    const datos = tipo === 'objetivo' ? objetivos : tipo === 'segmento' ? segmentos : propuestas;
     return (
       <div className="space-y-4">
         <div className="flex justify-between items-center">
@@ -314,12 +314,12 @@ export default function TabPlaneacionEstrategica() {
             <Plus size={14} /> Nuevo
           </button>
         </div>
-        <div className="bg-white/80 backdrop-blur-sm rounded-3xl border border-blue-50 shadow-xl shadow-blue-100/20 overflow-hidden">
+        <div className="bg-white/80 backdrop-blur-sm rounded-3xl border border-blue-50 shadow-xl overflow-hidden">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gradient-to-r from-gray-50 to-white border-b border-gray-100">
-                {campos.map(c => <th key={c} className="p-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-wider">{c}</th>)}
-                <th className="p-4 text-center text-[10px] font-black text-gray-400 uppercase tracking-wider">Acciones</th>
+                {campos.map(c => <th key={c} className="p-4 text-left text-[10px] font-black text-gray-400 uppercase">{c}</th>)}
+                <th className="p-4 text-center text-[10px] font-black text-gray-400 uppercase">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
@@ -328,8 +328,8 @@ export default function TabPlaneacionEstrategica() {
                   {campos.map(c => <td key={c} className="p-4 text-xs text-gray-700 truncate max-w-[200px]">{item[c] || '—'}</td>)}
                   <td className="p-4 text-center">
                     <div className="flex justify-center gap-1">
-                      <button onClick={() => abrirModal(tipo, item)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"><Edit size={14}/></button>
-                      <button onClick={() => eliminar(tipo, item.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-colors"><Trash2 size={14}/></button>
+                      <button onClick={() => abrirModal(tipo, item)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl"><Edit size={14}/></button>
+                      <button onClick={() => eliminar(tipo, item.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-xl"><Trash2 size={14}/></button>
                     </div>
                   </td>
                 </tr>
@@ -342,7 +342,7 @@ export default function TabPlaneacionEstrategica() {
     );
   };
 
-  // ─── Buyer Personas ───────────────────────────────────────────────────
+  // ─── BUYER PERSONAS ───────────────────────────────────────────────────
   const renderBuyerPersonas = () => (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
@@ -368,8 +368,8 @@ export default function TabPlaneacionEstrategica() {
                 </div>
               </div>
               <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button onClick={() => abrirModal('buyer', bp)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"><Edit size={14}/></button>
-                <button onClick={() => eliminar('buyer', bp.id)} className="p-2 text-red-400 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={14}/></button>
+                <button onClick={() => abrirModal('buyer', bp)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg"><Edit size={14}/></button>
+                <button onClick={() => eliminar('buyer', bp.id)} className="p-2 text-red-400 hover:bg-red-50 rounded-lg"><Trash2 size={14}/></button>
               </div>
             </div>
             <div className="mt-4 space-y-2">
@@ -384,7 +384,7 @@ export default function TabPlaneacionEstrategica() {
     </div>
   );
 
-  // ─── Estrategias ──────────────────────────────────────────────────────
+  // ─── ESTRATEGIAS ──────────────────────────────────────────────────────
   const renderEstrategias = () => (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
@@ -396,16 +396,16 @@ export default function TabPlaneacionEstrategica() {
           <Plus size={14} /> Nueva Estrategia
         </button>
       </div>
-      <div className="bg-white/80 backdrop-blur-sm rounded-3xl border border-blue-50 shadow-xl shadow-blue-100/20 overflow-hidden">
+      <div className="bg-white/80 backdrop-blur-sm rounded-3xl border border-blue-50 shadow-xl overflow-hidden">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-gradient-to-r from-gray-50 to-white border-b border-gray-100">
-              <th className="p-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-wider">Canal</th>
-              <th className="p-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-wider">Objetivo</th>
-              <th className="p-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-wider">Contenido</th>
-              <th className="p-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-wider">Frecuencia</th>
-              <th className="p-4 text-right text-[10px] font-black text-gray-400 uppercase tracking-wider">Presupuesto</th>
-              <th className="p-4 text-center text-[10px] font-black text-gray-400 uppercase tracking-wider">Acciones</th>
+              <th className="p-4 text-left text-[10px] font-black text-gray-400 uppercase">Canal</th>
+              <th className="p-4 text-left text-[10px] font-black text-gray-400 uppercase">Objetivo</th>
+              <th className="p-4 text-left text-[10px] font-black text-gray-400 uppercase">Contenido</th>
+              <th className="p-4 text-left text-[10px] font-black text-gray-400 uppercase">Frecuencia</th>
+              <th className="p-4 text-right text-[10px] font-black text-gray-400 uppercase">Presupuesto</th>
+              <th className="p-4 text-center text-[10px] font-black text-gray-400 uppercase">Acciones</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
@@ -418,8 +418,8 @@ export default function TabPlaneacionEstrategica() {
                 <td className="p-4 text-right font-mono text-xs text-gray-700">S/ {fmt(e.presupuesto)}</td>
                 <td className="p-4 text-center">
                   <div className="flex justify-center gap-1">
-                    <button onClick={() => abrirModal('estrategia', e)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"><Edit size={14}/></button>
-                    <button onClick={() => eliminar('estrategia', e.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-colors"><Trash2 size={14}/></button>
+                    <button onClick={() => abrirModal('estrategia', e)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl"><Edit size={14}/></button>
+                    <button onClick={() => eliminar('estrategia', e.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-xl"><Trash2 size={14}/></button>
                   </div>
                 </td>
               </tr>
@@ -428,6 +428,105 @@ export default function TabPlaneacionEstrategica() {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+
+  // ─── COMPETENCIA (NUEVO) ──────────────────────────────────────────────
+  const renderCompetencia = () => (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h3 className="font-black text-gray-800 text-sm uppercase flex items-center gap-2">
+          <Search size={18} className="text-[#185FA5]" /> Análisis Competitivo
+        </h3>
+        <div className="flex gap-1 bg-gray-100 p-1 rounded-xl">
+          <button onClick={() => setSubTabCompetencia('competidores')}
+            className={`text-xs px-4 py-2 rounded-xl font-bold transition-all ${subTabCompetencia === 'competidores' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'}`}>
+            Competidores
+          </button>
+          <button onClick={() => setSubTabCompetencia('tendencias')}
+            className={`text-xs px-4 py-2 rounded-xl font-bold transition-all ${subTabCompetencia === 'tendencias' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'}`}>
+            Tendencias
+          </button>
+        </div>
+      </div>
+
+      {subTabCompetencia === 'competidores' ? (
+        <div className="space-y-4">
+          <div className="flex justify-end">
+            <button onClick={() => abrirModal('competidor')}
+              className="bg-gradient-to-r from-[#11284e] to-[#185FA5] text-white px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 hover:shadow-lg shadow-blue-500/20 transition-all active:scale-[0.98]">
+              <Plus size={14} /> Nuevo Competidor
+            </button>
+          </div>
+          <div className="bg-white/80 backdrop-blur-sm rounded-3xl border border-blue-50 shadow-xl overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gradient-to-r from-gray-50 to-white border-b border-gray-100">
+                  <th className="p-4 text-left text-[10px] font-black text-gray-400 uppercase">Nombre</th>
+                  <th className="p-4 text-left text-[10px] font-black text-gray-400 uppercase">Red Social</th>
+                  <th className="p-4 text-left text-[10px] font-black text-gray-400 uppercase">URL</th>
+                  <th className="p-4 text-center text-[10px] font-black text-gray-400 uppercase">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {competidores.map(c => (
+                  <tr key={c.id} className="hover:bg-blue-50/30 transition-colors">
+                    <td className="p-4 font-bold text-xs text-gray-800">{c.nombre}</td>
+                    <td className="p-4 text-xs text-gray-600">{c.red_social}</td>
+                    <td className="p-4 text-xs text-blue-600 truncate max-w-[200px]">{c.url}</td>
+                    <td className="p-4 text-center">
+                      <div className="flex justify-center gap-1">
+                        <button onClick={() => abrirModal('competidor', c)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl"><Edit size={14}/></button>
+                        <button onClick={() => eliminar('competidor', c.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-xl"><Trash2 size={14}/></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {competidores.length === 0 && <tr><td colSpan={4} className="p-10 text-center text-gray-400">Sin competidores registrados</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div className="flex justify-end">
+            <button onClick={() => abrirModal('tendencia')}
+              className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 hover:shadow-lg shadow-purple-500/20 transition-all active:scale-[0.98]">
+              <Zap size={14} /> Nueva Tendencia
+            </button>
+          </div>
+          <div className="bg-white/80 backdrop-blur-sm rounded-3xl border border-blue-50 shadow-xl overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gradient-to-r from-gray-50 to-white border-b border-gray-100">
+                  <th className="p-4 text-left text-[10px] font-black text-gray-400 uppercase">Título</th>
+                  <th className="p-4 text-left text-[10px] font-black text-gray-400 uppercase">Formato</th>
+                  <th className="p-4 text-center text-[10px] font-black text-gray-400 uppercase">Estado</th>
+                  <th className="p-4 text-center text-[10px] font-black text-gray-400 uppercase">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {tendencias.map(t => (
+                  <tr key={t.id} className="hover:bg-purple-50/30 transition-colors">
+                    <td className="p-4 font-bold text-xs text-gray-800">{t.titulo}</td>
+                    <td className="p-4 text-xs text-gray-600">{t.formato}</td>
+                    <td className="p-4 text-center">
+                      <span className={`text-[10px] font-black px-2.5 py-1 rounded-full border ${t.estado === 'Activo' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-gray-100 text-gray-600 border-gray-200'}`}>{t.estado}</span>
+                    </td>
+                    <td className="p-4 text-center">
+                      <div className="flex justify-center gap-1">
+                        <button onClick={() => abrirModal('tendencia', t)} className="p-2 text-purple-600 hover:bg-purple-50 rounded-xl"><Edit size={14}/></button>
+                        <button onClick={() => eliminar('tendencia', t.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-xl"><Trash2 size={14}/></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {tendencias.length === 0 && <tr><td colSpan={4} className="p-10 text-center text-gray-400">Sin tendencias registradas</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 
@@ -443,16 +542,16 @@ export default function TabPlaneacionEstrategica() {
           <Plus size={14} /> Nueva Proyección
         </button>
       </div>
-      <div className="bg-white/80 backdrop-blur-sm rounded-3xl border border-blue-50 shadow-xl shadow-blue-100/20 overflow-hidden">
+      <div className="bg-white/80 backdrop-blur-sm rounded-3xl border border-blue-50 shadow-xl overflow-hidden">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-gradient-to-r from-gray-50 to-white border-b border-gray-100">
-              <th className="p-4 text-right text-[10px] font-black text-gray-400 uppercase tracking-wider">Inversión</th>
-              <th className="p-4 text-right text-[10px] font-black text-gray-400 uppercase tracking-wider">Leads Est.</th>
-              <th className="p-4 text-right text-[10px] font-black text-gray-400 uppercase tracking-wider">Ventas Est.</th>
-              <th className="p-4 text-right text-[10px] font-black text-gray-400 uppercase tracking-wider">Ingreso Est.</th>
-              <th className="p-4 text-right text-[10px] font-black text-gray-400 uppercase tracking-wider">ROI Est.</th>
-              <th className="p-4 text-center text-[10px] font-black text-gray-400 uppercase tracking-wider">Acciones</th>
+              <th className="p-4 text-right text-[10px] font-black text-gray-400 uppercase">Inversión</th>
+              <th className="p-4 text-right text-[10px] font-black text-gray-400 uppercase">Leads Est.</th>
+              <th className="p-4 text-right text-[10px] font-black text-gray-400 uppercase">Ventas Est.</th>
+              <th className="p-4 text-right text-[10px] font-black text-gray-400 uppercase">Ingreso Est.</th>
+              <th className="p-4 text-right text-[10px] font-black text-gray-400 uppercase">ROI Est.</th>
+              <th className="p-4 text-center text-[10px] font-black text-gray-400 uppercase">Acciones</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
@@ -465,8 +564,8 @@ export default function TabPlaneacionEstrategica() {
                 <td className="p-4 text-right font-bold text-xs text-emerald-600">{r.roi_estimado?.toFixed(1)}%</td>
                 <td className="p-4 text-center">
                   <div className="flex justify-center gap-1">
-                    <button onClick={() => abrirModal('roi', r)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"><Edit size={14}/></button>
-                    <button onClick={() => eliminar('roi', r.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-colors"><Trash2 size={14}/></button>
+                    <button onClick={() => abrirModal('roi', r)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl"><Edit size={14}/></button>
+                    <button onClick={() => eliminar('roi', r.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-xl"><Trash2 size={14}/></button>
                   </div>
                 </td>
               </tr>
@@ -600,6 +699,48 @@ export default function TabPlaneacionEstrategica() {
             <input type="number" placeholder="Presupuesto S/" value={formData.presupuesto || 0} onChange={e => setFormData({...formData, presupuesto: Number(e.target.value)})} className={inputClass} />
           </div>
         );
+      case 'competidor':
+        return (
+          <div className="space-y-4">
+            <input type="text" placeholder="Nombre *" value={formData.nombre || ''} onChange={e => setFormData({...formData, nombre: e.target.value})} className={inputClass} />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={labelClass}>Red Social</label>
+                <select value={formData.red_social || 'Facebook'} onChange={e => setFormData({...formData, red_social: e.target.value})} className={inputClass}>
+                  {REDES_COMPETENCIA.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className={labelClass}>URL</label>
+                <input type="text" placeholder="https://..." value={formData.url || ''} onChange={e => setFormData({...formData, url: e.target.value})} className={inputClass} />
+              </div>
+            </div>
+            <textarea placeholder="Descripción / Estrategia observada" value={formData.descripcion || ''} onChange={e => setFormData({...formData, descripcion: e.target.value})} className={`${inputClass} h-24 resize-y`} />
+          </div>
+        );
+      case 'tendencia':
+        return (
+          <div className="space-y-4">
+            <input type="text" placeholder="Título *" value={formData.titulo || ''} onChange={e => setFormData({...formData, titulo: e.target.value})} className={inputClass} />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={labelClass}>Formato</label>
+                <select value={formData.formato || 'Hashtag'} onChange={e => setFormData({...formData, formato: e.target.value})} className={inputClass}>
+                  {['Hashtag', 'Formato', 'Informativo', 'Interactivo', 'Video corto'].map(f => <option key={f} value={f}>{f}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className={labelClass}>Estado</label>
+                <select value={formData.estado || 'Activo'} onChange={e => setFormData({...formData, estado: e.target.value})} className={inputClass}>
+                  <option value="Activo">Activo</option><option value="Inactivo">Inactivo</option>
+                </select>
+              </div>
+            </div>
+            <label className={labelClass}>Fecha sugerida</label>
+            <input type="date" value={formData.fecha_sugerida || ''} onChange={e => setFormData({...formData, fecha_sugerida: e.target.value})} className={`${inputClass} mb-4`} />
+            <textarea placeholder="Descripción / Notas" value={formData.descripcion || ''} onChange={e => setFormData({...formData, descripcion: e.target.value})} className={`${inputClass} h-20 resize-y`} />
+          </div>
+        );
       case 'roi':
         return (
           <div className="space-y-4">
@@ -639,7 +780,6 @@ export default function TabPlaneacionEstrategica() {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      {/* ── Selector de periodo ────────────────────────────────────────── */}
       {periodos.length > 0 && (
         <div className="flex items-center gap-3 bg-white/80 backdrop-blur-sm rounded-2xl p-3 border border-blue-50 shadow-lg shadow-blue-100/20">
           <Calendar size={16} className="text-[#185FA5] ml-2" />
@@ -659,12 +799,14 @@ export default function TabPlaneacionEstrategica() {
         </div>
       )}
 
-      {/* ── Sub-pestañas ────────────────────────────────────────────────── */}
       <div className="flex gap-1 bg-white/80 backdrop-blur-sm p-1.5 rounded-2xl border border-blue-50 overflow-x-auto shadow-lg shadow-blue-100/20">
         {SECCIONES.map(sec => (
           <button
             key={sec.id}
-            onClick={() => setSeccionActiva(sec.id)}
+            onClick={() => {
+              setSeccionActiva(sec.id);
+              if (sec.id === 'competencia') cargarCompetidoresYTendencias();
+            }}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 whitespace-nowrap ${
               seccionActiva === sec.id
                 ? 'bg-gradient-to-r from-[#11284e] to-[#185FA5] text-white shadow-lg shadow-blue-500/25'
@@ -676,27 +818,20 @@ export default function TabPlaneacionEstrategica() {
         ))}
       </div>
 
-      {/* ── Contenido de la sección ──────────────────────────────────────── */}
       {renderSeccion()}
 
-      {/* ═══════════════════════════════════════════════════════════════════
-          MODAL GENÉRICO (con scroll y cabecera sticky)
-      ═══════════════════════════════════════════════════════════════════ */}
       {showModal && (
         <div className="fixed inset-0 bg-[#0a1930]/60 backdrop-blur-md flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
-            {/* Cabecera sticky */}
             <div className="flex justify-between items-center p-6 pb-4 border-b border-gray-100 sticky top-0 bg-white rounded-t-3xl z-10">
               <h3 className="text-lg font-black text-[#11284e]">
                 {editandoId ? 'Editar' : 'Nuevo'} {modalTipo.charAt(0).toUpperCase() + modalTipo.slice(1)}
               </h3>
               <button onClick={() => setShowModal(false)} className="p-1.5 hover:bg-gray-100 rounded-xl transition-colors"><X size={18} /></button>
             </div>
-            {/* Contenido scrolleable */}
             <div className="overflow-y-auto p-6 pt-4 custom-scrollbar">
               {renderModalContent()}
             </div>
-            {/* Botón guardar */}
             <div className="p-6 pt-2 border-t border-gray-100">
               <button onClick={guardar}
                 className="w-full bg-gradient-to-r from-[#11284e] to-[#185FA5] text-white py-3.5 rounded-xl font-black text-sm hover:from-[#185FA5] hover:to-[#1a6ab8] transition-all shadow-lg shadow-blue-500/20 active:scale-[0.98] flex items-center justify-center gap-2">

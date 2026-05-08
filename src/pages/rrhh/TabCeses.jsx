@@ -1,9 +1,9 @@
 // src/pages/rrhh/TabCeses.jsx
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import useCalculoLiquidacion from './CalculoLiquidacion';
 import LiquidacionParaEntrega from '../../components/LiquidacionParaEntrega';
-import { X, Eye, FileText, CalendarDays, DollarSign, AlertCircle, Printer } from 'lucide-react';
+import { X, Eye, FileText, CalendarDays, DollarSign, AlertCircle, Printer, Search, ChevronDown } from 'lucide-react';
 
 export default function TabCeses() {
   const [ceses, setCeses] = useState([]);
@@ -14,6 +14,10 @@ export default function TabCeses() {
   const [editandoId, setEditandoId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+
+  // ⭐ Búsqueda de empleado en el modal
+  const [busquedaEmpleado, setBusquedaEmpleado] = useState('');
+  const [mostrarDropdown, setMostrarDropdown] = useState(false);
 
   const [form, setForm] = useState({
     empleado_id: '',
@@ -54,7 +58,7 @@ export default function TabCeses() {
     ultimaGratificacion: form.ultima_gratificacion !== '' ? Number(form.ultima_gratificacion) : undefined
   });
 
-  // Actualizar monto liquidación (sin función externa para evitar bucle)
+  // Actualizar monto liquidación
   useEffect(() => {
     if (calculo && !modoEdicion) {
       const netoMes = (() => {
@@ -85,7 +89,10 @@ export default function TabCeses() {
   };
 
   const cargarEmpleados = async () => {
-    const { data } = await supabase.from('empleados').select('*');
+    const { data } = await supabase
+      .from('empleados')
+      .select('*')
+      .order('apellido', { ascending: true });
     setEmpleados(data || []);
   };
 
@@ -93,6 +100,17 @@ export default function TabCeses() {
     cargarCeses();
     cargarEmpleados();
   }, []);
+
+  // ⭐ Empleados activos filtrados por búsqueda
+  const empleadosActivosFiltrados = useMemo(() => {
+    return empleados
+      .filter(emp => emp.estado === 'activo')
+      .filter(emp => {
+        if (!busquedaEmpleado.trim()) return true;
+        const q = busquedaEmpleado.toLowerCase();
+        return `${emp.nombre} ${emp.apellido} ${emp.cargo}`.toLowerCase().includes(q);
+      });
+  }, [empleados, busquedaEmpleado]);
 
   const guardarCese = async () => {
     if (!form.empleado_id || !form.fecha_cese || !form.motivo) {
@@ -131,7 +149,9 @@ export default function TabCeses() {
       const result = await supabase.from('ceses').insert([registro]);
       error = result.error;
       if (!error) {
-        await supabase.from('empleados').update({ estado: 'inactivo' }).eq('id', form.empleado_id);
+        await supabase.from('empleados')
+          .update({ estado: 'inactivo', situacion_laboral: 'Inactivo' })
+          .eq('id', form.empleado_id);
         alert('Cese registrado y empleado marcado como inactivo');
       }
     }
@@ -158,6 +178,8 @@ export default function TabCeses() {
       remuneracion_pagada: false, condicion_trabajo: 0, remuneracion_pendiente: 0,
       ultima_gratificacion: ''
     });
+    setBusquedaEmpleado('');
+    setMostrarDropdown(false);
   };
 
   const abrirModalNuevo = () => { resetForm(); setModal(true); };
@@ -190,6 +212,8 @@ export default function TabCeses() {
       remuneracion_pendiente: cese.remuneracion_pendiente || 0,
       ultima_gratificacion: cese.ultima_gratificacion != null ? cese.ultima_gratificacion : ''
     });
+    setBusquedaEmpleado('');
+    setMostrarDropdown(false);
     setModal(true);
   };
 
@@ -232,7 +256,7 @@ export default function TabCeses() {
       case 'renuncia_voluntaria': return 'bg-blue-100 text-blue-700 border-blue-200';
       case 'despido': return 'bg-red-100 text-red-700 border-red-200';
       case 'fin_contrato': return 'bg-amber-100 text-amber-700 border-amber-200';
-      default: return 'bg-gray-100 text-gray-600 border-gray-200';
+      default: return 'bg-gray-100 text-gray-700 border-gray-200';
     }
   };
 
@@ -272,9 +296,9 @@ export default function TabCeses() {
             <div className="p-2 bg-blue-50 rounded-xl shadow-sm">
               <FileText className="w-6 h-6 text-[#185FA5]" />
             </div>
-            <h2 className="text-3xl font-black text-[#0B1527] tracking-tight">Ceses y Liquidaciones</h2>
+            <h2 className="text-3xl font-black text-gray-900 tracking-tight">Ceses y Liquidaciones</h2>
           </div>
-          <p className="text-gray-500 text-sm font-medium ml-12">Registro de ceses con cálculo automático de liquidación (MYPE)</p>
+          <p className="text-gray-600 text-sm font-medium ml-12">Registro de ceses con cálculo automático de liquidación (MYPE)</p>
         </div>
         <button onClick={abrirModalNuevo} className="bg-gradient-to-r from-[#185FA5] to-[#144b82] hover:from-[#1a6ab8] hover:to-[#15569c] text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-blue-500/25 active:scale-[0.98] transition-all">
           + Registrar Cese
@@ -287,37 +311,37 @@ export default function TabCeses() {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gradient-to-r from-gray-50 to-white border-b border-gray-100">
-                <th className="p-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-wider">Empleado</th>
-                <th className="p-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-wider">Cargo</th>
-                <th className="p-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-wider">Motivo</th>
-                <th className="p-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-wider">Fecha cese</th>
-                <th className="p-4 text-right text-[10px] font-black text-gray-400 uppercase tracking-wider">Liquidación</th>
-                <th className="p-4 text-center text-[10px] font-black text-gray-400 uppercase tracking-wider">Beneficios</th>
-                <th className="p-4 text-center text-[10px] font-black text-gray-400 uppercase tracking-wider">Acciones</th>
+                <th className="p-4 text-left text-[10px] font-black text-gray-600 uppercase tracking-wider">Empleado</th>
+                <th className="p-4 text-left text-[10px] font-black text-gray-600 uppercase tracking-wider">Cargo</th>
+                <th className="p-4 text-left text-[10px] font-black text-gray-600 uppercase tracking-wider">Motivo</th>
+                <th className="p-4 text-left text-[10px] font-black text-gray-600 uppercase tracking-wider">Fecha cese</th>
+                <th className="p-4 text-right text-[10px] font-black text-gray-600 uppercase tracking-wider">Liquidación</th>
+                <th className="p-4 text-center text-[10px] font-black text-gray-600 uppercase tracking-wider">Beneficios</th>
+                <th className="p-4 text-center text-[10px] font-black text-gray-600 uppercase tracking-wider">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {ceses.length === 0 ? (
-                <tr><td colSpan={7} className="p-12 text-center text-gray-400 font-medium">No hay registros de ceses</td></tr>
+                <tr><td colSpan={7} className="p-12 text-center text-gray-600 font-medium">No hay registros de ceses</td></tr>
               ) : (
                 ceses.map(cese => (
                   <tr key={cese.id} className="hover:bg-blue-50/30 transition-colors">
                     <td className="p-4 font-bold text-gray-800 text-xs">{cese.empleado_nombre}</td>
-                    <td className="p-4 text-gray-600 text-xs">{cese.cargo}</td>
+                    <td className="p-4 text-gray-700 text-xs">{cese.cargo}</td>
                     <td className="p-4">
                       <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${getMotivoColor(cese.motivo)}`}>
                         {getMotivoLabel(cese.motivo)}
                       </span>
                     </td>
-                    <td className="p-4 text-xs text-gray-600">{cese.fecha_cese}</td>
+                    <td className="p-4 text-xs text-gray-700">{cese.fecha_cese}</td>
                     <td className="p-4 text-right font-bold text-emerald-700 text-xs">
                       S/ {Number(cese.monto_liquidacion || 0).toLocaleString('es-PE', { minimumFractionDigits: 2 })}
                     </td>
                     <td className="p-4 text-center">
                       {cese.beneficios_pagados ? (
-                        <span className="text-emerald-600 font-bold text-xs">✓ Pagados</span>
+                        <span className="text-emerald-700 font-bold text-xs">✓ Pagados</span>
                       ) : (
-                        <span className="text-red-400 text-xs">Pendiente</span>
+                        <span className="text-rose-600 text-xs">Pendiente</span>
                       )}
                     </td>
                     <td className="p-4">
@@ -346,7 +370,7 @@ export default function TabCeses() {
         <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-[#0a1930]/60 backdrop-blur-md p-4 pt-[8vh] pb-[8vh]">
           <div className="bg-white rounded-3xl w-full max-w-3xl shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-200">
             <div className="sticky top-0 bg-white rounded-t-3xl z-10 flex justify-between items-center p-6 pb-4 border-b border-gray-100">
-              <h3 className="text-xl font-black text-[#11284e]">{modoEdicion ? 'Editar Cese' : 'Registrar Cese'}</h3>
+              <h3 className="text-xl font-black text-gray-900">{modoEdicion ? 'Editar Cese' : 'Registrar Cese'}</h3>
               <div className="flex items-center gap-2">
                 <button
                   onClick={abrirVistaPrevia}
@@ -361,22 +385,80 @@ export default function TabCeses() {
             <div className="p-6 space-y-6 max-h-[65vh] overflow-y-auto">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-4">
+                  {/* ⭐ Selector de empleado mejorado: input con dropdown */}
                   <div>
-                    <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wider">Empleado *</label>
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Empleado *</label>
                     {modoEdicion ? (
-                      <input type="text" value={form.empleado_nombre} disabled className="w-full border-2 border-gray-100 rounded-xl px-4 py-3 bg-gray-50 text-sm font-medium" />
+                      <input type="text" value={form.empleado_nombre} disabled className="w-full border-2 border-gray-100 rounded-xl px-4 py-3 bg-gray-50 text-sm font-medium text-gray-800" />
                     ) : (
-                      <select value={form.empleado_id} onChange={(e) => handleEmpleadoChange(e.target.value)} className="w-full border-2 border-gray-100 rounded-xl px-4 py-3 text-sm bg-gray-50 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 transition-all">
-                        <option value="">Seleccionar empleado activo</option>
-                        {empleados.filter(emp => emp.estado === 'activo').map(emp => (
-                          <option key={emp.id} value={emp.id}>{emp.nombre} {emp.apellido} - {emp.cargo}</option>
-                        ))}
-                      </select>
+                      <div className="relative">
+                        <div className="relative">
+                          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                          <input
+                            type="text"
+                            placeholder="Buscar empleado por nombre o apellido..."
+                            value={busquedaEmpleado}
+                            onChange={(e) => { setBusquedaEmpleado(e.target.value); setMostrarDropdown(true); }}
+                            onFocus={() => setMostrarDropdown(true)}
+                            className="w-full pl-10 pr-10 py-3 border-2 border-gray-100 rounded-xl text-sm bg-gray-50 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 transition-all text-gray-800"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setMostrarDropdown(!mostrarDropdown)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5"
+                          >
+                            <ChevronDown size={16} className={`transition-transform ${mostrarDropdown ? 'rotate-180' : ''}`} />
+                          </button>
+                        </div>
+                        {mostrarDropdown && (
+                          <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-xl max-h-56 overflow-y-auto">
+                            <div className="p-2">
+                              {empleadosActivosFiltrados.length === 0 ? (
+                                <div className="text-sm text-gray-500 p-3 text-center">
+                                  {busquedaEmpleado.trim() !== '' ? 'No se encontraron empleados' : 'Escribe para buscar...'}
+                                </div>
+                              ) : (
+                                empleadosActivosFiltrados.map(emp => (
+                                  <button
+                                    key={emp.id}
+                                    type="button"
+                                    onClick={() => {
+                                      handleEmpleadoChange(emp.id);
+                                      setBusquedaEmpleado(`${emp.apellido}, ${emp.nombre}`);
+                                      setMostrarDropdown(false);
+                                    }}
+                                    className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors flex items-center justify-between gap-3 ${
+                                      form.empleado_id === emp.id ? 'bg-blue-50 text-blue-700 font-bold' : 'hover:bg-gray-50 text-gray-700'
+                                    }`}
+                                  >
+                                    <div>
+                                      <span className="font-semibold">{emp.apellido}, {emp.nombre}</span>
+                                      <span className="mx-2 text-gray-400">—</span>
+                                      <span className="text-gray-500">{emp.cargo}</span>
+                                    </div>
+                                    {form.empleado_id === emp.id && (
+                                      <div className="w-2 h-2 rounded-full bg-blue-600" />
+                                    )}
+                                  </button>
+                                ))
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        {/* Cierre del dropdown al perder foco */}
+                        {mostrarDropdown && (
+                          <div className="fixed inset-0 z-10" onClick={() => setMostrarDropdown(false)} />
+                        )}
+                      </div>
+                    )}
+                    {!modoEdicion && form.empleado_id && (
+                      <p className="text-xs text-emerald-600 font-medium mt-1">Empleado seleccionado: {form.empleado_nombre}</p>
                     )}
                   </div>
+
                   <div>
-                    <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wider">Motivo de cese *</label>
-                    <select value={form.motivo} onChange={e => setForm({...form, motivo: e.target.value})} className="w-full border-2 border-gray-100 rounded-xl px-4 py-3 text-sm bg-gray-50 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 transition-all">
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Motivo de cese *</label>
+                    <select value={form.motivo} onChange={e => setForm({...form, motivo: e.target.value})} className="w-full border-2 border-gray-100 rounded-xl px-4 py-3 text-sm bg-gray-50 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 transition-all text-gray-800">
                       <option value="">Seleccionar motivo</option>
                       <option value="renuncia_voluntaria">Renuncia voluntaria</option>
                       <option value="despido">Despido</option>
@@ -386,90 +468,89 @@ export default function TabCeses() {
                       <option value="otros">Otros</option>
                     </select>
                   </div>
-                  {/* ⬅️ Nuevo orden: Fecha Ingreso Planilla primero */}
                   <div>
-                    <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wider">Fecha Ingreso Planilla</label>
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Fecha Ingreso Planilla</label>
                     <input
                       type="date"
                       value={form.fecha_inicio_planilla}
                       onChange={e => setForm({...form, fecha_inicio_planilla: e.target.value})}
-                      className="w-full border-2 border-gray-100 rounded-xl px-4 py-3 text-sm bg-gray-50 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 transition-all"
+                      className="w-full border-2 border-gray-100 rounded-xl px-4 py-3 text-sm bg-gray-50 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 transition-all text-gray-800"
                       placeholder="Dejar vacío para usar fecha de ingreso original"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wider">Fecha de cese *</label>
-                    <input type="date" value={form.fecha_cese} onChange={e => setForm({...form, fecha_cese: e.target.value})} className="w-full border-2 border-gray-100 rounded-xl px-4 py-3 text-sm bg-gray-50 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 transition-all" />
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Fecha de cese *</label>
+                    <input type="date" value={form.fecha_cese} onChange={e => setForm({...form, fecha_cese: e.target.value})} className="w-full border-2 border-gray-100 rounded-xl px-4 py-3 text-sm bg-gray-50 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 transition-all text-gray-800" />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wider">Último día trabajado</label>
-                    <input type="date" value={form.ultimo_dia_trabajado} onChange={e => setForm({...form, ultimo_dia_trabajado: e.target.value})} className="w-full border-2 border-gray-100 rounded-xl px-4 py-3 text-sm bg-gray-50 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 transition-all" />
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Último día trabajado</label>
+                    <input type="date" value={form.ultimo_dia_trabajado} onChange={e => setForm({...form, ultimo_dia_trabajado: e.target.value})} className="w-full border-2 border-gray-100 rounded-xl px-4 py-3 text-sm bg-gray-50 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 transition-all text-gray-800" />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wider">Última gratificación recibida (1/6)</label>
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Última gratificación recibida (1/6)</label>
                     <input
                       type="number"
                       step="0.01"
                       value={form.ultima_gratificacion}
                       onChange={e => setForm({...form, ultima_gratificacion: e.target.value})}
-                      className="w-full border-2 border-gray-100 rounded-xl px-4 py-3 text-sm bg-gray-50 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 transition-all"
+                      className="w-full border-2 border-gray-100 rounded-xl px-4 py-3 text-sm bg-gray-50 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 transition-all text-gray-800"
                       placeholder="Dejar vacío para cálculo automático"
                     />
                   </div>
                   <div className="flex items-center gap-3 bg-gray-50 p-3 rounded-xl">
                     <input type="checkbox" id="remuneracion_pagada" checked={form.remuneracion_pagada} onChange={e => setForm({...form, remuneracion_pagada: e.target.checked})} className="w-5 h-5 rounded-lg border-2 border-gray-300 text-blue-600 focus:ring-blue-500" />
-                    <label htmlFor="remuneracion_pagada" className="text-sm font-bold text-gray-700">Remuneración del mes ya pagada (fin de mes)</label>
+                    <label htmlFor="remuneracion_pagada" className="text-sm font-bold text-gray-800">Remuneración del mes ya pagada (fin de mes)</label>
                   </div>
                   <div className="flex items-center gap-3 bg-gray-50 p-3 rounded-xl">
                     <input type="checkbox" id="beneficios_pagados" checked={form.beneficios_pagados} onChange={e => setForm({...form, beneficios_pagados: e.target.checked})} className="w-5 h-5 rounded-lg border-2 border-gray-300 text-blue-600 focus:ring-blue-500" />
-                    <label htmlFor="beneficios_pagados" className="text-sm font-bold text-gray-700">Beneficios ya pagados</label>
+                    <label htmlFor="beneficios_pagados" className="text-sm font-bold text-gray-800">Beneficios ya pagados</label>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wider">Observaciones</label>
-                    <textarea rows={3} value={form.observaciones} onChange={e => setForm({...form, observaciones: e.target.value})} className="w-full border-2 border-gray-100 rounded-xl px-4 py-3 text-sm bg-gray-50 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 transition-all resize-y" />
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Observaciones</label>
+                    <textarea rows={3} value={form.observaciones} onChange={e => setForm({...form, observaciones: e.target.value})} className="w-full border-2 border-gray-100 rounded-xl px-4 py-3 text-sm bg-gray-50 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 transition-all resize-y text-gray-800" />
                   </div>
                 </div>
 
                 <div className="bg-gradient-to-br from-emerald-50 to-white border border-emerald-200 rounded-2xl p-5 shadow-sm">
-                  <h4 className="font-black text-gray-800 mb-4 flex items-center gap-2 text-sm uppercase tracking-wide">
+                  <h4 className="font-black text-gray-900 mb-4 flex items-center gap-2 text-sm uppercase tracking-wide">
                     <div className="p-1.5 bg-emerald-100 rounded-lg"><DollarSign size={16} className="text-emerald-700" /></div>
                     Liquidación automática (MYPE)
                   </h4>
                   {calculo ? (
                     <div className="space-y-3 text-sm">
-                      <div className="flex justify-between bg-white p-2.5 rounded-xl"><span className="text-gray-600">CTS Trunca ({calculo.mesesCTS} meses)</span><span className="font-bold text-gray-800">S/ {calculo.ctsTrunca}</span></div>
-                      <div className="flex justify-between bg-white p-2.5 rounded-xl"><span className="text-gray-600">Vacaciones Bruto ({calculo.mesesVac} meses)</span><span className="font-bold text-gray-800">S/ {calculo.vacacionesBruto}</span></div>
-                      <div className="flex justify-between bg-red-50 p-2.5 rounded-xl"><span className="text-gray-600">Retención AFP/ONP</span><span className="font-bold text-red-600">- S/ {calculo.retencionVac}</span></div>
-                      <div className="flex justify-between bg-white p-2.5 rounded-xl"><span className="text-gray-600">Vacaciones Neto</span><span className="font-bold text-emerald-600">S/ {calculo.vacacionesNeto}</span></div>
-                      <div className="flex justify-between bg-white p-2.5 rounded-xl"><span className="text-gray-600">Gratificación ({calculo.mesesGrat} meses)</span><span className="font-bold text-gray-800">S/ {calculo.gratificacionPrincipal}</span></div>
-                      <div className="flex justify-between bg-white p-2.5 rounded-xl"><span className="text-gray-600">Bonif. Extra 9%</span><span className="font-bold text-gray-800">S/ {calculo.bonificacionExtra}</span></div>
+                      <div className="flex justify-between bg-white p-2.5 rounded-xl"><span className="text-gray-700">CTS Trunca ({calculo.mesesCTS} meses)</span><span className="font-bold text-gray-800">S/ {calculo.ctsTrunca}</span></div>
+                      <div className="flex justify-between bg-white p-2.5 rounded-xl"><span className="text-gray-700">Vacaciones Bruto ({calculo.mesesVac} meses)</span><span className="font-bold text-gray-800">S/ {calculo.vacacionesBruto}</span></div>
+                      <div className="flex justify-between bg-red-50 p-2.5 rounded-xl"><span className="text-gray-700">Retención AFP/ONP</span><span className="font-bold text-red-600">- S/ {calculo.retencionVac}</span></div>
+                      <div className="flex justify-between bg-white p-2.5 rounded-xl"><span className="text-gray-700">Vacaciones Neto</span><span className="font-bold text-emerald-700">S/ {calculo.vacacionesNeto}</span></div>
+                      <div className="flex justify-between bg-white p-2.5 rounded-xl"><span className="text-gray-700">Gratificación ({calculo.mesesGrat} meses)</span><span className="font-bold text-gray-800">S/ {calculo.gratificacionPrincipal}</span></div>
+                      <div className="flex justify-between bg-white p-2.5 rounded-xl"><span className="text-gray-700">Bonif. Extra 9%</span><span className="font-bold text-gray-800">S/ {calculo.bonificacionExtra}</span></div>
                       {!form.remuneracion_pagada && (
                         <div className="flex justify-between bg-blue-50 p-2.5 rounded-xl border border-blue-200">
-                          <span className="text-gray-600">Remuneración mes</span>
+                          <span className="text-gray-700">Remuneración mes</span>
                           <span className="font-bold text-blue-700">
                             S/ {form.remuneracion_pendiente?.toFixed(2) || '0.00'}
                           </span>
                         </div>
                       )}
                       <div>
-                        <label className="text-xs font-bold text-gray-500">Condición de trabajo</label>
+                        <label className="text-xs font-bold text-gray-700">Condición de trabajo</label>
                         <input
                           type="number"
                           step="0.01"
                           value={form.condicion_trabajo}
                           onChange={e => setForm({...form, condicion_trabajo: Number(e.target.value)})}
-                          className="w-full mt-1 border-2 border-gray-200 rounded-xl px-3 py-2 text-sm font-medium"
+                          className="w-full mt-1 border-2 border-gray-200 rounded-xl px-3 py-2 text-sm font-medium text-gray-800"
                         />
                       </div>
                       <hr className="border-emerald-200" />
-                      <div className="flex justify-between text-lg font-black text-[#0B1527] bg-emerald-50 p-2.5 rounded-xl">
+                      <div className="flex justify-between text-lg font-black text-gray-900 bg-emerald-50 p-2.5 rounded-xl">
                         <span>Total Final</span>
                         <span className="text-emerald-700">
                           S/ {Number(form.monto_liquidacion).toLocaleString('es-PE', { minimumFractionDigits: 2 })}
                         </span>
                       </div>
                       <div className="mt-3">
-                        <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wider">Monto final (ajustable)</label>
+                        <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Monto final (ajustable)</label>
                         <input
                           type="number"
                           step="0.01"
@@ -482,7 +563,7 @@ export default function TabCeses() {
                   ) : (
                     <div className="text-center py-8">
                       <AlertCircle size={32} className="mx-auto mb-3 text-gray-300" />
-                      <p className="text-gray-400 font-medium">Selecciona empleado y fecha para calcular</p>
+                      <p className="text-gray-600 font-medium">Selecciona empleado y fecha para calcular</p>
                     </div>
                   )}
                 </div>
@@ -493,7 +574,7 @@ export default function TabCeses() {
               <button onClick={guardarCese} disabled={loading} className="flex-1 bg-gradient-to-r from-[#11284e] to-[#185FA5] hover:from-[#185FA5] hover:to-[#1a6ab8] text-white py-3.5 rounded-xl font-bold shadow-lg shadow-blue-500/20 disabled:opacity-50 transition-all active:scale-[0.98]">
                 {loading ? 'Guardando...' : (modoEdicion ? 'Actualizar Cese' : 'Registrar Cese y Liquidación')}
               </button>
-              <button onClick={() => setModal(false)} className="px-6 py-3.5 border-2 border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-100 transition-colors">Cancelar</button>
+              <button onClick={() => setModal(false)} className="px-6 py-3.5 border-2 border-gray-200 rounded-xl font-bold text-gray-700 hover:bg-gray-100 transition-colors">Cancelar</button>
             </div>
           </div>
         </div>
@@ -504,7 +585,7 @@ export default function TabCeses() {
         <div className="fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto bg-[#0a1930]/70 backdrop-blur-md p-4 pt-[6vh] pb-[6vh]">
           <div className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-200">
             <div className="sticky top-0 bg-white rounded-t-3xl z-10 flex justify-between items-center p-6 pb-4 border-b border-gray-100">
-              <h3 className="text-xl font-black text-[#11284e]">Vista previa de la Liquidación</h3>
+              <h3 className="text-xl font-black text-gray-900">Vista previa de la Liquidación</h3>
               <button onClick={() => setShowPreview(false)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors"><X size={20} /></button>
             </div>
             <div className="max-h-[75vh] overflow-y-auto p-6">
@@ -519,7 +600,7 @@ export default function TabCeses() {
               <button onClick={() => window.print()} className="bg-gradient-to-r from-[#185FA5] to-[#144b82] text-white px-6 py-3 rounded-xl text-sm font-bold shadow-lg shadow-blue-500/20 hover:from-[#1a6ab8] transition-all">
                 Imprimir
               </button>
-              <button onClick={() => setShowPreview(false)} className="px-6 py-3 border-2 border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-100 transition-colors">Cerrar</button>
+              <button onClick={() => setShowPreview(false)} className="px-6 py-3 border-2 border-gray-200 rounded-xl font-bold text-gray-700 hover:bg-gray-100 transition-colors">Cerrar</button>
             </div>
           </div>
         </div>
@@ -530,7 +611,7 @@ export default function TabCeses() {
         <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-[#0a1930]/60 backdrop-blur-md p-4 pt-[8vh] pb-[8vh]">
           <div className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-200 relative">
             <div className="sticky top-0 bg-white rounded-t-3xl z-10 flex justify-between items-center p-6 pb-4 border-b border-gray-100">
-              <h3 className="text-xl font-black text-[#11284e]">Documento de Liquidación</h3>
+              <h3 className="text-xl font-black text-gray-900">Documento de Liquidación</h3>
               <button onClick={() => setModalLiquidacion(null)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors"><X size={20} /></button>
             </div>
             <div className="max-h-[70vh] overflow-y-auto p-6">
@@ -545,7 +626,7 @@ export default function TabCeses() {
               <button onClick={() => window.print()} className="bg-gradient-to-r from-[#185FA5] to-[#144b82] text-white px-6 py-3 rounded-xl text-sm font-bold shadow-lg shadow-blue-500/20 hover:from-[#1a6ab8] transition-all">
                 Imprimir
               </button>
-              <button onClick={() => setModalLiquidacion(null)} className="px-6 py-3 border-2 border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-100 transition-colors">Cerrar</button>
+              <button onClick={() => setModalLiquidacion(null)} className="px-6 py-3 border-2 border-gray-200 rounded-xl font-bold text-gray-700 hover:bg-gray-100 transition-colors">Cerrar</button>
             </div>
           </div>
         </div>

@@ -29,11 +29,21 @@ const COMPETENCIAS_GENERALES_NOMBRES = [
   'Inteligencia emocional', 'Proactividad', 'Organización', 'Cumplimiento de normas'
 ];
 
+// ⭐ Actualizado: incluye Recursos Humanos
 const COMPETENCIAS_POR_PUESTO = {
   'Ejecutivo de ventas': ['Persuasión', 'Seguimiento comercial', 'Cierre de ventas', 'Manejo de objeciones', 'Velocidad de respuesta', 'Registro en CRM'],
   'Coordinador académico': ['Coordinación académica', 'Comunicación con docentes', 'Gestión de cronogramas', 'Control de asistencias', 'Seguimiento de participantes', 'Validación de documentación'],
   'Cajera': ['Manejo de caja', 'Atención al cliente', 'Exactitud en pagos', 'Organización de documentos', 'Resolución de incidencias', 'Confidencialidad'],
   'Gerente': ['Liderazgo estratégico', 'Toma de decisiones', 'Gestión financiera', 'Gestión de equipos', 'Visión de crecimiento', 'Control de indicadores'],
+  // ⭐ NUEVO
+  'Recursos Humanos': [
+    'Gestión de personal',
+    'Reclutamiento y selección',
+    'Administración de planillas',
+    'Gestión del clima laboral',
+    'Cumplimiento normativo RRHH',
+    'Gestión de evaluaciones'
+  ],
 };
 
 function getCompetenciasPorPuesto(cargo) {
@@ -193,7 +203,6 @@ export default function TabEvaluacion() {
     const personaId = modalEv.id;
     const tipo = modalEv.tipo_persona || (tipoPersonalMensual === 'planilla' ? 'planilla' : 'complementario');
     
-    // Si es planilla, calculamos incidencias reales, si es complementario, van en 0
     let incidencias;
     if (tipo === 'planilla') {
       incidencias = await calcularIncidenciasDesdeAsistencia(personaId);
@@ -252,23 +261,38 @@ export default function TabEvaluacion() {
   const cargarCompetenciasEmpleado = useCallback(async (personaId, periodo) => {
     setCargandoCompetencias(true);
     try {
+      // 1. Obtener todas las competencias (sin filtrar por tipo)
       const { data: competenciasData } = await supabase.from('competencias').select('id, nombre, tipo, puesto');
       if (!competenciasData) return;
+
+      // 2. Obtener puntajes existentes del colaborador en ese periodo
       const { data: puntajesExistentes } = await supabase
         .from('colaborador_competencias')
         .select('competencia_id, puntaje, observacion')
         .eq('empleado_id', personaId)
         .eq('periodo', periodo);
+
       const mapaPuntajes = {};
-      puntajesExistentes?.forEach(p => { mapaPuntajes[p.competencia_id] = { puntaje: p.puntaje || '', observacion: p.observacion || '' }; });
+      puntajesExistentes?.forEach(p => {
+        // Guardamos el puntaje exacto (0 también es válido)
+        mapaPuntajes[p.competencia_id] = {
+          puntaje: p.puntaje != null ? p.puntaje : '',
+          observacion: p.observacion || ''
+        };
+      });
+
+      // 3. Construir el objeto que se usará en el formulario
       const nuevoPuntajes = {};
       competenciasData.forEach(comp => {
         nuevoPuntajes[comp.id] = {
-          nombre: comp.nombre, tipo: comp.tipo, puesto: comp.puesto,
-          puntaje: mapaPuntajes[comp.id]?.puntaje || '',
-          observacion: mapaPuntajes[comp.id]?.observacion || ''
+          nombre: comp.nombre,
+          tipo: comp.tipo,
+          puesto: comp.puesto,
+          puntaje: mapaPuntajes[comp.id]?.puntaje ?? '',
+          observacion: mapaPuntajes[comp.id]?.observacion ?? ''
         };
       });
+
       setPuntajesCompetencias(nuevoPuntajes);
     } catch (err) { console.error('Error cargando competencias:', err); }
     finally { setCargandoCompetencias(false); }
@@ -345,7 +369,7 @@ export default function TabEvaluacion() {
   const personasAuto = tipoPersonalAuto === 'planilla' ? empleados : locadores;
   const personasComp = tipoPersonalComp === 'planilla' ? empleados : locadores;
 
-  // Combinar ranking con ambos grupos (planilla usa datos[] y complementarios usan evaluaciones de la tabla)
+  // Combinar ranking con ambos grupos
   const ranking = [
     ...datos.filter(d => d.evaluado).sort((a, b) => b.puntaje_visible - a.puntaje_visible),
     ...locadores
@@ -429,10 +453,10 @@ export default function TabEvaluacion() {
             <label className="block text-xs font-bold text-gray-500 mb-3 uppercase tracking-wider">Tipo de personal</label>
             <div className="flex gap-2">
               <button onClick={() => setTipoPersonalMensual('planilla')} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${tipoPersonalMensual === 'planilla' ? 'bg-gradient-to-r from-[#11284e] to-[#185FA5] text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-                🧑‍💼 Planilla
+                Planilla
               </button>
               <button onClick={() => setTipoPersonalMensual('complementario')} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${tipoPersonalMensual === 'complementario' ? 'bg-gradient-to-r from-[#11284e] to-[#185FA5] text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-                📋 Complementarios
+                Complementarios
               </button>
             </div>
           </div>
@@ -529,8 +553,8 @@ export default function TabEvaluacion() {
           <div className="mb-6">
             <label className="block text-xs font-bold text-gray-500 mb-3 uppercase tracking-wider">Tipo de personal</label>
             <div className="flex gap-2">
-              <button onClick={() => { setTipoPersonalComp('planilla'); setEmpleadoCompSeleccionado(null); }} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${tipoPersonalComp === 'planilla' ? 'bg-gradient-to-r from-[#11284e] to-[#185FA5] text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>🧑‍💼 Planilla</button>
-              <button onClick={() => { setTipoPersonalComp('complementario'); setEmpleadoCompSeleccionado(null); }} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${tipoPersonalComp === 'complementario' ? 'bg-gradient-to-r from-[#11284e] to-[#185FA5] text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>📋 Complementarios</button>
+              <button onClick={() => { setTipoPersonalComp('planilla'); setEmpleadoCompSeleccionado(null); }} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${tipoPersonalComp === 'planilla' ? 'bg-gradient-to-r from-[#11284e] to-[#185FA5] text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>Planilla</button>
+              <button onClick={() => { setTipoPersonalComp('complementario'); setEmpleadoCompSeleccionado(null); }} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${tipoPersonalComp === 'complementario' ? 'bg-gradient-to-r from-[#11284e] to-[#185FA5] text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>Complementarios</button>
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
@@ -540,12 +564,48 @@ export default function TabEvaluacion() {
           {empleadoCompSeleccionado ? (
             <>
               <div className="space-y-6">
-                <div><h4 className="font-bold text-gray-800 mb-3 flex items-center gap-2">🧠 Competencias Generales</h4><div className="space-y-3">{Object.entries(puntajesCompetencias).filter(([_, data]) => data.tipo === 'general').map(([id, data]) => (<div key={id} className="flex items-center gap-4 bg-gray-50 p-3 rounded-xl"><span className="w-48 text-sm font-medium text-gray-700">{data.nombre}</span><input type="number" min="0" max="100" value={data.puntaje} onChange={(e) => handlePuntajeChange(id, e.target.value)} className="w-20 border-2 border-gray-100 rounded-lg px-3 py-2 text-sm text-center font-bold focus:border-blue-500 outline-none bg-white" placeholder="0-100" /><input type="text" value={data.observacion} onChange={(e) => handleObservacionChange(id, e.target.value)} className="flex-1 border-2 border-gray-100 rounded-lg px-3 py-2 text-xs outline-none focus:border-blue-500 bg-white" placeholder="Observación (opcional)" /></div>))}</div></div>
-                <div><h4 className="font-bold text-gray-800 mb-3 flex items-center gap-2">💼 Competencias del Puesto: {empleadoCompSeleccionado.cargo || empleadoCompSeleccionado.modalidad || 'General'}</h4><div className="space-y-3">{Object.entries(puntajesCompetencias).filter(([_, data]) => data.tipo === 'especifica').map(([id, data]) => (<div key={id} className="flex items-center gap-4 bg-gray-50 p-3 rounded-xl"><span className="w-48 text-sm font-medium text-gray-700">{data.nombre}</span><input type="number" min="0" max="100" value={data.puntaje} onChange={(e) => handlePuntajeChange(id, e.target.value)} className="w-20 border-2 border-gray-100 rounded-lg px-3 py-2 text-sm text-center font-bold focus:border-blue-500 outline-none bg-white" placeholder="0-100" /><input type="text" value={data.observacion} onChange={(e) => handleObservacionChange(id, e.target.value)} className="flex-1 border-2 border-gray-100 rounded-lg px-3 py-2 text-xs outline-none focus:border-blue-500 bg-white" placeholder="Observación (opcional)" /></div>))}</div></div>
+                <div>
+                  <h4 className="font-bold text-gray-800 mb-3 flex items-center gap-2">🧠 Competencias Generales</h4>
+                  <div className="space-y-3">
+                    {Object.entries(puntajesCompetencias)
+                      .filter(([_, data]) => data.tipo === 'general')
+                      .map(([id, data]) => (
+                        <div key={id} className="flex items-center gap-4 bg-gray-50 p-3 rounded-xl">
+                          <span className="w-48 text-sm font-medium text-gray-700">{data.nombre}</span>
+                          <input type="number" min="0" max="100" value={data.puntaje} onChange={(e) => handlePuntajeChange(id, e.target.value)} className="w-20 border-2 border-gray-100 rounded-lg px-3 py-2 text-sm text-center font-bold focus:border-blue-500 outline-none bg-white" placeholder="0-100" />
+                          <input type="text" value={data.observacion} onChange={(e) => handleObservacionChange(id, e.target.value)} className="flex-1 border-2 border-gray-100 rounded-lg px-3 py-2 text-xs outline-none focus:border-blue-500 bg-white" placeholder="Observación (opcional)" />
+                        </div>
+                      ))}
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                    💼 Competencias del Puesto: {empleadoCompSeleccionado.cargo || empleadoCompSeleccionado.modalidad || 'General'}
+                  </h4>
+                  <div className="space-y-3">
+                    {Object.entries(puntajesCompetencias)
+                      .filter(([_, data]) => data.tipo !== 'general')   // ⭐ ahora acepta cualquier tipo que no sea general
+                      .map(([id, data]) => (
+                        <div key={id} className="flex items-center gap-4 bg-gray-50 p-3 rounded-xl">
+                          <span className="w-48 text-sm font-medium text-gray-700">{data.nombre}</span>
+                          <input type="number" min="0" max="100" value={data.puntaje} onChange={(e) => handlePuntajeChange(id, e.target.value)} className="w-20 border-2 border-gray-100 rounded-lg px-3 py-2 text-sm text-center font-bold focus:border-blue-500 outline-none bg-white" placeholder="0-100" />
+                          <input type="text" value={data.observacion} onChange={(e) => handleObservacionChange(id, e.target.value)} className="flex-1 border-2 border-gray-100 rounded-lg px-3 py-2 text-xs outline-none focus:border-blue-500 bg-white" placeholder="Observación (opcional)" />
+                        </div>
+                      ))}
+                  </div>
+                </div>
               </div>
-              <div className="mt-8 flex justify-end"><button onClick={guardarCompetencias} disabled={cargandoCompetencias} className="bg-gradient-to-r from-[#11284e] to-[#185FA5] text-white px-8 py-3.5 rounded-xl font-bold hover:from-[#185FA5] hover:to-[#1a6ab8] transition-all shadow-lg shadow-blue-500/20 disabled:opacity-50 active:scale-[0.98]">{cargandoCompetencias ? 'Guardando...' : 'Guardar Competencias'}</button></div>
+
+              <div className="mt-8 flex justify-end">
+                <button onClick={guardarCompetencias} disabled={cargandoCompetencias} className="bg-gradient-to-r from-[#11284e] to-[#185FA5] text-white px-8 py-3.5 rounded-xl font-bold hover:from-[#185FA5] hover:to-[#1a6ab8] transition-all shadow-lg shadow-blue-500/20 disabled:opacity-50 active:scale-[0.98]">
+                  {cargandoCompetencias ? 'Guardando...' : 'Guardar Competencias'}
+                </button>
+              </div>
             </>
-          ) : (<div className="text-center py-12 text-gray-400">Seleccione un colaborador para evaluar sus competencias.</div>)}
+          ) : (
+            <div className="text-center py-12 text-gray-400">Seleccione un colaborador para evaluar sus competencias.</div>
+          )}
         </div>
       )}
 
@@ -557,8 +617,8 @@ export default function TabEvaluacion() {
           <div className="mb-6">
             <label className="block text-xs font-bold text-gray-500 mb-3 uppercase tracking-wider">Tipo de personal</label>
             <div className="flex gap-2">
-              <button onClick={() => { setTipoPersonalAuto('planilla'); setPersonaAutoSeleccionada(null); setTokenGenerado(null); }} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${tipoPersonalAuto === 'planilla' ? 'bg-gradient-to-r from-[#11284e] to-[#185FA5] text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>🧑‍💼 Planilla</button>
-              <button onClick={() => { setTipoPersonalAuto('complementario'); setPersonaAutoSeleccionada(null); setTokenGenerado(null); }} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${tipoPersonalAuto === 'complementario' ? 'bg-gradient-to-r from-[#11284e] to-[#185FA5] text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>📋 Complementarios</button>
+              <button onClick={() => { setTipoPersonalAuto('planilla'); setPersonaAutoSeleccionada(null); setTokenGenerado(null); }} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${tipoPersonalAuto === 'planilla' ? 'bg-gradient-to-r from-[#11284e] to-[#185FA5] text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>Planilla</button>
+              <button onClick={() => { setTipoPersonalAuto('complementario'); setPersonaAutoSeleccionada(null); setTokenGenerado(null); }} className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${tipoPersonalAuto === 'complementario' ? 'bg-gradient-to-r from-[#11284e] to-[#185FA5] text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>Complementarios</button>
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">

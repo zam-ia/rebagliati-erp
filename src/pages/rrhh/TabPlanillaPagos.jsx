@@ -25,6 +25,11 @@
 // - ESTILO BRUTAL: modal de registro de horas con diseño oscuro y vanguardista
 // - PERSONALIZAR FACTOR FIN DE SEMANA: modal para cambiar el multiplicador
 // - PAGO DE HORAS EXTRAS: agrupado por persona, muestra número de cuenta y total acumulado
+// - NUEVA PESTAÑA: Descuentos de Tardanzas (aplicación manual, no automática)
+// - Los descuentos solo impactan la planilla/complementarios tras ser aplicados en esta pestaña
+// - Descuentos proporcionales al sueldo según minutos acumulados
+// - Agrupación de tardanzas por colaborador en la vista de gestión
+// - Modal de detalle de incidencias al hacer clic en el nombre
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useState, useMemo } from 'react';
@@ -32,7 +37,8 @@ import { supabase } from '../../lib/supabase';
 import {
   Download, X, Eye, Send, Users, Briefcase,
   Mail, Loader2, AlertCircle, Clock, Filter, CalendarDays, Calculator,
-  UserPlus, Plus, Trash2, Edit, ChevronLeft, ChevronRight, Grid, List
+  UserPlus, Plus, Trash2, Edit, ChevronLeft, ChevronRight, Grid, List,
+  FileSpreadsheet, FileText, CheckCircle, Circle, Ban
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import CalculadoraCostos from './CalculadoraCostos';
@@ -40,13 +46,13 @@ import CalculadoraCostos from './CalculadoraCostos';
 // ══════════ AFP_TASAS ACTUALIZADAS (SBS ABRIL 2026) ══════════
 const AFP_TASAS = {
   'AFP PRIMA MIXTA / SALDO':     { fondo: 0.10, poliza: 0.0137, comision: 0.0000 },
-  'AFP PRIMA/FLUJO':             { fondo: 0.10, poliza: 0.0137, comision: 0.0160 },  // 1.60% flujo
+  'AFP PRIMA/FLUJO':             { fondo: 0.10, poliza: 0.0137, comision: 0.0160 },
   'AFP HABITAT MIXTA / SALDO':   { fondo: 0.10, poliza: 0.0137, comision: 0.0000 },
-  'AFP HABITAT FLUJO':           { fondo: 0.10, poliza: 0.0137, comision: 0.0147 },  // 1.47% flujo
+  'AFP HABITAT FLUJO':           { fondo: 0.10, poliza: 0.0137, comision: 0.0147 },
   'AFP PROFUTURO MIXTA / SALDO': { fondo: 0.10, poliza: 0.0137, comision: 0.0000 },
-  'AFP PROFUTURO FLUJO':         { fondo: 0.10, poliza: 0.0137, comision: 0.0169 },  // 1.69% flujo
+  'AFP PROFUTURO FLUJO':         { fondo: 0.10, poliza: 0.0137, comision: 0.0169 },
   'AFP INTEGRA MIXTA / SALDO':   { fondo: 0.10, poliza: 0.0137, comision: 0.0000 },
-  'AFP INTEGRA FLUJO':           { fondo: 0.10, poliza: 0.0137, comision: 0.0155 },  // 1.55% flujo
+  'AFP INTEGRA FLUJO':           { fondo: 0.10, poliza: 0.0137, comision: 0.0155 },
 };
 const ONP_TASA     = 0.13;
 const ESSALUD_TASA = 0.09;
@@ -96,12 +102,9 @@ const afpCorto = (tipoPension) => {
 const buscarTasasAFP = (tipoPension) => {
   if (!tipoPension) return { fondo: 0.10, poliza: 0.0137, comision: 0.0137 };
   const tipo = tipoPension.trim().toUpperCase();
-
   if (AFP_TASAS[tipo]) return AFP_TASAS[tipo];
-
   const esFlujo = /FLUJO/i.test(tipo);
   const esMixta = /MIXTA/i.test(tipo);
-
   for (const [clave, tasas] of Object.entries(AFP_TASAS)) {
     const nombreAfp = clave.replace(/\s+MIXTA\s*\/\s*SALDO/i, '').replace(/\s*\/\s*FLUJO$/i, '').replace(/\s+FLUJO$/i, '').trim();
     if (tipo.includes(nombreAfp.toUpperCase())) {
@@ -114,22 +117,26 @@ const buscarTasasAFP = (tipoPension) => {
       }
     }
   }
-
   return { fondo: 0.10, poliza: 0.0137, comision: 0.0000 };
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
-// CÁLCULO PLANILLA (sin asignación familiar)
+// CÁLCULO PLANILLA (con filtro descuento_aplicado = true)
+// Ahora el descuento por tardanzas es proporcional al sueldo y minutos acumulados
 // ══════════════════════════════════════════════════════════════════════════════
 function calcularPlanilla(emp, asistencias = [], mesStr) {
   try {
     const tdm = diasDelMes(mesStr);
-    const asisEmp = asistencias.filter(a => String(a.empleado_id) === String(emp?.id));
-    let tard10 = 0, fInj = 0, diasDM = 0;
-    const valTard = Number(emp?.valor_por_tardanza || 10);
+    const asisEmp = asistencias.filter(a =>
+      String(a.empleado_id) === String(emp?.id) && a.descuento_aplicado === true
+    );
+    let tard10 = 0, fInj = 0, diasDM = 0, totalMinTard = 0;
     asisEmp.forEach(a => {
       if (!a.justificacion) {
-        if (a.tardanza_supera_10min || (a.tardanza && Number(a.minutos) > 10)) tard10++;
+        if (a.tardanza_supera_10min || (a.tardanza && Number(a.minutos) > 10)) {
+          tard10++;
+          totalMinTard += Number(a.minutos || 0);
+        }
         if (a.falta) fInj++;
       }
       if (a.descanso_medico) diasDM++;
@@ -154,7 +161,8 @@ function calcularPlanilla(emp, asistencias = [], mesStr) {
     const mvV    = Number(emp?.movilidad_variable || 0);
     const sub    = Number(emp?.subsidio || 0);
 
-    const dTard  = tard10 * valTard;
+    // Descuento proporcional: (total minutos * sueldo bruto) / (30 días * 8h * 60min) = sb / 14400 por minuto
+    const dTard  = totalMinTard * sb / 14400;
     const dFalt  = fInj * (sb / 30);
 
     const TRA = sProp + he25 + he35 + oib + vt + gt - dTard;
@@ -193,7 +201,7 @@ function calcularPlanilla(emp, asistencias = [], mesStr) {
 
     const obs = [];
     if (fInj > 0)   obs.push(`${fInj} DÍA${fInj > 1 ? 'S' : ''} DE FALTA INJUSTIFICADA`);
-    if (tard10 > 0) obs.push(`${tard10} TARDANZA${tard10 > 1 ? 'S' : ''} MAYOR A 10 MINUTOS`);
+    if (tard10 > 0) obs.push(`${tard10} TARDANZA${tard10 > 1 ? 'S' : ''} MAYOR A 10 MINUTOS (${totalMinTard} min total)`);
     if (diasDM > 0) obs.push(`${diasDM} DÍA${diasDM > 1 ? 'S' : ''} DE DESCANSO MÉDICO`);
     if (emp?.observaciones) obs.push(emp.observaciones.toUpperCase());
 
@@ -207,7 +215,7 @@ function calcularPlanilla(emp, asistencias = [], mesStr) {
       tip, afpCortoNom: afpCorto(tip),
       onp, afpF, afpP, afpC, afpT, penT,
       r5, r5As, adel, dpe, d15, dFalt, TD, NETO,
-      tard10, valTard,
+      tard10, totalMinTard, valTard: totalMinTard > 0 ? sb / 14400 : 0,  // valor por minuto
       es9, esVL,
       valorHoraBase, hrExt25, hrExt35,
       banco: emp?.banco_nombre || emp?.banco || '—',
@@ -232,7 +240,7 @@ function calcularPlanilla(emp, asistencias = [], mesStr) {
       dTard:0, cProp:0, mvF:0, mvV:0, sub:0, TRA:0, TRNA:0, TREM:0,
       tip:'', afpCortoNom:'—', onp:0, afpF:0, afpP:0, afpC:0, afpT:0, penT:0,
       r5:0, r5As:0, adel:0, dpe:0, d15:0, dFalt:0, TD:0, NETO:0,
-      tard10:0, valTard:10, es9:0, esVL:0,
+      tard10:0, totalMinTard:0, valTard:0, es9:0, esVL:0,
       valorHoraBase:0, hrExt25:0, hrExt35:0,
       banco:'—', cuenta:'—', cuspp:'—', nroEssalud:'—', cCosto:'—', cod:'—',
       tdm:30, diasTrab:30, ausentes:0, fInj:0, diasDM:0, hayAus:false,
@@ -242,29 +250,30 @@ function calcularPlanilla(emp, asistencias = [], mesStr) {
   }
 }
 
-// ── Cálculo complementarios ──
+// ── Cálculo complementarios (con filtro descuento_aplicado = true, ahora proporcional) ──
 function calcularLocador(loc, asis = [], mesStr = null) {
   try {
     const sb = Number(loc?.sueldo_base || loc?.monto_mensual || 0);
-    const al = asis.filter(a => String(a.locador_id) === String(loc?.id));
-    let t10 = 0, fi = 0;
-    const vt = Number(loc?.valor_por_tardanza || 10);
+    const al = asis.filter(a =>
+      String(a.locador_id) === String(loc?.id) && a.descuento_aplicado === true
+    );
+    let t10 = 0, fi = 0, totalMinTard = 0;
     al.forEach(a => {
       if (!a.justificacion) {
-        if (a.tardanza_supera_10min || (a.tardanza && Number(a.minutos) > 10)) t10++;
+        if (a.tardanza_supera_10min || (a.tardanza && Number(a.minutos) > 10)) {
+          t10++;
+          totalMinTard += Number(a.minutos || 0);
+        }
         if (a.falta) fi++;
       }
     });
 
     let diasTrabajados = 30;
     let motivoAjuste = null;
-
     if (mesStr) {
       const totalDiasMes = diasDelMes(mesStr);
-      let diaInicio = 1;
-      let diaFin = totalDiasMes;
-      let inicioAjustado = false;
-      let finAjustado = false;
+      let diaInicio = 1, diaFin = totalDiasMes;
+      let inicioAjustado = false, finAjustado = false;
 
       if (loc.fecha_inicio) {
         const mesInicio = loc.fecha_inicio.substring(0, 7);
@@ -273,7 +282,6 @@ function calcularLocador(loc, asis = [], mesStr = null) {
           inicioAjustado = true;
         }
       }
-
       if (loc.fecha_cese) {
         const mesCese = loc.fecha_cese.substring(0, 7);
         if (mesCese === mesStr) {
@@ -281,25 +289,18 @@ function calcularLocador(loc, asis = [], mesStr = null) {
           finAjustado = true;
         }
       }
-
       if (inicioAjustado || finAjustado) {
         diasTrabajados = diaFin - diaInicio + 1;
         if (diasTrabajados < 0) diasTrabajados = 0;
-
-        if (inicioAjustado && finAjustado) {
-          motivoAjuste = `Ingreso ${fmtFecha(loc.fecha_inicio)} - Cese ${fmtFecha(loc.fecha_cese)}`;
-        } else if (inicioAjustado) {
-          motivoAjuste = `Ingreso el ${fmtFecha(loc.fecha_inicio)}`;
-        } else if (finAjustado) {
-          motivoAjuste = `Cese el ${fmtFecha(loc.fecha_cese)}`;
-        }
+        if (inicioAjustado && finAjustado) motivoAjuste = `Ingreso ${fmtFecha(loc.fecha_inicio)} - Cese ${fmtFecha(loc.fecha_cese)}`;
+        else if (inicioAjustado) motivoAjuste = `Ingreso el ${fmtFecha(loc.fecha_inicio)}`;
+        else if (finAjustado) motivoAjuste = `Cese el ${fmtFecha(loc.fecha_cese)}`;
       }
     }
 
     diasTrabajados = Math.max(0, diasTrabajados - fi);
-
     const honorarioBase = (sb / 30) * diasTrabajados;
-    const dt = t10 * vt;
+    const dt = totalMinTard * sb / 14400;
     const df = fi * (sb / 30);
     const aplica = loc?.aplica_retencion !== false;
     const ret4 = (aplica && honorarioBase > 1500) ? honorarioBase * 0.08 : 0;
@@ -307,7 +308,7 @@ function calcularLocador(loc, asis = [], mesStr = null) {
     const neto = honorarioBase - td;
 
     return {
-      sb, honorarioBase, t10, fi, vt, dt, df,
+      sb, honorarioBase, t10, fi, totalMinTard, vt: sb / 14400, dt, df,
       ret4, td, neto, diasTrabajados, motivoAjuste,
       aplicaRetencion: aplica,
       banco: loc?.banco || '—',
@@ -318,7 +319,7 @@ function calcularLocador(loc, asis = [], mesStr = null) {
     };
   } catch {
     return {
-      sb:0, honorarioBase:0, t10:0, fi:0, vt:10, dt:0, df:0,
+      sb:0, honorarioBase:0, t10:0, fi:0, totalMinTard:0, vt:0, dt:0, df:0,
       ret4:0, td:0, neto:0, diasTrabajados:30, motivoAjuste:null,
       aplicaRetencion: true,
       banco:'—', cuenta:'—', estado:'activo', fechaCese:null, fechaInicio:null
@@ -334,29 +335,20 @@ function calcularPracticante(loc, horas = []) {
     const sb = Number(loc?.sueldo_base || 0);
     const valorHora = sb / 240;
     const factorFinSemana = Number(loc?.factor_fin_semana) || 1.0;
-
     let totalHorasNormales = 0;
     let totalHorasFinSemana = 0;
-
     horas.forEach(h => {
       const fecha = new Date(h.fecha + 'T12:00:00');
       const dia = fecha.getUTCDay();
       const horasReg = Number(h.horas || 0);
-      if (dia === 0 || dia === 6) {
-        totalHorasFinSemana += horasReg;
-      } else {
-        totalHorasNormales += horasReg;
-      }
+      if (dia === 0 || dia === 6) totalHorasFinSemana += horasReg;
+      else totalHorasNormales += horasReg;
     });
-
     const totalHoras = totalHorasNormales + totalHorasFinSemana;
-    const remuneracion = (valorHora * totalHorasNormales) +
-                         (valorHora * factorFinSemana * totalHorasFinSemana);
-
+    const remuneracion = (valorHora * totalHorasNormales) + (valorHora * factorFinSemana * totalHorasFinSemana);
     const aplica = loc?.aplica_retencion !== false;
     const ret4 = (aplica && remuneracion > 1500) ? remuneracion * 0.08 : 0;
     const neto = remuneracion - ret4;
-
     return {
       sb, valorHora, factorFinSemana,
       totalHoras, totalHorasNormales, totalHorasFinSemana,
@@ -1002,7 +994,7 @@ function ModalLocador({ loc, c, mesStr, onClose }) {
                 <span className="font-black text-gray-800 font-mono">S/ {fmt(c.honorarioBase)}</span>
               </div>
               {c.dt > 0 && <div className="flex justify-between px-3 py-2">
-                <span className="text-gray-600">(-) Tardanzas ({c.t10}×S/{c.vt})</span>
+                <span className="text-gray-600">(-) Tardanzas ({c.t10} incidencias, {c.totalMinTard} min)</span>
                 <span className="text-red-600 font-mono">- S/ {fmt(c.dt)}</span>
               </div>}
               {c.df > 0 && <div className="flex justify-between px-3 py-2">
@@ -1079,6 +1071,13 @@ export default function TabPlanillaPagos() {
   const [showModalFactor, setShowModalFactor] = useState(false);
   const [practFactorId, setPractFactorId] = useState(null);
   const [nuevoFactor, setNuevoFactor] = useState('');
+
+  // ── Estados para Descuentos de Tardanzas ──
+  const [tardanzasPlanilla, setTardanzasPlanilla] = useState([]);
+  const [tardanzasComplementarios, setTardanzasComplementarios] = useState([]);
+  const [selectedTardanzas, setSelectedTardanzas] = useState(new Set());  // ahora claves de grupo (emp_ o loc_)
+  const [detalleTardanzas, setDetalleTardanzas] = useState(null);       // array de incidencias para modal
+  const [showDetalleTardanzas, setShowDetalleTardanzas] = useState(false);
 
   // ═══ Días de la semana completa ═══
   const diasSemana = useMemo(() => {
@@ -1258,10 +1257,49 @@ export default function TabPlanillaPagos() {
 
       const { data: al1 } = await supabase.from('asistencia_locadores').select('*').gte('fecha', p1).lte('fecha', p2);
       const { data: al2 } = await supabase.from('asistencia').select('*').not('locador_id', 'is', null).gte('fecha', p1).lte('fecha', p2);
-      setAsisL([...(al1 || []), ...(al2 || [])]);
+      const locsAsis = [...(al1 || []), ...(al2 || [])];
+      setAsisL(locsAsis);
 
       const { data: he } = await supabase.from('horas_extras').select('*').gte('fecha', p1).lte('fecha', p2);
       setHorasExtras(he || []);
+
+      // ── Procesar tardanzas (todas) con cálculo proporcional ──
+      const calcTardanza = (reg, persona, tipo) => {
+        const minutos = Number(reg.minutos || 0);
+        const sb = persona?.sueldo_base || persona?.sueldo_bruto || 0;
+        return minutos * sb / 14400;
+      };
+
+      const tPlan = (a || []).filter(reg =>
+        reg.empleado_id &&
+        (reg.tardanza_supera_10min || (reg.tardanza && Number(reg.minutos) > 10))
+      ).map(reg => ({
+        ...reg,
+        tipo: 'planilla',
+        tabla: 'asistencia',
+        empleado: e?.find(emp => String(emp.id) === String(reg.empleado_id)) || {},
+        monto: calcTardanza(reg, e?.find(emp => String(emp.id) === String(reg.empleado_id)) || {}),
+        nombre: ((e?.find(emp => String(emp.id) === String(reg.empleado_id)) || {}).apellido || '') + ' ' + ((e?.find(emp => String(emp.id) === String(reg.empleado_id)) || {}).nombre || '')
+      }));
+      setTardanzasPlanilla(tPlan);
+
+      const tCompl = locsAsis.filter(reg =>
+        reg.locador_id &&
+        (reg.tardanza_supera_10min || (reg.tardanza && Number(reg.minutos) > 10))
+      ).map(reg => {
+        const tabla = al1?.some(x => x.id === reg.id) ? 'asistencia_locadores' : 'asistencia';
+        const locador = l?.find(loc => String(loc.id) === String(reg.locador_id)) || {};
+        return {
+          ...reg,
+          tipo: 'complementario',
+          tabla,
+          locador,
+          monto: calcTardanza(reg, locador),
+          nombre: (locador.apellido || '') + ' ' + (locador.nombre || '')
+        };
+      });
+      setTardanzasComplementarios(tCompl);
+
     } catch (err) { setError(err.message); }
     finally { setLoading(false); }
   };
@@ -1365,6 +1403,164 @@ export default function TabPlanillaPagos() {
     URL.revokeObjectURL(a.href);
   };
 
+  // ── Funciones de Descuentos de Tardanzas (agrupadas) ──
+  const toggleSeleccionTardanza = (grupoKey) => {
+    setSelectedTardanzas(prev => {
+      const nuevo = new Set(prev);
+      if (nuevo.has(grupoKey)) nuevo.delete(grupoKey);
+      else nuevo.add(grupoKey);
+      return nuevo;
+    });
+  };
+
+  const aplicarDescuentos = async (tipo) => {
+    const esPlanilla = tipo === 'planilla';
+    const lista = esPlanilla ? tardanzasPlanilla : tardanzasComplementarios;
+    // agrupar para obtener las incidencias de cada grupo seleccionado
+    const idsToApply = [];
+    for (const key of selectedTardanzas) {
+      const [prefijo, idRef] = key.split('_');
+      const refId = parseInt(idRef);
+      if (esPlanilla && prefijo === 'emp') {
+        lista.filter(t => !t.descuento_aplicado && t.empleado_id === refId).forEach(t => idsToApply.push(t.id));
+      } else if (!esPlanilla && prefijo === 'loc') {
+        lista.filter(t => !t.descuento_aplicado && t.locador_id === refId).forEach(t => idsToApply.push(t.id));
+      }
+    }
+    if (idsToApply.length === 0) {
+      alert('Seleccione al menos un colaborador con descuentos pendientes');
+      return;
+    }
+    try {
+      for (let id of idsToApply) {
+        const incidencia = lista.find(t => t.id === id);
+        if (!incidencia) continue;
+        const table = incidencia.tabla;
+        const { error } = await supabase
+          .from(table)
+          .update({ descuento_aplicado: true })
+          .eq('id', id);
+        if (error) throw error;
+      }
+      alert('Descuentos aplicados correctamente.');
+      cargar();
+      setSelectedTardanzas(new Set());
+    } catch (err) {
+      alert('Error al aplicar descuentos: ' + err.message);
+    }
+  };
+
+  const revertirDescuentoGrupo = async (grupoKey, tipo) => {
+    if (!confirm('¿Revertir todos los descuentos de este colaborador?')) return;
+    const esPlanilla = tipo === 'planilla';
+    const lista = esPlanilla ? tardanzasPlanilla : tardanzasComplementarios;
+    const [prefijo, idRef] = grupoKey.split('_');
+    const refId = parseInt(idRef);
+    const incidentes = lista.filter(t => t.descuento_aplicado && 
+      (esPlanilla ? t.empleado_id === refId : t.locador_id === refId));
+    try {
+      for (const inc of incidentes) {
+        const { error } = await supabase
+          .from(inc.tabla)
+          .update({ descuento_aplicado: false })
+          .eq('id', inc.id);
+        if (error) throw error;
+      }
+      cargar();
+    } catch (err) {
+      alert('Error al revertir: ' + err.message);
+    }
+  };
+
+  const exportarTardanzasExcel = () => {
+    const todas = [...tardanzasPlanilla, ...tardanzasComplementarios];
+    const header = 'Nombre,Sueldo Base,Tipo,Fecha,Minutos,Descuento (S/),Aplicado';
+    const rows = todas.map(t => {
+      const nombre = t.nombre;
+      const sueldoBase = t.tipo === 'planilla' ? (t.empleado?.sueldo_bruto || 0) : (t.locador?.sueldo_base || 0);
+      const aplicado = t.descuento_aplicado ? 'Sí' : 'No';
+      return `${nombre},${sueldoBase},${t.tipo},${t.fecha},${t.minutos},${t.monto.toFixed(2)},${aplicado}`;
+    }).join('\n');
+    const csv = '\uFEFF' + header + '\n' + rows;
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `tardanzas_${mes}.csv`;
+    a.click();
+  };
+
+  const exportarTardanzasPDF = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(12);
+    doc.text(`Reporte de Tardanzas - ${periodoLabel(mes)}`, 14, 15);
+    let y = 25;
+    doc.setFontSize(8);
+    const cols = ['Nombre', 'Tipo', 'Fecha', 'Minutos', 'Desc. S/', 'Aplicado'];
+    const colX = [14, 55, 85, 115, 145, 175];
+    cols.forEach((c, i) => doc.text(c, colX[i], y));
+    y += 5;
+    [...tardanzasPlanilla, ...tardanzasComplementarios].forEach(t => {
+      doc.text(t.nombre, colX[0], y);
+      doc.text(t.tipo, colX[1], y);
+      doc.text(t.fecha, colX[2], y);
+      doc.text(String(t.minutos || ''), colX[3], y);
+      doc.text(fmt(t.monto), colX[4], y);
+      doc.text(t.descuento_aplicado ? 'Sí' : 'No', colX[5], y);
+      y += 5;
+      if (y > 280) { doc.addPage(); y = 20; }
+    });
+    doc.save(`tardanzas_${mes}.pdf`);
+  };
+
+  // Agrupaciones para la vista
+  const gruposPlanilla = useMemo(() => {
+    const map = new Map();
+    tardanzasPlanilla.forEach(t => {
+      const key = `emp_${t.empleado_id}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          nombre: t.nombre,
+          sueldoBase: t.empleado?.sueldo_bruto || 0,
+          incidencias: [],
+          totalMinutos: 0,
+          totalDescuento: 0,
+          aplicado: true,
+        });
+      }
+      const grupo = map.get(key);
+      grupo.incidencias.push(t);
+      grupo.totalMinutos += Number(t.minutos || 0);
+      grupo.totalDescuento += t.monto;
+      if (!t.descuento_aplicado) grupo.aplicado = false;
+    });
+    return [...map.values()];
+  }, [tardanzasPlanilla]);
+
+  const gruposComplementarios = useMemo(() => {
+    const map = new Map();
+    tardanzasComplementarios.forEach(t => {
+      const key = `loc_${t.locador_id}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          nombre: t.nombre,
+          sueldoBase: t.locador?.sueldo_base || 0,
+          incidencias: [],
+          totalMinutos: 0,
+          totalDescuento: 0,
+          aplicado: true,
+        });
+      }
+      const grupo = map.get(key);
+      grupo.incidencias.push(t);
+      grupo.totalMinutos += Number(t.minutos || 0);
+      grupo.totalDescuento += t.monto;
+      if (!t.descuento_aplicado) grupo.aplicado = false;
+    });
+    return [...map.values()];
+  }, [tardanzasComplementarios]);
+
   const totP = cols.reduce((s, e) => s + calcularPlanilla(e, asis, mes).NETO, 0);
   const totL = locs.filter(l => filtroModalidad === 'Todos' || (l.modalidad_pago || 'RHE') === filtroModalidad)
     .reduce((s, l) => s + calcularLocador(l, asisL, mes).neto, 0);
@@ -1394,9 +1590,7 @@ export default function TabPlanillaPagos() {
     return locs.filter(l => (l.modalidad_pago || 'RHE') === filtroModalidad);
   }, [locs, filtroModalidad]);
 
-  // ═══════════════════════════════════════════════════════════
   // AGRUPACIÓN DE HORAS EXTRAS (por persona)
-  // ═══════════════════════════════════════════════════════════
   const horasExtrasAgrupadas = useMemo(() => {
     const aprobadas = horasExtras.filter(h => h.estado === 'Aprobado');
     const grupos = {};
@@ -1592,9 +1786,8 @@ export default function TabPlanillaPagos() {
           {/* Contenido del calendario */}
           <div className="p-8 overflow-y-auto flex-1">
             {modoRegistro === 'semanal' ? (
-              /* ─── VISTA SEMANAL (Lun a Dom) ─── */
+              /* ─── VISTA SEMANAL ─── */
               <div className="space-y-8">
-                {/* Navegador de semana */}
                 <div className="flex items-center justify-between bg-white/5 rounded-2xl p-4 backdrop-blur-sm">
                   <button onClick={() => cambiarSemana(-1)} 
                     className="p-3 bg-white/5 rounded-xl hover:bg-white/10 text-white transition">
@@ -1613,8 +1806,6 @@ export default function TabPlanillaPagos() {
                     <ChevronRight size={20} />
                   </button>
                 </div>
-
-                {/* Cuadrícula 7 columnas */}
                 <div className="grid grid-cols-7 gap-4">
                   {['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map((dia, idx) => {
                     const fecha = diasSemana[idx] || '';
@@ -1655,7 +1846,6 @@ export default function TabPlanillaPagos() {
             ) : (
               /* ─── VISTA MENSUAL CALENDARIO REAL ─── */
               <div className="space-y-4">
-                {/* Cabecera de días */}
                 <div className="grid grid-cols-7 gap-2 text-center text-sm font-black uppercase tracking-wider">
                   {['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map((d, i) => (
                     <div key={d} className={`py-3 rounded-xl ${i >= 5 ? 'text-amber-400 bg-amber-400/5' : 'text-gray-400 bg-white/5'}`}>
@@ -1663,8 +1853,6 @@ export default function TabPlanillaPagos() {
                     </div>
                   ))}
                 </div>
-
-                {/* Semanas del mes */}
                 {calendarioMensual.map((semana, idxSem) => (
                   <div key={idxSem} className="grid grid-cols-7 gap-2">
                     {semana.map((fecha, idxDia) => {
@@ -1730,6 +1918,43 @@ export default function TabPlanillaPagos() {
     );
   };
 
+  // ─── MODAL DETALLE DE TARDANZAS ───
+  const ModalDetalleTardanzas = () => {
+    if (!detalleTardanzas) return null;
+    return (
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-auto shadow-2xl">
+          <div className="sticky top-0 bg-white px-6 py-4 border-b flex justify-between items-center">
+            <h3 className="font-black text-gray-800 text-lg">Detalle de Incidencias</h3>
+            <button onClick={() => setShowDetalleTardanzas(false)} className="p-1 hover:bg-gray-100 rounded-lg">
+              <X size={20}/>
+            </button>
+          </div>
+          <div className="p-4">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left">
+                  <th className="p-2">Fecha</th>
+                  <th className="p-2">Minutos</th>
+                  <th className="p-2 text-right">Descuento (S/)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {detalleTardanzas.map((inc, idx) => (
+                  <tr key={idx} className="border-b">
+                    <td className="p-2">{fmtFecha(inc.fecha)}</td>
+                    <td className="p-2">{inc.minutos || 0}</td>
+                    <td className="p-2 text-right font-mono">{fmt(inc.monto)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="p-6 lg:p-8 min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50/30">
       {/* Header */}
@@ -1784,9 +2009,9 @@ export default function TabPlanillaPagos() {
         <button onClick={() => setVista('horas_extras')} className={`px-5 py-2.5 text-xs font-bold rounded-xl flex items-center gap-2 transition-all duration-200 ${vista === 'horas_extras' ? 'bg-gradient-to-r from-amber-600 to-amber-700 text-white shadow-md shadow-amber-500/20' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'}`}><Clock size={14}/> PAGO DE HORAS EXTRAS</button>
         <button onClick={() => setVista('calculadora')} className={`px-5 py-2.5 text-xs font-bold rounded-xl flex items-center gap-2 transition-all duration-200 ${vista === 'calculadora' ? 'bg-gradient-to-r from-[#11284e] to-[#0B1527] text-white shadow-md shadow-blue-500/20' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'}`}><Calculator size={14}/> CALCULADORA COSTO</button>
         <button onClick={() => setVista('practicantes')} className={`px-5 py-2.5 text-xs font-bold rounded-xl flex items-center gap-2 transition-all duration-200 ${vista === 'practicantes' ? 'bg-gradient-to-r from-[#11284e] to-[#0B1527] text-white shadow-md shadow-blue-500/20' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'}`}><UserPlus size={14}/> PRACTICANTES</button>
+        <button onClick={() => setVista('descuentos_tardanzas')} className={`px-5 py-2.5 text-xs font-bold rounded-xl flex items-center gap-2 transition-all duration-200 ${vista === 'descuentos_tardanzas' ? 'bg-gradient-to-r from-[#11284e] to-[#0B1527] text-white shadow-md shadow-blue-500/20' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'}`}><Ban size={14}/> DESC. TARDANZAS</button>
       </div>
 
-      {/* Filtro para complementarios */}
       {vista === 'locacion' && (
         <div className="mb-4 flex items-center gap-3 bg-white/80 rounded-2xl p-3 border border-blue-50 shadow-sm backdrop-blur-sm">
           <Filter size={16} className="text-gray-400" />
@@ -1799,15 +2024,121 @@ export default function TabPlanillaPagos() {
               </button>
             ))}
           </div>
-          <span className="text-xs text-gray-400 ml-4">({locadoresFiltrados.length} complementarios, incluye ingresos y cesos del mes)</span>
+          <span className="text-xs text-gray-400 ml-4">({locadoresFiltrados.length} complementarios)</span>
         </div>
       )}
 
       {vista === 'calculadora' && <CalculadoraCostos />}
       {vista === 'practicantes' && renderPracticantes()}
 
+      {/* ═══ VISTA: DESCUENTOS DE TARDANZAS (AGRUPADA) ═══ */}
+      {vista === 'descuentos_tardanzas' && (
+        <div className="space-y-8">
+          <div className="bg-white/80 backdrop-blur-sm rounded-3xl border border-blue-50 shadow-xl p-6">
+            <h3 className="text-lg font-black text-gray-800 mb-2">Gestión de Descuentos por Tardanzas</h3>
+            <p className="text-sm text-gray-500 mb-6">
+              Incidencias agrupadas por colaborador. Seleccione y aplique los descuentos.
+              Haga clic en el nombre para ver el detalle.
+            </p>
+
+            {/* Planilla */}
+            <div className="mb-8">
+              <h4 className="font-bold text-[#185FA5] mb-3 flex items-center gap-2"><Users size={16}/> Planilla (5ta Categoría)</h4>
+              {gruposPlanilla.length === 0 && (
+                <p className="text-center text-gray-400 italic py-4">Sin tardanzas pendientes</p>
+              )}
+              {gruposPlanilla.map(g => (
+                <div key={g.key} className="bg-white border rounded-xl mb-3 overflow-hidden">
+                  <div className="p-4 flex flex-wrap items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <input type="checkbox"
+                        checked={selectedTardanzas.has(g.key)}
+                        onChange={() => toggleSeleccionTardanza(g.key)}
+                        className="w-4 h-4 rounded accent-[#185FA5]"
+                        disabled={g.aplicado} />
+                      <button onClick={() => { setDetalleTardanzas(g.incidencias); setShowDetalleTardanzas(true); }}
+                        className="text-left font-bold text-[#185FA5] hover:underline">{g.nombre}</button>
+                      <span className="text-sm text-gray-500">S/ {fmt(g.sueldoBase)}</span>
+                    </div>
+                    <div className="flex items-center gap-6 text-sm">
+                      <span>{g.incidencias.length} incidencia(s)</span>
+                      <span>{g.totalMinutos} min</span>
+                      <span className="font-bold text-red-600">S/ {fmt(g.totalDescuento)}</span>
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${g.aplicado ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
+                        {g.aplicado ? 'Aplicado' : 'Pendiente'}
+                      </span>
+                      {g.aplicado ? (
+                        <button onClick={() => revertirDescuentoGrupo(g.key, 'planilla')}
+                          className="text-xs text-red-500 hover:underline">Revertir</button>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Complementarios */}
+            <div className="mb-8">
+              <h4 className="font-bold text-purple-700 mb-3 flex items-center gap-2"><Briefcase size={16}/> Complementarios (4ta Categoría)</h4>
+              {gruposComplementarios.length === 0 && (
+                <p className="text-center text-gray-400 italic py-4">Sin tardanzas pendientes</p>
+              )}
+              {gruposComplementarios.map(g => (
+                <div key={g.key} className="bg-white border rounded-xl mb-3 overflow-hidden">
+                  <div className="p-4 flex flex-wrap items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <input type="checkbox"
+                        checked={selectedTardanzas.has(g.key)}
+                        onChange={() => toggleSeleccionTardanza(g.key)}
+                        className="w-4 h-4 rounded accent-purple-600"
+                        disabled={g.aplicado} />
+                      <button onClick={() => { setDetalleTardanzas(g.incidencias); setShowDetalleTardanzas(true); }}
+                        className="text-left font-bold text-purple-700 hover:underline">{g.nombre}</button>
+                      <span className="text-sm text-gray-500">S/ {fmt(g.sueldoBase)}</span>
+                    </div>
+                    <div className="flex items-center gap-6 text-sm">
+                      <span>{g.incidencias.length} incidencia(s)</span>
+                      <span>{g.totalMinutos} min</span>
+                      <span className="font-bold text-red-600">S/ {fmt(g.totalDescuento)}</span>
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${g.aplicado ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
+                        {g.aplicado ? 'Aplicado' : 'Pendiente'}
+                      </span>
+                      {g.aplicado ? (
+                        <button onClick={() => revertirDescuentoGrupo(g.key, 'complementario')}
+                          className="text-xs text-red-500 hover:underline">Revertir</button>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Botones */}
+            <div className="flex flex-wrap gap-3 mt-6 justify-end">
+              <button onClick={exportarTardanzasExcel}
+                className="flex items-center gap-2 bg-white border-2 border-gray-200 text-gray-700 px-5 py-2.5 rounded-xl text-xs font-bold hover:bg-gray-50 transition">
+                <FileSpreadsheet size={16}/> Exportar Excel
+              </button>
+              <button onClick={exportarTardanzasPDF}
+                className="flex items-center gap-2 bg-white border-2 border-gray-200 text-gray-700 px-5 py-2.5 rounded-xl text-xs font-bold hover:bg-gray-50 transition">
+                <FileText size={16}/> Exportar PDF
+              </button>
+              <button onClick={() => aplicarDescuentos('planilla')}
+                className="flex items-center gap-2 bg-gradient-to-r from-[#185FA5] to-[#144b82] text-white px-6 py-2.5 rounded-xl text-xs font-bold shadow-lg shadow-blue-500/25">
+                <CheckCircle size={16}/> Aplicar en Planilla
+              </button>
+              <button onClick={() => aplicarDescuentos('complementario')}
+                className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-purple-800 text-white px-6 py-2.5 rounded-xl text-xs font-bold shadow-lg shadow-purple-500/25">
+                <CheckCircle size={16}/> Aplicar en Complementarios
+              </button>
+            </div>
+          </div>
+          {showDetalleTardanzas && <ModalDetalleTardanzas />}
+        </div>
+      )}
+
       {/* Tablas de planilla / complementarios / horas extras */}
-      {vista !== 'calculadora' && vista !== 'practicantes' && (
+      {vista !== 'calculadora' && vista !== 'practicantes' && vista !== 'descuentos_tardanzas' && (
         <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl shadow-blue-100/20 border border-blue-50 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left">
@@ -2010,7 +2341,7 @@ export default function TabPlanillaPagos() {
         </div>
       )}
 
-      {vista !== 'calculadora' && vista !== 'practicantes' && (
+      {vista !== 'calculadora' && vista !== 'practicantes' && vista !== 'descuentos_tardanzas' && (
         <div className="mt-5 flex justify-end gap-8 text-sm font-bold pr-2 bg-white/80 backdrop-blur-sm p-4 rounded-2xl border border-blue-50 shadow-lg shadow-blue-100/20">
           <span className="text-gray-600">Total {vista === 'planilla' ? 'Planilla' : vista === 'locacion' ? 'Complementarios' : 'Horas Extras'}:</span>
           <span className="text-[#185FA5] text-lg font-black">S/ {fmt(vista === 'planilla' ? totP : vista === 'locacion' ? totL : totHE)}</span>

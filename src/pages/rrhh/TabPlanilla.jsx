@@ -1,6 +1,7 @@
 // src/pages/rrhh/TabPlanilla.jsx
 // Módulo de Novedades: Incidencias (planilla + locadores) + Horas Extras (planilla y locadores)
 // Visualización de fotos, separación por tipo de persona, gestión documental.
+// Ahora incluye campo "observaciones" para incidencias con manejo de columna faltante.
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { supabase } from '../../lib/supabase';
@@ -54,6 +55,7 @@ const FORM_INC_VACIO = {
   dias_suspension: 0,
   motivo: '',
   documentoSubido: null,
+  observaciones: '', // ⭐ NUEVO CAMPO
 };
 
 const FORM_HE_VACIO = {
@@ -173,7 +175,7 @@ export default function TabPlanilla() {
     cargarTodo();
   }, [cargarTodo]);
 
-  // ─── GUARDAR INCIDENCIA (ahora soporta planilla y locador) ─────────────────
+  // ─── GUARDAR INCIDENCIA (con manejo de columna observaciones faltante) ─────
   const guardarIncidencia = async () => {
     if (!formInc.persona_id || !formInc.fecha) {
       mostrarToast('Selecciona colaborador/locador y fecha', 'error');
@@ -186,7 +188,7 @@ export default function TabPlanilla() {
     const esLlamada = formInc.tipo === 'LlamadaAtencion';
     const mins = parseInt(formInc.minutos_tardanza) || 0;
 
-    const registro = {
+    const registroBase = {
       tipo_persona: formInc.tipo_persona,
       empleado_id: formInc.tipo_persona === 'planilla' ? formInc.persona_id : null,
       locador_id: formInc.tipo_persona === 'locador' ? formInc.persona_id : null,
@@ -203,29 +205,47 @@ export default function TabPlanilla() {
       descanso_medico: false,
     };
 
-    try {
-      let incidenciaId = editandoIncId;
-      if (editandoIncId) {
-        const { error } = await supabase.from('asistencia').update(registro).eq('id', editandoIncId);
-        if (error) throw error;
-      } else {
-        const { data, error } = await supabase.from('asistencia').insert([registro]).select();
-        if (error) throw error;
-        incidenciaId = data?.[0]?.id;
-      }
+    const observacionValue = formInc.observaciones.trim() || null;
+    let registro = { ...registroBase, observaciones: observacionValue };
+    let intentoFallback = false;
 
-      if (formInc.documentoSubido && incidenciaId) {
-        await subirDocAutomatic(formInc.documentoSubido, formInc.persona_id, incidenciaId, formInc.tipo);
-      }
+    const ejecutarQuery = async () => {
+      try {
+        let incidenciaId = editandoIncId;
+        if (editandoIncId) {
+          const { error } = await supabase.from('asistencia').update(registro).eq('id', editandoIncId);
+          if (error) throw error;
+        } else {
+          const { data, error } = await supabase.from('asistencia').insert([registro]).select();
+          if (error) throw error;
+          incidenciaId = data?.[0]?.id;
+        }
 
-      mostrarToast(editandoIncId ? 'Incidencia actualizada' : 'Incidencia registrada', 'success');
-      setModalInc(false);
-      setEditandoIncId(null);
-      setFormInc(FORM_INC_VACIO);
-      await cargarIncidencias();
-    } catch (err) {
-      mostrarToast(`Error: ${err.message}`, 'error');
-    }
+        if (formInc.documentoSubido && incidenciaId) {
+          await subirDocAutomatic(formInc.documentoSubido, formInc.persona_id, incidenciaId, formInc.tipo);
+        }
+
+        mostrarToast(editandoIncId ? 'Incidencia actualizada' : 'Incidencia registrada', 'success');
+        setModalInc(false);
+        setEditandoIncId(null);
+        setFormInc(FORM_INC_VACIO);
+        await cargarIncidencias();
+      } catch (err) {
+        // Si falla por la columna observaciones, reintentamos sin ella
+        if (
+          !intentoFallback &&
+          err?.message?.toLowerCase().includes('observaciones')
+        ) {
+          intentoFallback = true;
+          registro = { ...registroBase }; // sin observaciones
+          await ejecutarQuery();
+        } else {
+          mostrarToast(`Error: ${err.message}`, 'error');
+        }
+      }
+    };
+
+    await ejecutarQuery();
   };
 
   // ─── GUARDAR HORA EXTRA (CORREGIDO para incluir tipo_compensacion) ──────────
@@ -264,7 +284,6 @@ export default function TabPlanilla() {
       valorHora = (loc.sueldo_base || 0) / 240;
     }
 
-    // ── CORRECCIÓN: mapear modalidad a tipo_compensacion ──
     const tipoCompensacion = mapearTipoCompensacion(formHE.modalidad);
 
     const registro = {
@@ -277,7 +296,7 @@ export default function TabPlanilla() {
       minutos,
       horas_decimal: horasDecimal,
       modalidad: formHE.modalidad,
-      tipo_compensacion: tipoCompensacion,      // ⭐ NUEVO
+      tipo_compensacion: tipoCompensacion,
       observaciones: formHE.observaciones || null,
       aprobado_por: formHE.aprobado_por || null,
       estado: 'Pendiente',
@@ -396,6 +415,7 @@ export default function TabPlanilla() {
       dias_suspension: inc.dias_suspension || 0,
       motivo: inc.motivo || '',
       documentoSubido: null,
+      observaciones: inc.observaciones || '', // puede venir undefined si no existe
     });
     setModalInc(true);
   };
@@ -557,14 +577,15 @@ export default function TabPlanilla() {
                   <th className="p-4">Tipo Inc.</th>
                   <th className="p-4">Detalle</th>
                   <th className="p-4">Estado</th>
+                  <th className="p-4">Obs.</th>
                   <th className="p-4 text-center">Docs</th>
                   <th className="p-4 text-center">Acciones</th>
-                 </tr>
+                </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {incidencias.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="p-8 text-center text-gray-400 italic text-sm">
+                    <td colSpan={9} className="p-8 text-center text-gray-400 italic text-sm">
                       Sin incidencias en este periodo
                     </td>
                   </tr>
@@ -590,6 +611,8 @@ export default function TabPlanilla() {
                     else if (tipo === 'Falta') detalle = n.justificacion ? 'Justificada' : 'Injustificada';
                     else if (tipo === 'Suspension') detalle = `${n.dias_suspension || 0} día(s) — ${n.motivo || ''}`;
                     else if (tipo === 'LlamadaAtencion') detalle = n.motivo || '—';
+
+                    const obsText = n.observaciones || '';
 
                     return (
                       <tr key={n.id} className="hover:bg-blue-50/20 transition-colors">
@@ -631,6 +654,9 @@ export default function TabPlanilla() {
                               Registrada
                             </span>
                           )}
+                        </td>
+                        <td className="p-4 text-xs text-gray-500 max-w-[120px] truncate" title={obsText}>
+                          {obsText || '—'}
                         </td>
                         <td className="p-4 text-center">
                           <button
@@ -825,7 +851,7 @@ export default function TabPlanilla() {
         </div>
       )}
 
-      {/* ─── MODAL INCIDENCIA (con selector de tipo persona y listado combinado) ─── */}
+      {/* ─── MODAL INCIDENCIA (con nuevo campo de observaciones) ────────────── */}
       {modalInc && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl w-full max-w-lg p-6 my-4 max-h-[90vh] overflow-y-auto">
@@ -1009,6 +1035,19 @@ export default function TabPlanilla() {
                   </div>
                 </div>
               )}
+
+              {/* ⭐ Nuevo campo de observaciones generales (siempre visible) */}
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">
+                  Observaciones (opcional)
+                </label>
+                <textarea
+                  value={formInc.observaciones}
+                  onChange={(e) => setFormInc({ ...formInc, observaciones: e.target.value })}
+                  placeholder="Agrega contexto adicional, razones o comentarios..."
+                  className="w-full border-2 border-gray-200 p-3 rounded-xl text-sm outline-none focus:border-blue-500 h-24"
+                />
+              </div>
 
               {/* Adjuntar documento */}
               <div>

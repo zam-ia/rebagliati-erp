@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import Notificaciones from './Notificaciones';
+import CumpleanosPopUp from './CumpleanosPopUp'; // ⭐ POP-UP DE CUMPLEAÑOS
 import {
   LayoutDashboard, FileEdit, Wallet, Users,
   Briefcase, Package, ClipboardList, TrendingUp,
@@ -791,6 +792,9 @@ export default function Layout({ children }) {
           </div>
         </div>
       )}
+
+      {/* ⭐ POP-UP DE CUMPLEAÑOS (se muestra automáticamente si hay cumpleañeros) */}
+      <CumpleanosPopUp />
 
       <style dangerouslySetInnerHTML={{ __html: `
         .custom-scrollbar::-webkit-scrollbar { width: 5px; }

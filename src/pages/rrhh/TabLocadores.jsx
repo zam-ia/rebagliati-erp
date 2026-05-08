@@ -6,6 +6,7 @@
 // · Formulario con inputs redondeados y focus rings
 // · Columna N° y orden por apellido
 // · Modal de recorte de foto de perfil (crop) antes de subir
+// · Campo ÁREA y CARGO añadidos para mapear el área y cargo de ingreso
 // ─────────────────────────────────────────────────────────────────────────────
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
@@ -26,6 +27,14 @@ const MOTIVOS_CESE = [
   'Finalización de proyecto',
   'Falta de presupuesto',
   'Otro',
+];
+
+// Áreas y cargos predefinidos (mismas que en TabBase.jsx)
+const AREAS_PREDEFINIDAS = [
+  'Administración', 'Ventas', 'Académico', 'Marketing', 'Recursos Humanos', 'Tecnología', 'Operaciones', 'Finanzas'
+];
+const CARGOS_PREDEFINIDOS = [
+  'Ejecutivo de ventas', 'Coordinador académico', 'Cajera', 'Analista', 'Supervisor', 'Gerente', 'Asistente', 'Practicante'
 ];
 
 // ─── Helpers de fecha ────────────────────────────────────────────────────────
@@ -79,6 +88,8 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
   const [busqueda, setBusqueda]       = useState('');
   const [filtroEstado, setFiltroEstado] = useState('activos');
   const [bancos, setBancos]           = useState(BANCOS_INICIALES);
+  const [areasList, setAreasList]     = useState(AREAS_PREDEFINIDAS);
+  const [cargosList, setCargosList]   = useState(CARGOS_PREDEFINIDOS);  // ⭐ NUEVO
 
   // ── Estado modal de cese ──────────────────────────────────────────────────
   const [showCeseModal, setShowCeseModal]       = useState(false);
@@ -116,14 +127,35 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
     fecha_inicio: '', fecha_fin: '', estado: 'activo', observaciones: '',
     foto_url: '',
     motivo_cese: '', observaciones_cese: '', fecha_cese: null,
+    area: '',                     // ⭐ Área
+    cargo: '',                    // ⭐ NUEVO: Cargo
   };
   const [form, setForm] = useState(initialForm);
+
+  // ── Carga de listas desde localStorage ────────────────────────────────────
+  useEffect(() => {
+    const storedAreas = localStorage.getItem('areasList');
+    const storedCargos = localStorage.getItem('cargosList');
+    setAreasList(storedAreas ? JSON.parse(storedAreas) : AREAS_PREDEFINIDAS);
+    setCargosList(storedCargos ? JSON.parse(storedCargos) : CARGOS_PREDEFINIDOS);
+  }, []);
+
+  useEffect(() => {
+    if (areasList.length) localStorage.setItem('areasList', JSON.stringify(areasList));
+  }, [areasList]);
+  useEffect(() => {
+    if (cargosList.length) localStorage.setItem('cargosList', JSON.stringify(cargosList));
+  }, [cargosList]);
 
   // ── Carga de datos ────────────────────────────────────────────────────────
   const cargarLocadores = async () => {
     setLoading(true);
     try {
-      let query = supabase.from('locadores').select('*');
+      let query = supabase
+        .from('locadores')
+        .select('*')
+        .neq('estado', 'migrado');
+
       if (busqueda.trim() !== '') {
         query = query.or(
           `nombre.ilike.%${busqueda}%,apellido.ilike.%${busqueda}%,` +
@@ -132,6 +164,7 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
       }
       if (filtroEstado === 'activos')   query = query.eq('estado', 'activo');
       if (filtroEstado === 'inactivos') query = query.eq('estado', 'inactivo');
+
       const { data, error } = await query.order('apellido', { ascending: true });
       if (error) throw error;
       setLocadores(data || []);
@@ -246,6 +279,8 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
       motivo_cese:      locador.motivo_cese      || '',
       observaciones_cese: locador.observaciones_cese || '',
       fecha_cese:       locador.fecha_cese       || null,
+      area:             locador.area              || '',   // ⭐ Área
+      cargo:            locador.cargo             || '',   // ⭐ NUEVO: Cargo
     });
     setModal(true);
     cargarDocumentos(locador.id);
@@ -329,11 +364,27 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
     } else if (nuevo?.trim()) alert('Ese banco ya existe en la lista');
   };
 
+  const agregarArea = () => {
+    const nuevo = prompt('Nueva área:');
+    if (nuevo && !areasList.includes(nuevo)) {
+      setAreasList([...areasList, nuevo]);
+      setForm(prev => ({ ...prev, area: nuevo }));
+    } else if (nuevo) alert('El área ya existe');
+  };
+
+  // ⭐ NUEVO: Agregar cargo
+  const agregarCargo = () => {
+    const nuevo = prompt('Nuevo cargo:');
+    if (nuevo && !cargosList.includes(nuevo)) {
+      setCargosList([...cargosList, nuevo]);
+      setForm(prev => ({ ...prev, cargo: nuevo }));
+    } else if (nuevo) alert('El cargo ya existe');
+  };
+
   // ── Manejo de archivo de foto (abre modal de crop) ──────────────────────
   const manejarArchivoFoto = async (e) => {
     const file = e.target.files[0];
     if (file) {
-      // Validar tipo de archivo
       if (!file.type.startsWith('image/')) {
         alert('Por favor selecciona una imagen válida');
         return;
@@ -347,7 +398,6 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
         setShowCropModal(true);
       };
       reader.readAsDataURL(file);
-      // Limpiar input para permitir re-seleccionar el mismo archivo
       e.target.value = '';
     }
   };
@@ -414,11 +464,30 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
     else alert('Error: ' + error.message);
   };
 
-  // ✅ NUEVO: refrescar lista después de migrar exitosamente
   const handleMigrar = async (loc) => {
+    const confirmar = window.confirm(
+      `¿Migrar a ${loc.apellido}, ${loc.nombre} a Planilla?\n` +
+      'Dejará de aparecer en la sección de Complementarios.'
+    );
+    if (!confirmar) return;
+
+    setLoading(true);
+    const { error } = await supabase
+      .from('locadores')
+      .update({ estado: 'migrado' })
+      .eq('id', loc.id);
+
+    if (error) {
+      alert('Error al migrar: ' + error.message);
+      setLoading(false);
+      return;
+    }
+
+    await cargarLocadores();
+    setLoading(false);
+
     if (onMigrarAPlanilla) {
-      await onMigrarAPlanilla(loc);
-      cargarLocadores(); // Recargar para que el locador migrado desaparezca de activos
+      onMigrarAPlanilla(loc);
     }
   };
 
@@ -489,7 +558,7 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
             <thead>
               <tr className="border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
                 <th className="p-4 text-center font-bold text-gray-400 text-[11px] uppercase tracking-wider w-10">N°</th>
-                {['Complementario', 'Documento', 'Modalidad', 'Sueldo', 'Estado', 'F. Cese', 'Motivo / Obs.', 'Contacto', 'Acciones'].map(h => (
+                {['Complementario', 'Documento', 'Área', 'Cargo', 'Modalidad', 'Sueldo', 'Estado', 'F. Cese', 'Motivo / Obs.', 'Contacto', 'Acciones'].map(h => (
                   <th key={h} className="p-4 text-left font-bold text-gray-400 text-[11px] uppercase tracking-wider whitespace-nowrap">
                     {h}
                   </th>
@@ -499,7 +568,7 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
             <tbody className="divide-y divide-gray-50">
               {loading && locadores.length === 0 ? (
                 <tr>
-                  <td colSpan="10" className="p-14 text-center text-gray-400">
+                  <td colSpan="12" className="p-14 text-center text-gray-400">
                     <Briefcase size={32} className="mx-auto mb-3 opacity-30" />
                     <p className="font-medium">Cargando información...</p>
                   </td>
@@ -533,6 +602,18 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
                   <td className="p-4 min-w-[120px]">
                     <div className="text-gray-700 font-medium text-xs">DNI: {loc.dni || '—'}</div>
                     <div className="text-[11px] text-gray-400 font-mono tracking-tight">RUC: {loc.ruc || '—'}</div>
+                  </td>
+                  {/* ⭐ Columna: Área */}
+                  <td className="p-4 min-w-[100px]">
+                    <span className="bg-gray-100 text-gray-600 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase">
+                      {loc.area || 'Sin área'}
+                    </span>
+                  </td>
+                  {/* ⭐ NUEVA COLUMNA: Cargo */}
+                  <td className="p-4 min-w-[100px]">
+                    <span className="bg-indigo-100 text-indigo-700 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase">
+                      {loc.cargo || 'Sin cargo'}
+                    </span>
                   </td>
                   <td className="p-4 min-w-[100px]">
                     <span className={`inline-block px-3 py-1 rounded-2xl text-[11px] font-semibold tracking-wide shadow-sm ${getModalidadColor(loc.modalidad)}`}>
@@ -630,7 +711,7 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
               ))}
               {locadores.length === 0 && !loading && (
                 <tr>
-                  <td colSpan="10" className="p-14 text-center text-gray-400">
+                  <td colSpan="12" className="p-14 text-center text-gray-400">
                     <UserPlus size={32} className="mx-auto mb-3 opacity-30" />
                     <p className="font-medium">No se encontraron complementarios con los criterios seleccionados</p>
                   </td>
@@ -945,6 +1026,53 @@ export default function TabLocadores({ onMigrarAPlanilla }) {
                   <h4 className="text-[#185FA5] font-bold text-sm uppercase tracking-[1px] flex items-center gap-2">
                     <CreditCard size={16} /> Contrato y Pagos
                   </h4>
+
+                  {/* ⭐ Campo Área */}
+                  <div className="flex gap-2 items-end">
+                    <div className="flex-1">
+                      <label className="block text-xs text-gray-500 mb-1.5 font-semibold">Área</label>
+                      <select
+                        value={form.area || ''}
+                        onChange={e => setForm({...form, area: e.target.value})}
+                        className="w-full border-2 border-gray-100 rounded-2xl px-4 py-3 text-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 outline-none transition-all bg-white"
+                      >
+                        <option value="">Seleccionar área...</option>
+                        {areasList.map(area => <option key={area} value={area}>{area}</option>)}
+                      </select>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={agregarArea}
+                      className="p-3 text-blue-600 hover:bg-blue-100 rounded-2xl border-2 border-blue-200 hover:border-blue-300 transition-all"
+                      title="Agregar nueva área"
+                    >
+                      <PlusCircle size={20} />
+                    </button>
+                  </div>
+
+                  {/* ⭐ NUEVO: Campo Cargo */}
+                  <div className="flex gap-2 items-end">
+                    <div className="flex-1">
+                      <label className="block text-xs text-gray-500 mb-1.5 font-semibold">Cargo</label>
+                      <select
+                        value={form.cargo || ''}
+                        onChange={e => setForm({...form, cargo: e.target.value})}
+                        className="w-full border-2 border-gray-100 rounded-2xl px-4 py-3 text-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 outline-none transition-all bg-white"
+                      >
+                        <option value="">Seleccionar cargo...</option>
+                        {cargosList.map(cargo => <option key={cargo} value={cargo}>{cargo}</option>)}
+                      </select>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={agregarCargo}
+                      className="p-3 text-blue-600 hover:bg-blue-100 rounded-2xl border-2 border-blue-200 hover:border-blue-300 transition-all"
+                      title="Agregar nuevo cargo"
+                    >
+                      <PlusCircle size={20} />
+                    </button>
+                  </div>
+
                   <div className="grid grid-cols-2 gap-4">
                     <select value={form.modalidad}
                       onChange={e => setForm({...form, modalidad: e.target.value})}
