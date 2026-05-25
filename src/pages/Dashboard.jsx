@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { formatPEN, monthRangeISO, sumBy, todayISO } from '../lib/finance';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, CartesianGrid } from 'recharts';
 import { TrendingUp, Users, DollarSign, Activity, Calendar, Award } from 'lucide-react';
 
@@ -22,10 +23,7 @@ export default function Dashboard() {
   // Paleta de colores VIP (Azul corporativo a tonos celestes)
   const COLORS = ['#1e3a8a', '#2563eb', '#3b82f6', '#60a5fa', '#93c5fd'];
 
-  // Formateador de moneda profesional
-  const formatSoles = (monto) => {
-    return new Intl.NumberFormat('es-PE', { style: 'currency', currency: 'PEN' }).format(monto);
-  };
+  const formatSoles = formatPEN;
 
   useEffect(() => {
     const fetchPerfil = async () => {
@@ -50,38 +48,37 @@ export default function Dashboard() {
 
   const cargarDatos = async () => {
     setCargando(true);
-    const hoy = new Date().toISOString().split('T')[0];
-    const primerDiaMes = new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0') + '-01';
-    const ultimoDiaMes = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().split('T')[0];
+    const hoy = todayISO();
+    const { start: primerDiaMes, nextMonth } = monthRangeISO();
 
     // Ventas del día y del mes
     const { data: pagosHoy } = await supabase.from('pagos').select('monto').gte('created_at', hoy);
-    const ventasHoy = pagosHoy?.reduce((s, p) => s + p.monto, 0) || 0;
+    const ventasHoy = sumBy(pagosHoy, (p) => p.monto);
     
-    const { data: pagosMes } = await supabase.from('pagos').select('monto').gte('created_at', primerDiaMes).lte('created_at', ultimoDiaMes);
-    const ventasMes = pagosMes?.reduce((s, p) => s + p.monto, 0) || 0;
+    const { data: pagosMes } = await supabase.from('pagos').select('monto').gte('created_at', primerDiaMes).lt('created_at', nextMonth);
+    const ventasMes = sumBy(pagosMes, (p) => p.monto);
 
     // Inscripciones
     const { count: inscritosHoy } = await supabase.from('inscripciones').select('*', { count: 'exact', head: true }).gte('created_at', hoy);
-    const { count: inscritosMes } = await supabase.from('inscripciones').select('*', { count: 'exact', head: true }).gte('created_at', primerDiaMes).lte('created_at', ultimoDiaMes);
+    const { count: inscritosMes } = await supabase.from('inscripciones').select('*', { count: 'exact', head: true }).gte('created_at', primerDiaMes).lt('created_at', nextMonth);
 
     // Egresos (planilla + locadores)
     const { data: empleados } = await supabase.from('empleados').select('sueldo_total').eq('estado', 'activo');
-    const gastoPlanilla = empleados?.reduce((s, e) => s + (e.sueldo_total || 0), 0) || 0;
+    const gastoPlanilla = sumBy(empleados, (e) => e.sueldo_total);
     
     const { data: locadores } = await supabase.from('locadores').select('sueldo_base').eq('estado', 'activo');
-    const gastoLocadores = locadores?.reduce((s, l) => s + (l.sueldo_base || 0), 0) || 0;
+    const gastoLocadores = sumBy(locadores, (l) => l.sueldo_base);
     
     const egresosTotales = gastoPlanilla + gastoLocadores;
     const puntoEquilibrio = ventasMes - egresosTotales;
     const margen = ventasMes > 0 ? (puntoEquilibrio / ventasMes) * 100 : 0;
 
     // Ranking por programa
-    const { data: inscripcionesConPagos } = await supabase.from('inscripciones').select('tipo, monto_total').gte('created_at', primerDiaMes).lte('created_at', ultimoDiaMes);
+    const { data: inscripcionesConPagos } = await supabase.from('inscripciones').select('tipo, monto_total').gte('created_at', primerDiaMes).lt('created_at', nextMonth);
     const ranking = {};
     inscripcionesConPagos?.forEach(ins => { 
       const tipo = ins.tipo || 'General'; 
-      ranking[tipo] = (ranking[tipo] || 0) + (ins.monto_total || 0); 
+      ranking[tipo] = (ranking[tipo] || 0) + Number(ins.monto_total || 0);
     });
     setRankingProgramas(Object.entries(ranking).map(([name, value]) => ({ name, value })));
 
@@ -102,7 +99,7 @@ export default function Dashboard() {
     const ventasPorDia = [0, 0, 0, 0, 0, 0, 0];
     pagos30dias?.forEach(p => {
       const diaSemana = new Date(p.created_at).getDay();
-      ventasPorDia[diaSemana] += p.monto;
+      ventasPorDia[diaSemana] += Number(p.monto || 0);
     });
     const diasNombres = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
     setVentasPorDiaSemana(diasNombres.map((nombre, idx) => ({ dia: nombre, ventas: ventasPorDia[idx] })));
@@ -113,9 +110,9 @@ export default function Dashboard() {
     for (let i = 11; i >= 0; i--) {
       const fecha = new Date(hoyDate.getFullYear(), hoyDate.getMonth() - i, 1);
       const mesInicio = fecha.toISOString().split('T')[0];
-      const mesFin = new Date(fecha.getFullYear(), fecha.getMonth() + 1, 0).toISOString().split('T')[0];
-      const { data: pagosMesHistorico } = await supabase.from('pagos').select('monto').gte('created_at', mesInicio).lte('created_at', mesFin);
-      const total = pagosMesHistorico?.reduce((s, p) => s + p.monto, 0) || 0;
+      const mesFin = new Date(fecha.getFullYear(), fecha.getMonth() + 1, 1).toISOString().split('T')[0];
+      const { data: pagosMesHistorico } = await supabase.from('pagos').select('monto').gte('created_at', mesInicio).lt('created_at', mesFin);
+      const total = sumBy(pagosMesHistorico, (p) => p.monto);
       meses.push({ mes: fecha.toLocaleDateString('es-PE', { month: 'short' }).replace('.', ''), ventas: total });
     }
     setVentasMensuales(meses);

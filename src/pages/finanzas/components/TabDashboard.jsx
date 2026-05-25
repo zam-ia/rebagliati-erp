@@ -4,6 +4,7 @@ import { TrendingUp, TrendingDown, Wallet, AlertCircle, BarChart2, PieChart, Cre
 import { supabase } from '../../../lib/supabase';
 import KpiCard from './KpiCard';
 import { fmt, pct } from '../data/demoData';
+import { sumBy } from '../../../lib/finance';
 
 export default function TabDashboard() {
   const [loading, setLoading] = useState(true);
@@ -14,6 +15,7 @@ export default function TabDashboard() {
     porCobrar: 0,
     morosos: 0,
     egresosPendientes: 0,
+    egresosPendientesMonto: 0,
   });
   const [topEgresos, setTopEgresos] = useState([]);
   const [alertas, setAlertas] = useState({
@@ -48,31 +50,31 @@ export default function TabDashboard() {
         .from('ingresos')
         .select('monto')
         .eq('estado', 'Cobrado');
-      const totalIngresos = ingresosCobrados?.reduce((sum, i) => sum + i.monto, 0) || 0;
+      const totalIngresos = sumBy(ingresosCobrados, (i) => i.monto);
 
       // 2. Ingresos pendientes (por cobrar)
       const { data: ingresosPendientes } = await supabase
         .from('ingresos')
         .select('monto')
         .eq('estado', 'Pendiente');
-      const porCobrar = ingresosPendientes?.reduce((sum, i) => sum + i.monto, 0) || 0;
+      const porCobrar = sumBy(ingresosPendientes, (i) => i.monto);
 
       // 3. Egresos pagados
       const { data: egresosPagados } = await supabase
         .from('egresos')
         .select('monto')
         .eq('estado', 'Pagado');
-      const totalEgresos = egresosPagados?.reduce((sum, e) => sum + e.monto, 0) || 0;
+      const totalEgresos = sumBy(egresosPagados, (e) => e.monto);
 
       // 4. Egresos pendientes
       const { data: egresosPendientes } = await supabase
         .from('egresos')
-        .select('monto, concepto, proveedor, fecha')
+        .select('id, monto, concepto, proveedor, fecha')
         .eq('estado', 'Pendiente')
-        .order('monto', { ascending: false })
-        .limit(5);
+        .order('monto', { ascending: false });
       const egresosPendientesCount = egresosPendientes?.length || 0;
-      setTopEgresos(egresosPendientes || []);
+      const egresosPendientesMonto = sumBy(egresosPendientes, (e) => e.monto);
+      setTopEgresos((egresosPendientes || []).slice(0, 5));
 
       // 5. Alertas (simuladas: si tienes tabla de cobranzas real, conéctalas)
       // Por ahora usamos datos demo para morosos/vencidos, pero puedes reemplazar con consultas reales
@@ -94,6 +96,7 @@ export default function TabDashboard() {
         porCobrar,
         morosos,
         egresosPendientes: egresosPendientesCount,
+        egresosPendientesMonto,
       });
       setAlertas({ morosos, vencidos, egresosPendientes: egresosPendientesCount });
     } catch (error) {
@@ -196,7 +199,7 @@ export default function TabDashboard() {
           <div className="mt-4 pt-4 border-t space-y-1">
             <div className="flex justify-between text-[11px]">
               <span className="text-slate-500">Total pendiente</span>
-              <span className="font-bold text-slate-700">{fmt(totales.porCobrar)}</span>
+              <span className="font-bold text-slate-700">{fmt(totales.egresosPendientesMonto)}</span>
             </div>
           </div>
         </div>

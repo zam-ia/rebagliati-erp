@@ -9,6 +9,14 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, apikey, x-client-info, x-client-version',
 }
 
+const escapeHtml = (value = '') =>
+  String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+
 serve(async (req) => {
   // 1. Manejo de CORS (Preflight)
   if (req.method === 'OPTIONS') {
@@ -41,18 +49,21 @@ serve(async (req) => {
       cleanBase64 = cleanBase64.split(',')[1];
     }
     cleanBase64 = cleanBase64.replace(/\s/g, '');
+    const safeNombre = escapeHtml(nombre || 'Colaborador')
+    const safeMes = escapeHtml(mes || 'Periodo')
+    const safeFilenameNombre = String(nombre || 'colaborador').replace(/[^\w.-]+/g, '_')
 
     // 3. Envío a Resend con el dominio oficial ya verificado
     const { data, error } = await resend.emails.send({
       // Usamos el dominio que ya validaste con tu programador
       from: 'Consorcio Rebagliati <notificaciones@rebagliatidiplomados.edu.pe>', 
       to: [email],
-      subject: `Boleta de Pago - ${mes} - ${nombre}`,
+      subject: `Boleta de Pago - ${mes || 'Periodo'} - ${nombre || 'Colaborador'}`,
       html: `
         <div style="font-family: sans-serif; color: #333;">
           <h2 style="color: #1e40af;">Boleta de Pago Digital</h2>
-          <p>Estimado(a) <strong>${nombre}</strong>,</p>
-          <p>Se adjunta su boleta de pago correspondiente al periodo de <strong>${mes}</strong>.</p>
+          <p>Estimado(a) <strong>${safeNombre}</strong>,</p>
+          <p>Se adjunta su boleta de pago correspondiente al periodo de <strong>${safeMes}</strong>.</p>
           <br>
           <hr style="border: none; border-top: 1px solid #eee;">
           <p style="font-size: 12px; color: #666;">
@@ -63,7 +74,7 @@ serve(async (req) => {
       `,
       attachments: [
         {
-          filename: `Boleta_${mes}_${nombre.replace(/\s+/g, '_')}.pdf`,
+          filename: `Boleta_${mes || 'Periodo'}_${safeFilenameNombre}.pdf`,
           content: cleanBase64,
         }
       ]

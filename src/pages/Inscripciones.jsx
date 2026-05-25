@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { formatPEN, toNumber, toPositiveNumber } from '../lib/finance';
 
 function Inscripciones() {
-  const [participantes, setParticipantes] = useState([]);
   const [inscripciones, setInscripciones] = useState([]);
   const [programas, setProgramas] = useState([]);
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
@@ -39,13 +39,6 @@ function Inscripciones() {
 
   const cargarDatos = async () => {
     setCargando(true);
-    
-    // Cargar participantes
-    const { data: participantesData } = await supabase
-      .from('participantes')
-      .select('*')
-      .order('apellido');
-    setParticipantes(participantesData || []);
     
     // Cargar inscripciones con filtros
     let query = supabase
@@ -129,13 +122,24 @@ function Inscripciones() {
       alert('Debes ingresar el programa');
       return;
     }
+
+    const montoTotal = toPositiveNumber(formData.monto_total);
+    const montoPagado = toNumber(formData.monto_pagado);
+    if (!Number.isFinite(montoTotal)) {
+      alert('El monto total debe ser mayor a 0');
+      return;
+    }
+    if (montoPagado < 0 || montoPagado > montoTotal) {
+      alert('El monto pagado debe estar entre 0 y el monto total');
+      return;
+    }
     
     const inscripcionData = {
       participante_id: parseInt(formData.participante_id),
       programa: formData.programa,
       tipo: formData.tipo,
-      monto_total: parseFloat(formData.monto_total),
-      monto_pagado: parseFloat(formData.monto_pagado) || 0,
+      monto_total: montoTotal,
+      monto_pagado: montoPagado,
       estado: formData.estado,
       fecha_evento: formData.fecha_evento || null
     };
@@ -392,8 +396,8 @@ function Inscripciones() {
                     <td className="p-3">{obtenerNombreParticipante(insc)}</td>
                     <td className="p-3">{insc.programa}</td>
                     <td className="p-3 capitalize">{insc.tipo}</td>
-                    <td className="p-3">S/ {insc.monto_total}</td>
-                    <td className="p-3">S/ {insc.monto_pagado}</td>
+                    <td className="p-3">{formatPEN(insc.monto_total)}</td>
+                    <td className="p-3">{formatPEN(insc.monto_pagado)}</td>
                     <td className="p-3">
                       <span className={`px-2 py-1 rounded-full text-xs ${
                         insc.estado === 'pagado' ? 'bg-green-100 text-green-700' :

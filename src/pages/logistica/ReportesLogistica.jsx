@@ -18,26 +18,31 @@ export default function ReportesLogistica() {
 
   const cargarReporte = async () => {
     setLoading(true);
-    let query;
     switch(reporte) {
-      case 'productos':
+      case 'productos': {
         const { data: prod } = await supabase.from('productos').select('sku, nombre_comercial, tipo, stock_minimo, activo').order('nombre_comercial');
         setDatos(prod || []);
         break;
-      case 'movimientos':
+      }
+      case 'movimientos': {
         const { data: mov } = await supabase.from('movimientos_inventario').select('*, productos(nombre_comercial, sku)').gte('created_at', fechaInicio).lte('created_at', fechaFin).order('created_at', { ascending: false });
         setDatos(mov || []);
         break;
-      case 'vencimientos':
+      }
+      case 'vencimientos': {
         const hoy = new Date().toISOString().split('T')[0];
         const dentro30 = new Date(); dentro30.setDate(dentro30.getDate() + 30);
         const { data: lotes } = await supabase.from('inventario_lotes').select('*, productos(nombre_comercial, sku)').lte('fecha_vencimiento', dentro30.toISOString().split('T')[0]).gt('fecha_vencimiento', hoy).gt('stock_actual', 0);
         setDatos(lotes || []);
         break;
-      case 'stock':
+      }
+      case 'stock': {
         const { data: stock } = await supabase.from('inventario_lotes').select('*, productos(nombre_comercial, sku), almacenes(nombre)').gt('stock_actual', 0);
         setDatos(stock || []);
         break;
+      }
+      default:
+        setDatos([]);
     }
     setLoading(false);
   };

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { formatPEN, sumBy, toNumber, toPositiveNumber, todayISO } from '../lib/finance';
 import { 
   Wallet, Plus, DollarSign, CreditCard, Banknote, 
   CalendarClock, User, TrendingDown, TrendingUp, RefreshCw,
@@ -25,6 +26,8 @@ function Caja() {
   });
 
   const saldoReal = totalDia - totalEgresos;
+  const montoPago = toNumber(formData.monto);
+  const requiereDeposito = montoPago > 700 && formData.metodo_pago === 'efectivo';
 
   useEffect(() => {
     cargarDatos();
@@ -38,7 +41,7 @@ function Caja() {
       .eq('estado', 'Pagado');
     
     if (!error && data) {
-      const total = data.reduce((sum, e) => sum + e.monto, 0);
+      const total = sumBy(data, (e) => e.monto);
       setTotalEgresos(total);
     }
   };
@@ -46,7 +49,7 @@ function Caja() {
   const cargarDatos = async () => {
     setCargando(true);
     
-    const hoy = new Date().toISOString().split('T')[0];
+    const hoy = todayISO();
     const { data: pagosData } = await supabase
       .from('pagos')
       .select('*, inscripciones(programa, participante_id)')
@@ -54,7 +57,7 @@ function Caja() {
       .order('created_at', { ascending: false });
     setPagos(pagosData || []);
     
-    const total = pagosData?.reduce((sum, p) => sum + p.monto, 0) || 0;
+    const total = sumBy(pagosData, (p) => p.monto);
     setTotalDia(total);
     
     const { data: inscData } = await supabase
@@ -72,10 +75,16 @@ function Caja() {
       alert('Completa los campos obligatorios');
       return;
     }
+
+    const monto = toPositiveNumber(formData.monto);
+    if (!Number.isFinite(monto)) {
+      alert('El monto debe ser mayor a 0');
+      return;
+    }
     
     const { error } = await supabase.from('pagos').insert([{
       inscripcion_id: parseInt(formData.inscripcion_id),
-      monto: parseFloat(formData.monto),
+      monto,
       tipo_comprobante: formData.tipo_comprobante,
       numero_comprobante: formData.numero_comprobante,
       metodo_pago: formData.metodo_pago,
@@ -93,12 +102,6 @@ function Caja() {
       cargarDatos();
     } else {
       alert('Error: ' + error.message);
-    }
-  };
-
-  const alertaDeposito = (monto) => {
-    if (monto > 700) {
-      alert('⚠️ Monto superior a S/ 700 - Se recomienda realizar depósito bancario');
     }
   };
 
@@ -136,7 +139,7 @@ function Caja() {
               <h3 className="text-sm font-bold text-gray-500 uppercase tracking-widest">Total Recaudado Hoy</h3>
             </div>
             <div className="text-4xl font-black text-[#0B1527]">
-              S/ {totalDia.toFixed(2)}
+              {formatPEN(totalDia)}
             </div>
             <p className="text-xs text-gray-400 mt-2 font-medium">Ingresos del turno actual</p>
           </div>
@@ -153,7 +156,7 @@ function Caja() {
               <h3 className="text-sm font-bold text-gray-500 uppercase tracking-widest">Egresos Pagados</h3>
             </div>
             <div className="text-4xl font-black text-[#0B1527]">
-              S/ {totalEgresos.toFixed(2)}
+              {formatPEN(totalEgresos)}
             </div>
             <p className="text-xs text-gray-400 mt-2 font-medium">Compras, servicios, planillas</p>
           </div>
@@ -178,7 +181,7 @@ function Caja() {
               <h3 className="text-sm font-bold text-gray-500 uppercase tracking-widest">Saldo Real en Caja</h3>
             </div>
             <div className={`text-4xl font-black ${saldoReal >= 0 ? 'text-[#0B1527]' : 'text-red-600'}`}>
-              S/ {saldoReal.toFixed(2)}
+              {formatPEN(saldoReal)}
             </div>
             <p className={`text-xs mt-2 font-medium ${saldoReal >= 0 ? 'text-gray-400' : 'text-red-500'}`}>
               {saldoReal >= 0 ? 'Disponible para operar' : 'Atención: saldo negativo'}
@@ -228,11 +231,15 @@ function Caja() {
                 value={formData.monto}
                 onChange={(e) => {
                   setFormData({...formData, monto: e.target.value});
-                  alertaDeposito(parseFloat(e.target.value));
                 }}
                 className="w-full border-2 border-gray-100 rounded-xl p-3 bg-gray-50 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 transition-all outline-none"
                 placeholder="0.00"
               />
+              {requiereDeposito && (
+                <p className="text-xs text-amber-600 font-semibold mt-1">
+                  Monto mayor a S/ 700 en efectivo: recomienda deposito bancario.
+                </p>
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -366,7 +373,7 @@ function Caja() {
                       </div>
                     </td>
                     <td className="p-4">
-                      <span className="font-bold text-[#185FA5]">S/ {pago.monto?.toFixed(2)}</span>
+                      <span className="font-bold text-[#185FA5]">{formatPEN(pago.monto)}</span>
                     </td>
                     <td className="p-4">
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-gray-100 rounded-lg text-xs font-medium capitalize text-gray-700">

@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { PlusCircle, Search, X, CheckCircle, Download, Tag, Building2, ChevronRight } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { fmt, ESTADO_BADGE } from '../data/demoData';
+import { sumBy, toPositiveNumber } from '../../../lib/finance';
 
 export default function TabEgresos() {
   const [egresos, setEgresos] = useState([]);
@@ -62,6 +63,11 @@ export default function TabEgresos() {
       alert('Completa concepto y monto');
       return;
     }
+    const monto = toPositiveNumber(formData.monto);
+    if (!Number.isFinite(monto)) {
+      alert('El monto debe ser mayor a 0');
+      return;
+    }
     
     const { error } = await supabase.from('egresos').insert({
       fecha: formData.fecha,
@@ -69,7 +75,7 @@ export default function TabEgresos() {
       area: formData.area || 'Finanzas',
       categoria: formData.categoria || 'Varios',
       proveedor: formData.proveedor || 'No especificado',
-      monto: parseFloat(formData.monto),
+      monto,
       estado: 'Pendiente',
       origen: 'finanzas_manual',
     });
@@ -84,11 +90,11 @@ export default function TabEgresos() {
   };
 
   const filtrados = egresos.filter(e =>
-    !busq || e.concepto.toLowerCase().includes(busq.toLowerCase()) || e.proveedor?.toLowerCase().includes(busq.toLowerCase())
+    !busq || (e.concepto || '').toLowerCase().includes(busq.toLowerCase()) || (e.proveedor || '').toLowerCase().includes(busq.toLowerCase())
   );
-  const total = filtrados.reduce((a, e) => a + e.monto, 0);
+  const total = sumBy(filtrados, (e) => e.monto);
   const categorias = [...new Set(egresos.map(e => e.categoria))];
-  const totalGeneral = egresos.reduce((a, e) => a + e.monto, 0);
+  const totalGeneral = sumBy(egresos, (e) => e.monto);
 
   if (loading) return <div className="p-10 text-center">Cargando egresos...</div>;
 
@@ -117,17 +123,18 @@ export default function TabEgresos() {
       {/* Resumen por Categoría */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         {categorias.map(cat => {
-          const subtotal = egresos.filter(e => e.categoria === cat).reduce((a, e) => a + e.monto, 0);
+          const subtotal = sumBy(egresos.filter(e => e.categoria === cat), (e) => e.monto);
+          const porcentaje = totalGeneral > 0 ? Math.round((subtotal / totalGeneral) * 100) : 0;
           return (
             <div key={cat} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:border-rose-200 transition-colors group cursor-default">
               <div className="flex justify-between items-start mb-2">
                 <Tag size={12} className="text-slate-300 group-hover:text-rose-400 transition-colors"/>
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter group-hover:text-slate-600">{Math.round((subtotal/totalGeneral)*100)}%</span>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter group-hover:text-slate-600">{porcentaje}%</span>
               </div>
               <p className="text-[10px] font-bold text-slate-500 uppercase truncate leading-none mb-1">{cat}</p>
               <p className="text-sm font-black text-slate-800">{fmt(subtotal)}</p>
               <div className="w-full bg-slate-100 h-1 rounded-full mt-2 overflow-hidden">
-                <div className="bg-rose-500 h-full" style={{ width: `${(subtotal/totalGeneral)*100}%` }}/>
+                <div className="bg-rose-500 h-full" style={{ width: `${porcentaje}%` }}/>
               </div>
             </div>
           );

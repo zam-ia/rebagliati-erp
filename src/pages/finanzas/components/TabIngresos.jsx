@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { Search, PlusCircle, X, CheckCircle, Download, Tag, Building2, ChevronRight } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { fmt, ESTADO_BADGE } from '../data/demoData';
+import { sumBy, toPositiveNumber } from '../../../lib/finance';
 
 export default function TabIngresos() {
   const [ingresos, setIngresos] = useState([]);
@@ -52,12 +53,17 @@ export default function TabIngresos() {
       alert('Completa concepto y monto');
       return;
     }
+    const monto = toPositiveNumber(formData.monto);
+    if (!Number.isFinite(monto)) {
+      alert('El monto debe ser mayor a 0');
+      return;
+    }
     const { error } = await supabase.from('ingresos').insert({
       fecha: formData.fecha,
       concepto: formData.concepto,
       area: formData.area || 'Finanzas',
       metodo: formData.metodo || 'Transferencia',
-      monto: parseFloat(formData.monto),
+      monto,
       estado: 'Pendiente',
       referencia: formData.referencia || null,
       origen: 'finanzas_manual',
@@ -71,9 +77,9 @@ export default function TabIngresos() {
   };
 
   const filtrados = ingresos.filter(i =>
-    !busq || i.concepto.toLowerCase().includes(busq.toLowerCase())
+    !busq || (i.concepto || '').toLowerCase().includes(busq.toLowerCase())
   );
-  const total = filtrados.reduce((a, i) => a + i.monto, 0);
+  const total = sumBy(filtrados, (i) => i.monto);
 
   if (loading) return <div className="p-10 text-center">Cargando ingresos...</div>;
 

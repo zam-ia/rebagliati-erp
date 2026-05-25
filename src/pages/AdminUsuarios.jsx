@@ -167,31 +167,21 @@ export default function AdminUsuarios() {
     }
     setCreando(true);
     try {
+      const permisosFlat = treePermisosToFlat(permisosTreeCrear);
+      const modulosActivos = Object.keys(permisosFlat);
       const { data, error } = await supabase.functions.invoke('create-user', {
         method: 'POST',
-        body: { email: nuevoUsuario.email, password: nuevoUsuario.password }
+        body: {
+          email: nuevoUsuario.email,
+          password: nuevoUsuario.password,
+          nombre: nuevoUsuario.nombre,
+          permisos: modulosActivos,
+        }
       });
       if (error) throw error;
 
       const userId = data.user?.id;
-
-      // Guardar nombre en perfiles_usuarios
-      if (nuevoUsuario.nombre && userId) {
-        await supabase
-          .from('perfiles_usuarios')
-          .update({ nombre: nuevoUsuario.nombre })
-          .eq('id', userId);
-      }
-
-      // Convertir árbol a plano y asignar permisos
-      const permisosFlat = treePermisosToFlat(permisosTreeCrear);
-      const modulosActivos = Object.keys(permisosFlat);
-      for (const modulo of modulosActivos) {
-        await supabase.from('permisos_usuarios').upsert(
-          { user_id: userId, modulo, puede_ver: true },
-          { onConflict: 'user_id,modulo' }
-        );
-      }
+      if (!userId) throw new Error('La funcion no devolvio el ID del usuario creado');
 
       alert('✅ Usuario creado correctamente');
       setModalNuevo(false);

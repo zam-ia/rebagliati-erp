@@ -1,9 +1,13 @@
-// src/pages/RRHH.jsx
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import {
+  RRHH_ROUTE_PERMISSIONS,
+  getFirstAllowedRrhhRoute,
+  hasAnyPermission,
+  isAdminUser,
+} from '../lib/access';
 
-// Importación de todos los tabs
 import DashboardRRHH from './rrhh/DashboardRRHH';
 import TabPerfilEmpleado from './rrhh/TabPerfilEmpleado';
 import TabBase from './rrhh/TabBase';
@@ -17,14 +21,39 @@ import TabLocadores from './rrhh/TabLocadores';
 import TabPlanillaPagos from './rrhh/TabPlanillaPagos';
 import TabPlanilla from './rrhh/TabPlanilla';
 import TabDocumentos from './rrhh/TabDocumentos';
-import TabCeses from './rrhh/TabCeses'; // ⭐ NUEVO
+import TabCeses from './rrhh/TabCeses';
+
+const RRHH_COMPONENTS = {
+  dashboard: <DashboardRRHH />,
+  perfil: <TabPerfilEmpleado />,
+  base: <TabBase />,
+  directorio: <TabDirectorio />,
+  reclutamiento: <TabReclutamiento />,
+  horarios: <TabHorarios />,
+  vacaciones: <TabVacaciones />,
+  descansos: <TabDescansos />,
+  evaluacion: <TabEvaluacion />,
+  locadores: <TabLocadores />,
+  planilla_pagos: <TabPlanillaPagos />,
+  novedades: <TabPlanilla />,
+  documentos: <TabDocumentos />,
+  ceses: <TabCeses />,
+};
+
+function RrhhProtectedTab({ children, permissions, userEmail, userPermissions, fallbackRoute }) {
+  const allowed = isAdminUser(userEmail) || hasAnyPermission(userPermissions, permissions);
+  if (!allowed) return <Navigate to={fallbackRoute || '/dashboard'} replace />;
+  return children;
+}
 
 export default function RRHH() {
   const [primerRuta, setPrimerRuta] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [userEmail, setUserEmail] = useState('');
+  const [userPermissions, setUserPermissions] = useState([]);
 
   useEffect(() => {
-    const obtenerPrimerPermitido = async () => {
+    const obtenerPermisos = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         setPrimerRuta('/login');
@@ -38,44 +67,20 @@ export default function RRHH() {
         .eq('user_id', session.user.id)
         .eq('puede_ver', true);
 
-      const permisosModulos = permisos?.map(p => p.modulo) || [];
-
-      if (permisosModulos.includes('RRHH')) {
-        setPrimerRuta('/rrhh/dashboard');
-        setLoading(false);
-        return;
-      }
-
-      const rutasDisponibles = [
-        { modulo: 'rrhh_dashboard', ruta: '/rrhh/dashboard' },
-        { modulo: 'rrhh_perfil', ruta: '/rrhh/perfil' },
-        { modulo: 'rrhh_base', ruta: '/rrhh/base' },
-        { modulo: 'rrhh_directorio', ruta: '/rrhh/directorio' },
-        { modulo: 'rrhh_reclutamiento', ruta: '/rrhh/reclutamiento' },
-        { modulo: 'rrhh_horarios', ruta: '/rrhh/horarios' },
-        { modulo: 'rrhh_vacaciones', ruta: '/rrhh/vacaciones' },
-        { modulo: 'rrhh_descansos', ruta: '/rrhh/descansos' },
-        { modulo: 'rrhh_evaluacion', ruta: '/rrhh/evaluacion' },
-        { modulo: 'rrhh_locadores', ruta: '/rrhh/locadores' },
-        { modulo: 'rrhh_planilla_pagos', ruta: '/rrhh/planilla_pagos' },
-        { modulo: 'rrhh_novedades', ruta: '/rrhh/novedades' },
-        { modulo: 'rrhh_documentos', ruta: '/rrhh/documentos' },
-        { modulo: 'rrhh_ceses', ruta: '/rrhh/ceses' }, // ⭐ NUEVO
-      ];
-
-      const primera = rutasDisponibles.find(r => permisosModulos.includes(r.modulo))?.ruta || '/rrhh/dashboard';
-      setPrimerRuta(primera);
+      setUserEmail(session.user.email);
+      setUserPermissions(permisos || []);
+      setPrimerRuta(getFirstAllowedRrhhRoute(session.user.email, permisos || []));
       setLoading(false);
     };
 
-    obtenerPrimerPermitido();
+    obtenerPermisos();
   }, []);
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="w-8 h-8 border-4 border-[#185FA5] border-t-transparent rounded-full animate-spin" />
-        <span className="ml-3 text-gray-500">Cargando módulo...</span>
+        <span className="ml-3 text-gray-500">Cargando modulo...</span>
       </div>
     );
   }
@@ -83,20 +88,23 @@ export default function RRHH() {
   return (
     <Routes>
       <Route path="/" element={<Navigate to={primerRuta} replace />} />
-      <Route path="dashboard" element={<DashboardRRHH />} />
-      <Route path="perfil" element={<TabPerfilEmpleado />} />
-      <Route path="base" element={<TabBase />} />
-      <Route path="directorio" element={<TabDirectorio />} />
-      <Route path="reclutamiento" element={<TabReclutamiento />} />
-      <Route path="horarios" element={<TabHorarios />} />
-      <Route path="vacaciones" element={<TabVacaciones />} />
-      <Route path="descansos" element={<TabDescansos />} />
-      <Route path="evaluacion" element={<TabEvaluacion />} />
-      <Route path="locadores" element={<TabLocadores />} />
-      <Route path="planilla_pagos" element={<TabPlanillaPagos />} />
-      <Route path="novedades" element={<TabPlanilla />} />
-      <Route path="documentos" element={<TabDocumentos />} />
-      <Route path="ceses" element={<TabCeses />} /> {/* ⭐ NUEVO */}
+      {RRHH_ROUTE_PERMISSIONS.map(({ path, permissions }) => (
+        <Route
+          key={path}
+          path={path}
+          element={
+            <RrhhProtectedTab
+              permissions={permissions}
+              userEmail={userEmail}
+              userPermissions={userPermissions}
+              fallbackRoute={primerRuta}
+            >
+              {RRHH_COMPONENTS[path]}
+            </RrhhProtectedTab>
+          }
+        />
+      ))}
+      <Route path="*" element={<Navigate to={primerRuta || '/dashboard'} replace />} />
     </Routes>
   );
 }

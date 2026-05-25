@@ -1,6 +1,7 @@
 // src/pages/Logistica.jsx
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase'; // Ruta corregida
+import { formatPEN, sumBy, toPositiveNumber } from '../lib/finance';
 import { Package, PlusCircle, Search, Edit, Trash2, X, CheckCircle, Truck, Building2, Calendar, DollarSign, Tag } from 'lucide-react';
 
 function Logistica() {
@@ -40,12 +41,18 @@ function Logistica() {
       return;
     }
 
+    const monto = toPositiveNumber(formData.monto);
+    if (!Number.isFinite(monto)) {
+      alert('El monto debe ser mayor a 0');
+      return;
+    }
+
     const compraData = {
       fecha: formData.fecha,
       concepto: formData.concepto,
       tipo: formData.tipo,
       proveedor: formData.proveedor,
-      monto: parseFloat(formData.monto),
+      monto,
       observaciones: formData.observaciones || null,
       estado_pago: 'Pendiente', // Estado para control interno
     };
@@ -153,11 +160,11 @@ function Logistica() {
   };
 
   const comprasFiltradas = compras.filter(c =>
-    c.concepto.toLowerCase().includes(busqueda.toLowerCase()) ||
-    c.proveedor.toLowerCase().includes(busqueda.toLowerCase())
+    (c.concepto || '').toLowerCase().includes(busqueda.toLowerCase()) ||
+    (c.proveedor || '').toLowerCase().includes(busqueda.toLowerCase())
   );
 
-  const totalCompras = comprasFiltradas.reduce((sum, c) => sum + c.monto, 0);
+  const totalCompras = sumBy(comprasFiltradas, (c) => c.monto);
 
   return (
     <div className="space-y-6">
@@ -185,7 +192,7 @@ function Logistica() {
             <div className="p-2 bg-emerald-100 rounded-xl"><DollarSign size={20} className="text-emerald-700"/></div>
             <div>
               <p className="text-xs text-slate-400 font-bold uppercase">Total en compras (filtrado)</p>
-              <p className="text-2xl font-black text-slate-800">S/ {totalCompras.toLocaleString('es-PE')}</p>
+              <p className="text-2xl font-black text-slate-800">{formatPEN(totalCompras)}</p>
             </div>
           </div>
         </div>
@@ -351,7 +358,7 @@ function Logistica() {
                       {compra.proveedor}
                     </td>
                     <td className="px-5 py-3 text-right font-mono font-bold text-slate-800">
-                      S/ {compra.monto.toLocaleString('es-PE')}
+                      {formatPEN(compra.monto)}
                     </td>
                     <td className="px-5 py-3 text-center">
                       <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${compra.estado_pago === 'Pagado' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
@@ -375,7 +382,7 @@ function Logistica() {
             <tfoot className="bg-slate-50 border-t">
               <tr>
                 <td colSpan="4" className="px-5 py-3 text-right font-bold text-slate-600">Total compras:</td>
-                <td className="px-5 py-3 text-right font-black text-slate-800">S/ {totalCompras.toLocaleString('es-PE')}</td>
+                <td className="px-5 py-3 text-right font-black text-slate-800">{formatPEN(totalCompras)}</td>
                 <td colSpan="2"></td>
               </tr>
             </tfoot>
