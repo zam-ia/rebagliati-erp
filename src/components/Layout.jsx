@@ -619,7 +619,7 @@ export default function Layout({ children }) {
   };
 
   return (
-    <div className="flex h-screen bg-[#F4F7FA] font-sans overflow-hidden">
+    <div className="erp-light-shell flex h-screen bg-[#F2F2F2] font-sans overflow-hidden">
       {/* Mobile Overlay */}
       {mobileOpen && (
         <div 
@@ -629,19 +629,19 @@ export default function Layout({ children }) {
       )}
 
       {/* Sidebar VIP */}
-      <aside className={`fixed inset-y-0 left-0 z-50 md:relative transition-all duration-300 ease-out bg-gradient-to-b from-[#0B1527] to-[#091220] shadow-2xl shadow-black/20 ${sidebarOpen ? 'w-[260px]' : 'w-20'} ${mobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
+      <aside className={`fixed inset-y-0 left-0 z-50 md:relative transition-all duration-300 ease-out bg-white/90 backdrop-blur-xl shadow-sm ${sidebarOpen ? 'w-[260px]' : 'w-20'} ${mobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
         <div className="flex flex-col h-full border-r border-white/5 relative z-10">
           
           {/* Logo Section */}
           <div className="h-[72px] flex items-center justify-between px-5 border-b border-white/5 shrink-0">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#185FA5] to-[#0B2A4A] flex items-center justify-center border border-white/10 shadow-lg shadow-[#185FA5]/20">
-                <span className="font-bold text-[14px] text-white">R</span>
+              <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center border border-slate-200 shadow-sm overflow-hidden">
+                <img src="/logo-ui.png" alt="Rebagliati" className="h-8 w-9 object-contain" />
               </div>
               {sidebarOpen && (
                 <div className="animate-in fade-in duration-500">
-                  <p className="font-bold text-[14px] tracking-tight text-white leading-none">REBAGLIATI</p>
-                  <p className="text-[9px] text-[#7eb3f5] font-bold uppercase tracking-[0.25em] mt-1 opacity-80">Corporativo</p>
+                  <p className="font-semibold text-[14px] tracking-tight text-[#020873] leading-none">REBAGLIATI</p>
+                  <p className="text-[9px] text-[#05C7F2] font-medium uppercase tracking-[0.25em] mt-1">Diplomados</p>
                 </div>
               )}
             </div>
@@ -708,7 +708,7 @@ export default function Layout({ children }) {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
         
         {/* Top Header — z-index lowered to 30 so modals (z-50) always appear above */}
-        <header className="h-[72px] bg-white/80 backdrop-blur-xl border-b border-slate-200/40 flex items-center justify-between px-6 md:px-8 shrink-0 z-30 shadow-sm shadow-slate-200/50">
+        <header className="h-[72px] bg-white/82 backdrop-blur-xl border-b border-slate-200/70 flex items-center justify-between px-6 md:px-8 shrink-0 z-30">
           <div className="flex items-center gap-6">
             <button 
               onClick={() => setMobileOpen(true)} 
@@ -754,7 +754,7 @@ export default function Layout({ children }) {
         </header>
 
         {/* Viewport */}
-        <main className="flex-1 overflow-y-auto p-4 md:p-8 bg-gradient-to-br from-[#F4F7FA] via-white to-blue-50/20 custom-scrollbar relative z-0">
+        <main className="flex-1 overflow-y-auto p-4 md:p-8 bg-[#F2F2F2] custom-scrollbar relative z-0">
           <div className="max-w-[1600px] mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
             {children}
           </div>

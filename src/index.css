@@ -2,9 +2,9 @@
 
 /* ── Variables globales ── */
 :root {
-  --erp-primary:   #11284e;
-  --erp-accent:    #7eb3f5;
-  --erp-bg:        #f5f5f7;
+  --erp-primary:   #020873;
+  --erp-accent:    #05C7F2;
+  --erp-bg:        #F2F2F2;
   --erp-surface:   #ffffff;
   --erp-border:    rgba(0,0,0,.08);
   --erp-text:      #1d1d1f;
@@ -17,9 +17,9 @@
   --apple-bg-3:    #f0f0f2;
   --apple-text-1:  #1d1d1f;
   --apple-text-2:  #6e6e73;
-  --apple-blue:    #0071e3;
-  --brand-blue:    #01017b;
-  --brand-cyan:    #00a7eb;
+  --apple-blue:    #05C7F2;
+  --brand-blue:    #020873;
+  --brand-cyan:    #05C7F2;
   --shadow-soft:   0 1px 2px rgba(0,0,0,.04), 0 10px 30px rgba(15,23,42,.07);
   --shadow-lift:   0 18px 48px rgba(15,23,42,.12);
 }
@@ -240,11 +240,11 @@ input:focus, select:focus, textarea:focus {
 
 .btn-apple-primary {
   color: #fff;
-  background: #0071e3;
-  box-shadow: 0 10px 24px rgba(0,113,227,.22);
+  background: #020873;
+  box-shadow: 0 10px 24px rgba(2,8,115,.16);
 }
 
-.btn-apple-primary:hover { background: #0077ed; box-shadow: 0 14px 30px rgba(0,113,227,.28); }
+.btn-apple-primary:hover { background: #0711a8; box-shadow: 0 14px 30px rgba(2,8,115,.22); }
 
 .btn-apple-secondary {
   color: #1d1d1f;
@@ -264,6 +264,70 @@ input:focus, select:focus, textarea:focus {
 .btn-apple-primary:active,
 .btn-apple-secondary:active,
 .btn-apple-ghost:active { transform: scale(.98); }
+
+.erp-light-shell aside {
+  border-right: 1px solid rgba(2,8,115,.08) !important;
+}
+
+.erp-light-shell aside nav p {
+  color: rgba(2,8,115,.42) !important;
+  font-weight: 500 !important;
+}
+
+.erp-light-shell aside a,
+.erp-light-shell aside button {
+  color: rgba(2,8,115,.58) !important;
+}
+
+.erp-light-shell aside a:hover,
+.erp-light-shell aside button:hover {
+  background: rgba(5,199,242,.10) !important;
+  color: #020873 !important;
+}
+
+.erp-light-shell aside .bg-gradient-to-r {
+  background: #020873 !important;
+  color: #fff !important;
+  border-color: rgba(5,199,242,.22) !important;
+  box-shadow: 0 10px 24px rgba(2,8,115,.14) !important;
+}
+
+.erp-light-shell aside .bg-gradient-to-r svg,
+.erp-light-shell aside .bg-gradient-to-r span,
+.erp-light-shell aside .bg-gradient-to-r div {
+  color: #fff !important;
+}
+
+.erp-light-shell aside .border-white\/5,
+.erp-light-shell aside .border-white\/10 {
+  border-color: rgba(2,8,115,.08) !important;
+}
+
+.erp-light-shell aside .bg-\[\#08101E\]\/80 {
+  background: rgba(255,255,255,.86) !important;
+}
+
+.erp-light-shell .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(2,8,115,.12);
+}
+
+.brand-logo-panel {
+  width: 320px;
+  max-width: 100%;
+  height: auto;
+}
+
+.brand-logo-login {
+  width: 240px;
+  max-width: 82%;
+  height: auto;
+}
+
+@media (max-width: 520px) {
+  .brand-logo-login {
+    width: 190px;
+  }
+}
 
 /* ── Botones ── */
 .btn-primary {
