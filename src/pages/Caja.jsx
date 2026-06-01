@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { formatPEN, sumBy, toNumber, toPositiveNumber, todayISO } from '../lib/finance';
+import { addDaysISO, formatPEN, sumBy, toNumber, toPositiveNumber, todayISO } from '../lib/finance';
 import { 
   Wallet, Plus, DollarSign, CreditCard, Banknote, 
   CalendarClock, User, TrendingDown, TrendingUp, RefreshCw,
@@ -28,6 +28,9 @@ function Caja() {
   const saldoReal = totalDia - totalEgresos;
   const montoPago = toNumber(formData.monto);
   const requiereDeposito = montoPago > 700 && formData.metodo_pago === 'efectivo';
+  const totalEfectivo = sumBy(pagos.filter((p) => p.metodo_pago === 'efectivo'), (p) => p.monto);
+  const totalDigital = sumBy(pagos.filter((p) => ['tarjeta', 'transferencia', 'yape', 'plin'].includes(p.metodo_pago)), (p) => p.monto);
+  const cantidadPagos = pagos.length;
 
   useEffect(() => {
     cargarDatos();
@@ -35,14 +38,30 @@ function Caja() {
   }, []);
 
   const cargarEgresosPagados = async () => {
+    const hoy = todayISO();
+    const manana = addDaysISO(hoy, 1);
     const { data, error } = await supabase
       .from('egresos')
       .select('monto')
-      .eq('estado', 'Pagado');
+      .eq('estado', 'Pagado')
+      .gte('fecha', hoy)
+      .lt('fecha', manana);
     
     if (!error && data) {
       const total = sumBy(data, (e) => e.monto);
       setTotalEgresos(total);
+      return;
+    }
+
+    const { data: dataPorCreacion, error: errorPorCreacion } = await supabase
+      .from('egresos')
+      .select('monto')
+      .eq('estado', 'Pagado')
+      .gte('created_at', hoy)
+      .lt('created_at', manana);
+
+    if (!errorPorCreacion && dataPorCreacion) {
+      setTotalEgresos(sumBy(dataPorCreacion, (e) => e.monto));
     }
   };
 
@@ -50,10 +69,12 @@ function Caja() {
     setCargando(true);
     
     const hoy = todayISO();
+    const manana = addDaysISO(hoy, 1);
     const { data: pagosData } = await supabase
       .from('pagos')
       .select('*, inscripciones(programa, participante_id)')
       .gte('created_at', hoy)
+      .lt('created_at', manana)
       .order('created_at', { ascending: false });
     setPagos(pagosData || []);
     
@@ -188,6 +209,25 @@ function Caja() {
             </p>
           </div>
         </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        {[
+          { label: 'Transacciones', value: cantidadPagos, detail: 'Pagos registrados hoy', icon: CreditCard },
+          { label: 'Efectivo', value: formatPEN(totalEfectivo), detail: 'Debe cuadrar con caja fisica', icon: Banknote },
+          { label: 'Canales digitales', value: formatPEN(totalDigital), detail: 'Tarjeta, transferencia, Yape y Plin', icon: Wallet },
+        ].map(({ label, value, detail, icon: Icon }) => (
+          <div key={label} className="apple-card p-4 flex items-center gap-3">
+            <div className="rounded-2xl bg-slate-100 p-2.5 text-slate-700">
+              <Icon size={18} />
+            </div>
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
+              <p className="text-lg font-black text-slate-900">{value}</p>
+              <p className="text-[11px] font-medium text-slate-500">{detail}</p>
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* Formulario de nuevo pago */}

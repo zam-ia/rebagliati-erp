@@ -8,6 +8,7 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Inscripciones from './pages/Inscripciones';
 import Caja from './pages/Caja';
+import Ventas from './pages/Ventas';
 import Marketing from './pages/Marketing';
 import TabPlaneacionEstrategica from './pages/marketing/TabPlaneacionEstrategica';
 import TabCRM from './pages/marketing/TabCRM';
@@ -131,6 +132,7 @@ export default function App() {
   const rutasPrivadas = [
     { path: '/dashboard', component: <Dashboard /> },
     { path: '/inscripciones', component: <Inscripciones />, requiredPermissions: ['Inscripciones'] },
+    { path: '/ventas', component: <Ventas />, requiredPermissions: ['Ventas', 'ventas_dashboard'] },
     { path: '/caja', component: <Caja />, requiredPermissions: ['Caja', 'Caja y Pagos'] },
     { path: '/marketing', component: <Marketing />, requiredPermissions: ['Marketing', 'marketing_dashboard'] },
     { path: '/marketing/dashboard', component: <Marketing />, requiredPermissions: ['Marketing', 'marketing_dashboard'] },

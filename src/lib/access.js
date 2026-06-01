@@ -3,6 +3,7 @@ export const ADMIN_EMAIL = 'admin@rebagliati.com';
 export const ROUTE_PERMISSIONS = [
   { route: '/dashboard', permissions: [] },
   { route: '/inscripciones', permissions: ['Inscripciones'] },
+  { route: '/ventas', permissions: ['Ventas', 'ventas_dashboard'] },
   { route: '/caja', permissions: ['Caja', 'Caja y Pagos'] },
   { route: '/marketing', permissions: ['Marketing', 'marketing_dashboard'] },
   { route: '/marketing/dashboard', permissions: ['Marketing', 'marketing_dashboard'] },

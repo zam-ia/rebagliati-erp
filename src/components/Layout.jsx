@@ -11,7 +11,8 @@ import {
   ShieldCheck, DollarSign, ChevronDown,
   Clock, Calendar, AlertCircle, FileText, UserPlus,
   Target, Megaphone, CalendarDays, Palette,
-  FolderOpen, Bot, BarChart3, Building2, MessageSquare
+  FolderOpen, Bot, BarChart3, Building2, MessageSquare,
+  Trophy
 } from 'lucide-react';
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -335,6 +336,7 @@ const NAV_GRUPOS = [
     items: [
       { path: '/dashboard',     nombre: 'Dashboard', icon: LayoutDashboard, permiso: 'Dashboard' },
       { path: '/inscripciones', nombre: 'Inscripciones', icon: FileEdit, permiso: 'Inscripciones' },
+      { path: '/ventas',        nombre: 'Ventas', icon: Trophy, permiso: 'Ventas' },
       { path: '/caja',          nombre: 'Caja y Pagos', icon: Wallet, permiso: 'Caja' },
     ],
   },

@@ -4,14 +4,24 @@
 :root {
   --erp-primary:   #11284e;
   --erp-accent:    #7eb3f5;
-  --erp-bg:        #f0f2f5;
+  --erp-bg:        #f5f5f7;
   --erp-surface:   #ffffff;
-  --erp-border:    #e8ecf0;
-  --erp-text:      #1e293b;
-  --erp-muted:     #94a3b8;
-  --erp-success:   #22c55e;
-  --erp-warning:   #f59e0b;
-  --erp-danger:    #ef4444;
+  --erp-border:    rgba(0,0,0,.08);
+  --erp-text:      #1d1d1f;
+  --erp-muted:     #6e6e73;
+  --erp-success:   #34c759;
+  --erp-warning:   #ff9500;
+  --erp-danger:    #ff3b30;
+  --apple-bg-1:    #ffffff;
+  --apple-bg-2:    #f5f5f7;
+  --apple-bg-3:    #f0f0f2;
+  --apple-text-1:  #1d1d1f;
+  --apple-text-2:  #6e6e73;
+  --apple-blue:    #0071e3;
+  --brand-blue:    #01017b;
+  --brand-cyan:    #00a7eb;
+  --shadow-soft:   0 1px 2px rgba(0,0,0,.04), 0 10px 30px rgba(15,23,42,.07);
+  --shadow-lift:   0 18px 48px rgba(15,23,42,.12);
 }
 
 /* ── Reset base ── */
@@ -19,12 +29,13 @@
 
 body {
   margin: 0;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', system-ui, sans-serif;
   font-size: 14px;
   line-height: 1.5;
   color: var(--erp-text);
   background: var(--erp-bg);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 /* ── Scrollbar premium ── */
@@ -45,10 +56,11 @@ input:focus, select:focus, textarea:focus {
 
 /* ── Cards ERP ── */
 .erp-card {
-  background: var(--erp-surface);
-  border: 1px solid var(--erp-border);
-  border-radius: 12px;
+  background: rgba(255,255,255,.86);
+  border: 1px solid rgba(0,0,0,.06);
+  border-radius: 16px;
   overflow: hidden;
+  box-shadow: var(--shadow-soft);
 }
 
 .erp-card-head {
@@ -76,10 +88,11 @@ input:focus, select:focus, textarea:focus {
 
 /* ── Métricas ── */
 .erp-metric {
-  background: var(--erp-surface);
-  border: 1px solid var(--erp-border);
-  border-radius: 10px;
+  background: rgba(255,255,255,.88);
+  border: 1px solid rgba(0,0,0,.06);
+  border-radius: 16px;
   padding: 18px 20px;
+  box-shadow: var(--shadow-soft);
 }
 
 .erp-metric-label {
@@ -179,6 +192,78 @@ input:focus, select:focus, textarea:focus {
 }
 .erp-table tr:hover td { background: #fbfcfd; }
 .erp-table tr:last-child td { border-bottom: none; }
+
+.apple-card {
+  background: rgba(255,255,255,.88);
+  border: 1px solid rgba(0,0,0,.06);
+  border-radius: 20px;
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(18px);
+}
+
+.apple-hero {
+  position: relative;
+  border: 1px solid rgba(0,0,0,.06);
+  border-radius: 28px;
+  background:
+    linear-gradient(135deg, rgba(255,255,255,.96), rgba(245,245,247,.92)),
+    linear-gradient(120deg, rgba(0,113,227,.12), rgba(0,167,235,.08));
+  box-shadow: var(--shadow-soft);
+  padding: 28px;
+}
+
+.apple-hero::after {
+  content: '';
+  position: absolute;
+  inset: auto 24px 0 auto;
+  width: 36%;
+  height: 4px;
+  border-radius: 999px 999px 0 0;
+  background: linear-gradient(90deg, var(--brand-blue), var(--brand-cyan));
+}
+
+.btn-apple-primary,
+.btn-apple-secondary,
+.btn-apple-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  transition: transform .18s ease, box-shadow .18s ease, background .18s ease;
+}
+
+.btn-apple-primary {
+  color: #fff;
+  background: #0071e3;
+  box-shadow: 0 10px 24px rgba(0,113,227,.22);
+}
+
+.btn-apple-primary:hover { background: #0077ed; box-shadow: 0 14px 30px rgba(0,113,227,.28); }
+
+.btn-apple-secondary {
+  color: #1d1d1f;
+  background: rgba(255,255,255,.84);
+  border-color: rgba(0,0,0,.08);
+}
+
+.btn-apple-secondary:hover,
+.btn-apple-ghost:hover { background: #fff; box-shadow: var(--shadow-soft); }
+
+.btn-apple-ghost {
+  color: #1d1d1f;
+  background: transparent;
+  border-color: rgba(0,0,0,.12);
+}
+
+.btn-apple-primary:active,
+.btn-apple-secondary:active,
+.btn-apple-ghost:active { transform: scale(.98); }
 
 /* ── Botones ── */
 .btn-primary {
