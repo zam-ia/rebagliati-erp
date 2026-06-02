@@ -10,8 +10,8 @@ export const CATEGORY_LABELS = {
 
 export const CATEGORY_WEIGHTS = {
   C: 1,
-  CM: 1.35,
-  D: 1.2,
+  CM: 2,
+  D: 3.5,
 };
 
 export const DEMO_EXECUTIVES = [

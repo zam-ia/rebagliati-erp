@@ -2,6 +2,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { SALES_PERMISSIONS } from '../lib/access';
 import Notificaciones from './Notificaciones';
 import CumpleanosPopUp from './CumpleanosPopUp'; // ⭐ POP-UP DE CUMPLEAÑOS
 import {
@@ -336,7 +337,7 @@ const NAV_GRUPOS = [
     items: [
       { path: '/dashboard',     nombre: 'Dashboard', icon: LayoutDashboard, permiso: 'Dashboard' },
       { path: '/inscripciones', nombre: 'Inscripciones', icon: FileEdit, permiso: 'Inscripciones' },
-      { path: '/ventas',        nombre: 'Ventas', icon: Trophy, permiso: 'Ventas' },
+      { path: '/ventas',        nombre: 'Ventas 360°', icon: Trophy, permiso: 'Ventas', permisos: SALES_PERMISSIONS },
       { path: '/caja',          nombre: 'Caja y Pagos', icon: Wallet, permiso: 'Caja' },
     ],
   },
@@ -500,6 +501,7 @@ export default function Layout({ children }) {
   const [nombreUsuario, setNombreUsuario] = useState('');
   const [mostrarBienvenida, setMostrarBienvenida] = useState(false);
   const [tareasHoy, setTareasHoy] = useState([]);
+  const [fraseBanner, setFraseBanner] = useState('');
 
   // ═══ FRASE DEL DÍA (determinista por fecha) ═══
   const fraseDelDia = useMemo(() => {
@@ -513,6 +515,28 @@ export default function Layout({ children }) {
     const indice = Math.abs(hash) % FRASES_MOTIVACIONALES.length;
     return FRASES_MOTIVACIONALES[indice];
   }, []);
+
+  useEffect(() => {
+    const cargarFrase = async () => {
+      const hoy = new Date();
+      const diaDelAno = Math.floor((hoy - new Date(hoy.getFullYear(), 0, 0)) / 86400000);
+      const { data, error } = await supabase
+        .from('frases_motivacionales')
+        .select('texto, autor')
+        .eq('activa', true)
+        .order('orden', { ascending: true });
+
+      if (!error && data?.length) {
+        const item = data[diaDelAno % data.length];
+        setFraseBanner(item.autor ? `${item.texto} - ${item.autor}` : item.texto);
+        return;
+      }
+
+      setFraseBanner(fraseDelDia);
+    };
+
+    cargarFrase();
+  }, [fraseDelDia]);
 
   useEffect(() => {
     const obtenerNombre = async () => {
@@ -590,7 +614,8 @@ export default function Layout({ children }) {
               );
               return subsFiltrados.length > 0 ? { ...item, subItems: subsFiltrados } : null;
             }
-            return (esAdmin || permisosObj[item.permiso] === true) ? item : null;
+            const permisosItem = item.permisos || [item.permiso];
+            return (esAdmin || permisosItem.some((permiso) => permisosObj[permiso] === true)) ? item : null;
           })
           .filter(Boolean)
       })).filter(grupo => grupo.items.length > 0);
@@ -724,13 +749,23 @@ export default function Layout({ children }) {
               <h1 className="text-[15px] font-bold text-[#0B1527] uppercase tracking-tight">{moduloActivo}</h1>
             </div>
             {/* Saludo VIP + Frase del día */}
-            <div className="hidden md:flex flex-col ml-4 pl-4 border-l border-slate-200">
+            <div className="hidden">
               <div className="flex items-center gap-2 text-slate-500 text-[13px]">
                 <span>{getSaludo()},</span>
                 <span className="font-bold text-[#185FA5]">{nombreUsuario}</span>
               </div>
               <p className="text-[11px] text-slate-400 italic mt-0.5 leading-tight max-w-md truncate">
                 «{fraseDelDia}»
+              </p>
+            </div>
+          </div>
+
+          <div className="hidden min-w-0 flex-1 items-center md:flex">
+            <div className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl border border-blue-100 bg-gradient-to-r from-blue-50 via-white to-cyan-50 px-4 py-2 shadow-sm">
+              <span className="shrink-0 text-sm font-black text-[#020873]">{getSaludo()}, {nombreUsuario}</span>
+              <span className="h-5 w-px shrink-0 bg-blue-100" />
+              <p className="min-w-0 truncate text-[15px] font-semibold text-slate-700">
+                {fraseBanner || fraseDelDia}
               </p>
             </div>
           </div>

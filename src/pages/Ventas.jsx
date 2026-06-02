@@ -3,9 +3,14 @@ import {
   Activity,
   AlertTriangle,
   BarChart3,
+  Bell,
+  CalendarCheck,
   CheckCircle2,
   Clock,
   ClipboardCheck,
+  ClipboardList,
+  Database,
+  DollarSign,
   FileText,
   Filter,
   Gift,
@@ -15,11 +20,15 @@ import {
   RefreshCw,
   Save,
   Search,
+  Settings,
+  ShieldAlert,
   Target,
   Trophy,
+  Upload,
   Users,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { isAdminUser } from '../lib/access';
 import { currentMonthRange, pctOf, todayISO, toPositiveNumber } from '../lib/finance';
 import {
   DRIVE_FILES,
@@ -83,6 +92,46 @@ const emptyForm = {
   observation: '',
 };
 
+const SALES_SUBMODULES = [
+  { id: 'resumen', label: 'Resumen ejecutivo', icon: Activity, permission: 'ventas_dashboard' },
+  { id: 'nueva-venta', label: 'Nueva venta', icon: Plus, permission: 'ventas_nueva_venta' },
+  { id: 'ranking', label: 'Ranking comercial', icon: Trophy, permission: 'ventas_ranking' },
+  { id: 'metas', label: 'Metas y proyeccion', icon: Target, permission: 'ventas_metas' },
+  { id: 'kommo', label: 'Cola Kommo', icon: MessageCircle, permission: 'ventas_kommo' },
+  { id: 'checklist', label: 'Checklist diario', icon: ClipboardCheck, permission: 'ventas_checklist' },
+  { id: 'grupos', label: 'Grupos WhatsApp', icon: Users, permission: 'ventas_grupos' },
+  { id: 'promesas', label: 'Promesas de pago', icon: Clock, permission: 'ventas_promesas' },
+  { id: 'comisiones', label: 'Comisiones e incidencias', icon: Gift, permission: 'ventas_comisiones' },
+  { id: 'plantillas', label: 'Plantillas comerciales', icon: FileText, permission: 'ventas_plantillas' },
+  { id: 'entregables', label: 'Entregables mensuales', icon: CalendarCheck, permission: 'ventas_entregables' },
+  { id: 'accesos', label: 'Accesos criticos', icon: KeyRound, permission: 'ventas_accesos' },
+  { id: 'alertas', label: 'Alertas inteligentes', icon: Bell, permission: 'ventas_alertas' },
+  { id: 'importador', label: 'Importador', icon: Upload, permission: 'ventas_importador' },
+  { id: 'administracion', label: 'Administracion', icon: Settings, permission: 'ventas_administracion' },
+];
+
+const actionQueue = [
+  { action: 'Asignar leads pendientes', detail: 'Kommo inicia con cola alta sin responsable.', severity: 'critical' },
+  { action: 'Activar grupo Enfermeria Intensiva', detail: '318 miembros sin campana asignada.', severity: 'medium' },
+  { action: 'Revisar promesa vencida', detail: 'S/ 310 pendiente con propiedad de comision por definir.', severity: 'high' },
+  { action: 'Corregir acceso critico', detail: 'Caso Kasandra supero 30 minutos por autenticacion.', severity: 'high' },
+];
+
+const accessLevels = [
+  { role: 'Ejecutivo comercial', scope: 'Nueva venta, checklist, promesas propias, plantillas activas', badge: 'Operativo' },
+  { role: 'Supervisor / encargado', scope: 'Cola Kommo, ranking de equipo, grupos, reasignaciones y alertas', badge: 'Control' },
+  { role: 'Jefe de ventas', scope: 'Metas, comisiones, incidencias, entregables, importador y administracion comercial', badge: 'Direccion' },
+  { role: 'Gerencia', scope: 'Resumen, rentabilidad, metas, comisiones aprobadas y alertas criticas', badge: 'Lectura ejecutiva' },
+  { role: 'Marketing', scope: 'UTMs, campanas, grupos, plantillas y eventos ganadores', badge: 'Lectura + fuentes' },
+  { role: 'Coordinacion', scope: 'Eventos, fechas, modalidad, vacantes y estado academico', badge: 'Lectura coordinacion' },
+];
+
+const criticalAccessDemo = [
+  { user: 'Kasandra', platform: 'Correo', type: 'Cambio de autenticacion', minutes: 45, status: 'Escalado' },
+  { user: 'Usuario 1', platform: 'Kommo', type: '2FA pendiente', minutes: 25, status: 'Pendiente' },
+  { user: 'Marketing', platform: 'Meta', type: 'Token por renovar', minutes: 18, status: 'En revision' },
+];
+
 function MetricCard({ icon: Icon, label, value, sub, tone = 'blue' }) {
   const toneClass = {
     blue: 'bg-blue-50 text-blue-700',
@@ -123,7 +172,8 @@ export default function Ventas() {
   const [periodId, setPeriodId] = useState(null);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('Todas');
-  const [showForm, setShowForm] = useState(false);
+  const [activeModule, setActiveModule] = useState('resumen');
+  const [allowedSalesModules, setAllowedSalesModules] = useState(SALES_SUBMODULES);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(emptyForm);
 
@@ -210,6 +260,36 @@ export default function Ventas() {
     loadSales();
   }, [loadSales]);
 
+  useEffect(() => {
+    const loadModulePermissions = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user || isAdminUser(user.email)) {
+        setAllowedSalesModules(SALES_SUBMODULES);
+        return;
+      }
+
+      const { data } = await supabase
+        .from('permisos_usuarios')
+        .select('modulo, puede_ver')
+        .eq('user_id', user.id)
+        .eq('puede_ver', true);
+
+      const permissionSet = new Set((data || []).map((item) => item.modulo));
+      const hasFullSales = permissionSet.has('Ventas');
+      const modules = hasFullSales
+        ? SALES_SUBMODULES
+        : SALES_SUBMODULES.filter((item) => permissionSet.has(item.permission));
+
+      const visibleModules = modules.length ? modules : SALES_SUBMODULES.slice(0, 1);
+      setAllowedSalesModules(visibleModules);
+      if (!visibleModules.some((item) => item.id === activeModule)) {
+        setActiveModule(visibleModules[0].id);
+      }
+    };
+
+    loadModulePermissions();
+  }, [activeModule]);
+
   const filteredSales = useMemo(() => {
     if (category === 'Todas') return sales;
     return sales.filter((sale) => sale.category === category);
@@ -236,6 +316,10 @@ export default function Ventas() {
   const kommoMetrics = useMemo(() => buildKommoMetrics(kommoQueue), [kommoQueue]);
   const promiseMetrics = useMemo(() => buildPromiseMetrics(paymentPromises), [paymentPromises]);
   const incidentMetrics = useMemo(() => buildIncidentMetrics(incidents), [incidents]);
+  const shouldShow = (...ids) => ids.includes(activeModule);
+  const globalGoal = useMemo(() => goals.reduce((sum, item) => sum + (Number(item.target_total) || 0), 0), [goals]);
+  const globalProgress = globalGoal > 0 ? pctOf(metrics.total, globalGoal) : pctOf(metrics.total, 1800);
+  const dailyRequired = Math.max(Math.ceil((globalGoal - metrics.total) / 8), 0);
 
   const handleSave = async () => {
     const quantity = toPositiveNumber(form.quantity);
@@ -257,7 +341,6 @@ export default function Ventas() {
         ...current,
       ]);
       setForm(emptyForm);
-      setShowForm(false);
       return;
     }
 
@@ -279,7 +362,6 @@ export default function Ventas() {
     }
 
     setForm(emptyForm);
-    setShowForm(false);
     loadSales();
   };
 
@@ -292,17 +374,17 @@ export default function Ventas() {
               <Activity size={13} /> Ventas operativas
             </div>
             <h1 className="mt-4 text-3xl font-black tracking-tight text-slate-950 md:text-5xl">
-              Ranking comercial, checklist y grupos WhatsApp
+              Ventas Operativas 360°
             </h1>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
-              Controla productividad por ejecutivo, mix C/CM/D, disciplina diaria y activos comerciales sin usar.
+              Control comercial por submodulos: ventas, metas, Kommo, promesas, comisiones, plantillas, alertas e importacion historica.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button onClick={loadSales} className="btn-apple-secondary">
               <RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> Actualizar
             </button>
-            <button onClick={() => setShowForm((value) => !value)} className="btn-apple-primary">
+            <button onClick={() => setActiveModule('nueva-venta')} className="btn-apple-primary">
               <Plus size={16} /> Nueva venta
             </button>
           </div>
@@ -315,35 +397,70 @@ export default function Ventas() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="apple-card p-3">
+        <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar">
+          {allowedSalesModules.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              onClick={() => setActiveModule(id)}
+              className={`flex min-w-max items-center gap-2 rounded-2xl px-3.5 py-2.5 text-xs font-black transition-all ${
+                activeModule === id
+                  ? 'bg-[#020873] text-white shadow-lg shadow-blue-900/15'
+                  : 'bg-slate-50 text-slate-500 hover:bg-blue-50 hover:text-blue-700'
+              }`}
+            >
+              <Icon size={15} />
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {shouldShow('resumen') && <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard icon={Trophy} label="Ventas del periodo" value={metrics.total.toLocaleString('es-PE')} sub="Registros C + CM + D" />
-        <MetricCard icon={Target} label="Concentracion Top 5" value={`${metrics.topFiveConcentration}%`} sub="Riesgo si supera 60%" tone="amber" />
-        <MetricCard icon={ClipboardCheck} label="Checklist promedio" value={`${metrics.checklistAverage}%`} sub={`${metrics.criticalChecklists} ejecutivos criticos`} tone={metrics.checklistAverage < 50 ? 'red' : 'green'} />
-        <MetricCard icon={MessageCircle} label="Grupos sin uso" value={metrics.unusedGroups} sub={`${metrics.pendingGroups} pendientes de responsable`} tone="red" />
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard icon={Target} label="Avance de meta" value={`${globalProgress}%`} sub={`${dailyRequired} registros/dia requeridos`} tone={globalProgress < 80 ? 'amber' : 'green'} />
         <MetricCard icon={MessageCircle} label="Kommo sin asignar" value={kommoMetrics.unassignedMessages} sub={`${kommoMetrics.idealDistribution} mensajes aprox. por usuario`} tone="red" />
-        <MetricCard icon={Clock} label="Tiempo perdido diario" value={`${kommoMetrics.dailyLostMinutes} min`} sub={`${kommoMetrics.monthlyLostHours} h/mes por asignacion y 2FA`} tone="amber" />
-        <MetricCard icon={KeyRound} label="Accesos criticos" value={`${kommoMetrics.kasandraAccessMinutes} min`} sub="Caso Kasandra: cambio de autenticacion sin flujo informado" tone="amber" />
-        <MetricCard icon={Target} label="Promesas en riesgo" value={promiseMetrics.reassigned} sub={`${promiseMetrics.expired} vencida(s), S/ ${promiseMetrics.amountAtRisk} en seguimiento`} tone="red" />
-      </div>
+        <MetricCard icon={Clock} label="Promesas en riesgo" value={promiseMetrics.reassigned} sub={`${promiseMetrics.expired} vencida(s), S/ ${promiseMetrics.amountAtRisk} en seguimiento`} tone="red" />
+      </div>}
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+      {shouldShow('resumen') && <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard icon={Target} label="Concentracion Top 5" value={`${metrics.topFiveConcentration}%`} sub="Riesgo si supera 60%" tone="amber" />
+        <MetricCard icon={ClipboardCheck} label="Checklist promedio" value={`${metrics.checklistAverage}%`} sub={`${metrics.criticalChecklists} ejecutivos criticos`} tone={metrics.checklistAverage < 60 ? 'red' : 'green'} />
+        <MetricCard icon={Users} label="Grupos sin uso" value={metrics.unusedGroups} sub={`${metrics.pendingGroups} pendientes de responsable`} tone="red" />
+        <MetricCard icon={Clock} label="Tiempo perdido diario" value={`${kommoMetrics.dailyLostMinutes} min`} sub={`${kommoMetrics.monthlyLostHours} h/mes por asignacion y 2FA`} tone="amber" />
+      </div>}
+
+      {shouldShow('resumen') && (
+        <div className="apple-card p-5">
+          <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
+            <Bell size={19} className="text-red-500" /> Acciones urgentes de hoy
+          </h2>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {actionQueue.map((item) => (
+              <div key={item.action} className={`rounded-2xl border p-4 ${severityClass[item.severity] || severityClass.medium}`}>
+                <p className="text-sm font-black">{item.action}</p>
+                <p className="mt-1 text-xs font-semibold leading-5">{item.detail}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {shouldShow('importador') && <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard icon={FileText} label="Fuentes Drive" value={driveMetrics.totalFiles} sub={`${driveMetrics.excelFiles} Excel, ${driveMetrics.markdownFiles} Markdown`} />
         <MetricCard icon={BarChart3} label="Hojas auditadas" value={driveMetrics.totalSheets} sub={`${driveMetrics.totalRows.toLocaleString('es-PE')} filas detectadas`} tone="green" />
         <MetricCard icon={AlertTriangle} label="Riesgos importacion" value={importRisks.high + importRisks.medium} sub={`${importRisks.high} altos, ${importRisks.medium} medios`} tone="amber" />
         <MetricCard icon={CheckCircle2} label="Controles caja" value={importRisks.paymentControls} sub="Voucher, cuenta, titular y programa" tone="green" />
-      </div>
+      </div>}
 
-      {showForm && (
+      {shouldShow('nueva-venta') && (
         <div className="apple-card p-5">
           <div className="mb-5 flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-black text-slate-900">Registro diario</h2>
-              <p className="text-xs font-medium text-slate-500">Evita duplicar ejecutivo, fecha, categoria y evento.</p>
+              <h2 className="text-lg font-black text-slate-900">Nueva venta validable</h2>
+              <p className="text-xs font-medium text-slate-500">No cuenta para ranking definitivo hasta que Caja confirme el pago.</p>
             </div>
-            <button onClick={() => setShowForm(false)} className="btn-apple-ghost">Cerrar</button>
+            <span className="badge badge-amber">Pendiente de validacion</span>
           </div>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -384,13 +501,13 @@ export default function Ventas() {
 
           <div className="mt-5 flex justify-end">
             <button onClick={handleSave} disabled={saving} className="btn-apple-primary">
-              <Save size={16} /> {saving ? 'Guardando...' : 'Guardar venta'}
+              <Save size={16} /> {saving ? 'Guardando...' : 'Guardar venta prevalidada'}
             </button>
           </div>
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.6fr_1fr]">
+      {shouldShow('ranking', 'resumen') && <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.6fr_1fr]">
         <div className="apple-card overflow-hidden">
           <div className="flex flex-col gap-3 border-b border-slate-100 p-5 md:flex-row md:items-center md:justify-between">
             <div>
@@ -499,10 +616,10 @@ export default function Ventas() {
             </div>
           </div>
         </div>
-      </div>
+      </div>}
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-        <div className="apple-card overflow-hidden">
+      {(shouldShow('kommo', 'resumen') || shouldShow('entregables')) && <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+        {shouldShow('kommo', 'resumen') && <div className="apple-card overflow-hidden">
           <div className="border-b border-slate-100 p-5">
             <h2 className="flex items-center gap-2 text-lg font-black text-slate-900">
               <MessageCircle size={19} className="text-blue-600" /> Cola Kommo y tablero de turno
@@ -527,9 +644,9 @@ export default function Ventas() {
               </div>
             ))}
           </div>
-        </div>
+        </div>}
 
-        <div className="apple-card p-5">
+        {shouldShow('entregables', 'resumen') && <div className="apple-card p-5">
           <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
             <FileText size={19} className="text-blue-600" /> Entregables mensuales
           </h2>
@@ -546,10 +663,10 @@ export default function Ventas() {
               </div>
             ))}
           </div>
-        </div>
-      </div>
+        </div>}
+      </div>}
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+      {shouldShow('importador') && <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.2fr_0.8fr]">
         <div className="apple-card overflow-hidden">
           <div className="border-b border-slate-100 p-5">
             <h2 className="flex items-center gap-2 text-lg font-black text-slate-900">
@@ -618,10 +735,10 @@ export default function Ventas() {
             </div>
           </div>
         </div>
-      </div>
+      </div>}
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <div className="apple-card p-5">
+      {(shouldShow('checklist', 'resumen') || shouldShow('grupos', 'resumen')) && <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        {shouldShow('checklist', 'resumen') && <div className="apple-card p-5">
           <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
             <ClipboardCheck size={19} className="text-blue-600" /> Checklist operativo
           </h2>
@@ -644,9 +761,9 @@ export default function Ventas() {
               );
             })}
           </div>
-        </div>
+        </div>}
 
-        <div className="apple-card overflow-hidden">
+        {shouldShow('grupos', 'resumen') && <div className="apple-card overflow-hidden">
           <div className="border-b border-slate-100 p-5">
             <h2 className="flex items-center gap-2 text-lg font-black text-slate-900">
               <MessageCircle size={19} className="text-blue-600" /> Inventario WhatsApp
@@ -686,11 +803,11 @@ export default function Ventas() {
               </tbody>
             </table>
           </div>
-        </div>
-      </div>
+        </div>}
+      </div>}
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <div className="apple-card overflow-hidden">
+      {(shouldShow('promesas', 'resumen') || shouldShow('comisiones')) && <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        {shouldShow('promesas', 'resumen') && <div className="apple-card overflow-hidden">
           <div className="border-b border-slate-100 p-5">
             <h2 className="flex items-center gap-2 text-lg font-black text-slate-900">
               <Clock size={19} className="text-blue-600" /> Promesas de pago y propiedad de comision
@@ -730,9 +847,9 @@ export default function Ventas() {
               </tbody>
             </table>
           </div>
-        </div>
+        </div>}
 
-        <div className="apple-card p-5">
+        {shouldShow('comisiones') && <div className="apple-card p-5">
           <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
             <Gift size={19} className="text-blue-600" /> Comisiones e incidencias
           </h2>
@@ -769,10 +886,10 @@ export default function Ventas() {
               {commissionModel.benefits.map((item) => <li key={item}>- {item}</li>)}
             </ul>
           </div>
-        </div>
-      </div>
+        </div>}
+      </div>}
 
-      <div className="apple-card p-5">
+      {shouldShow('administracion', 'resumen') && <div className="apple-card p-5">
         <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
           <Target size={19} className="text-blue-600" /> Plan de mejora del area
         </h2>
@@ -787,10 +904,10 @@ export default function Ventas() {
             </div>
           ))}
         </div>
-      </div>
+      </div>}
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <div className="apple-card p-5">
+      {shouldShow('importador', 'administracion') && <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        {shouldShow('importador') && <div className="apple-card p-5">
           <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
             <Clock size={19} className="text-blue-600" /> Fases de importacion Drive
           </h2>
@@ -807,9 +924,9 @@ export default function Ventas() {
               </div>
             ))}
           </div>
-        </div>
+        </div>}
 
-        <div className="apple-card p-5">
+        {shouldShow('administracion') && <div className="apple-card p-5">
           <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
             <Gift size={19} className="text-blue-600" /> Reglas Caja - pagos oficiales
           </h2>
@@ -821,10 +938,200 @@ export default function Ventas() {
               </div>
             ))}
           </div>
-        </div>
-      </div>
+        </div>}
+      </div>}
 
-      <div className="apple-card p-5">
+      {shouldShow('metas') && (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.85fr_1.15fr]">
+          <div className="apple-card p-5">
+            <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
+              <Target size={19} className="text-blue-600" /> Metas y proyeccion
+            </h2>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                ['Meta mensual', globalGoal || 180, 'Cantidad objetivo'],
+                ['Avance actual', `${globalProgress}%`, 'Ventas / meta'],
+                ['Brecha faltante', Math.max((globalGoal || 180) - metrics.total, 0), 'Registros pendientes'],
+                ['Venta diaria req.', dailyRequired || 0, 'Proyeccion 8 dias'],
+              ].map(([label, value, detail]) => (
+                <div key={label} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                  <p className="text-[11px] font-black uppercase tracking-wider text-slate-400">{label}</p>
+                  <p className="mt-2 text-2xl font-black text-slate-900">{value}</p>
+                  <p className="mt-1 text-xs font-medium text-slate-500">{detail}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="apple-card overflow-hidden">
+            <div className="border-b border-slate-100 p-5">
+              <h2 className="flex items-center gap-2 text-lg font-black text-slate-900">
+                <BarChart3 size={19} className="text-blue-600" /> Metas por ejecutivo
+              </h2>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="erp-table">
+                <thead>
+                  <tr>
+                    <th>Ejecutivo</th>
+                    <th>Meta</th>
+                    <th>Avance</th>
+                    <th>Brecha</th>
+                    <th>Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ranking.map((row) => (
+                    <tr key={`goal-${row.executive_id}`}>
+                      <td className="font-bold text-slate-900">{row.executive}</td>
+                      <td>{row.goal || 'Sin meta'}</td>
+                      <td>{row.goalProgress}%</td>
+                      <td>{row.goal ? Math.max(row.goal - row.total, 0) : '-'}</td>
+                      <td><span className={`badge ${row.goalProgress < 65 ? 'badge-red' : row.goalProgress < 80 ? 'badge-amber' : 'badge-green'}`}>{row.goalProgress < 65 ? 'Critico' : row.risk}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {shouldShow('plantillas') && (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <div className="apple-card p-5">
+            <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
+              <FileText size={19} className="text-blue-600" /> Plantillas comerciales
+            </h2>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              {['Primera respuesta', 'Seguimiento 1', 'Promesa de pago', 'Cierre urgente', 'Objecion precio', 'Plantilla Kommo'].map((item) => (
+                <div key={item} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                  <p className="font-black text-slate-900">{item}</p>
+                  <p className="mt-1 text-xs font-medium text-slate-500">Estado: aprobada / activa / obsoleta</p>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="apple-card p-5">
+            <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
+              <ClipboardList size={19} className="text-blue-600" /> Versionado recomendado
+            </h2>
+            <div className="space-y-3">
+              {['Producto asociado', 'Responsable aprobador', 'Ultima actualizacion', 'Uso recomendado', 'Codigo o link Kommo'].map((item) => (
+                <div key={item} className="flex gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm font-semibold text-blue-900">
+                  <CheckCircle2 size={17} className="shrink-0 text-blue-600" />
+                  {item}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {shouldShow('accesos') && (
+        <div className="apple-card overflow-hidden">
+          <div className="border-b border-slate-100 p-5">
+            <h2 className="flex items-center gap-2 text-lg font-black text-slate-900">
+              <ShieldAlert size={19} className="text-red-500" /> Accesos criticos y bitacora 2FA
+            </h2>
+            <p className="mt-1 text-xs font-medium text-slate-500">Registra bloqueos de Kommo, WhatsApp, Meta, correo y cambios de autenticacion.</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="erp-table">
+              <thead>
+                <tr>
+                  <th>Usuario</th>
+                  <th>Plataforma</th>
+                  <th>Tipo</th>
+                  <th>Minutos perdidos</th>
+                  <th>Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {criticalAccessDemo.map((item) => (
+                  <tr key={`${item.user}-${item.platform}`}>
+                    <td className="font-bold text-slate-900">{item.user}</td>
+                    <td>{item.platform}</td>
+                    <td>{item.type}</td>
+                    <td className={item.minutes > 30 ? 'font-black text-red-600' : 'font-black text-amber-600'}>{item.minutes}</td>
+                    <td><span className={`badge ${item.minutes > 30 ? 'badge-red' : 'badge-amber'}`}>{item.status}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {shouldShow('alertas') && (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <div className="apple-card p-5">
+            <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
+              <Bell size={19} className="text-red-500" /> Motor de alertas inteligentes
+            </h2>
+            <div className="space-y-3">
+              {[...alerts, ...DRIVE_PROCESS_ALERTS.map((item) => ({ type: item.title, severity: item.severity, message: item.detail }))].map((alert) => (
+                <div key={`${alert.type}-${alert.message}`} className={`rounded-2xl border p-4 ${severityClass[alert.severity] || severityClass.medium}`}>
+                  <p className="text-xs font-black uppercase tracking-wider">{alert.type}</p>
+                  <p className="mt-1 text-sm font-semibold leading-5">{alert.message}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="apple-card p-5">
+            <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
+              <Database size={19} className="text-blue-600" /> Condiciones automaticas
+            </h2>
+            <div className="space-y-3">
+              {[
+                'Top 5 supera 60% de concentracion.',
+                'Ejecutivo bajo 80% de meta.',
+                'Lead sin respuesta por mas de 10 minutos.',
+                'Grupo de mas de 200 miembros sin campana.',
+                'Acceso critico supera 30 minutos perdidos.',
+                'Venta sin canal, evento o ejecutivo.',
+              ].map((item) => (
+                <div key={item} className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm font-semibold text-slate-600">{item}</div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {shouldShow('administracion') && (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <div className="apple-card p-5">
+            <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
+              <Settings size={19} className="text-blue-600" /> Administracion comercial
+            </h2>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              {['Ejecutivos', 'Equipos y turnos', 'Metas', 'Productos/eventos', 'Canales', 'Reglas de comision', 'SLA', 'Periodos'].map((item) => (
+                <div key={item} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                  <p className="font-black text-slate-900">{item}</p>
+                  <p className="mt-1 text-xs font-medium text-slate-500">Configurable desde Admin Usuarios y tablas comerciales.</p>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="apple-card p-5">
+            <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
+              <ShieldAlert size={19} className="text-blue-600" /> Niveles de acceso
+            </h2>
+            <div className="space-y-3">
+              {accessLevels.map((item) => (
+                <div key={item.role} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-black text-slate-900">{item.role}</p>
+                    <span className="badge badge-blue">{item.badge}</span>
+                  </div>
+                  <p className="mt-2 text-xs font-medium leading-5 text-slate-500">{item.scope}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {shouldShow('administracion', 'resumen') && <div className="apple-card p-5">
         <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
           <Users size={19} className="text-blue-600" /> Enlaces entre modulos
         </h2>
@@ -842,7 +1149,7 @@ export default function Ventas() {
             </div>
           ))}
         </div>
-      </div>
+      </div>}
     </div>
   );
 }

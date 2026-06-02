@@ -75,6 +75,45 @@ const treePermisosToFlat = (treeState) => {
   return flat;
 };
 
+const ACCESS_LEVEL_PRESETS = [
+  {
+    id: 'ejecutivo_comercial',
+    title: 'Ejecutivo comercial',
+    description: 'Opera ventas propias, checklist, promesas y plantillas activas.',
+    permissions: ['Ventas', 'ventas_nueva_venta', 'ventas_checklist', 'ventas_promesas', 'ventas_plantillas'],
+  },
+  {
+    id: 'supervisor_comercial',
+    title: 'Supervisor / encargado',
+    description: 'Controla equipo, Kommo, ranking, grupos, reasignaciones y alertas.',
+    permissions: ['Ventas', 'ventas_dashboard', 'ventas_ranking', 'ventas_metas', 'ventas_kommo', 'ventas_checklist', 'ventas_grupos', 'ventas_promesas', 'ventas_alertas'],
+  },
+  {
+    id: 'jefe_ventas',
+    title: 'Jefe de ventas',
+    description: 'Acceso completo comercial, comisiones, importador y administracion.',
+    permissions: ['Ventas', 'ventas_dashboard', 'ventas_nueva_venta', 'ventas_ranking', 'ventas_metas', 'ventas_kommo', 'ventas_checklist', 'ventas_grupos', 'ventas_promesas', 'ventas_comisiones', 'ventas_plantillas', 'ventas_entregables', 'ventas_accesos', 'ventas_alertas', 'ventas_importador', 'ventas_administracion'],
+  },
+  {
+    id: 'gerencia',
+    title: 'Gerencia',
+    description: 'Lectura ejecutiva de resumen, metas, alertas, rentabilidad y comisiones.',
+    permissions: ['Ventas', 'ventas_dashboard', 'ventas_ranking', 'ventas_metas', 'ventas_comisiones', 'ventas_alertas', 'Finanzas', 'Reportes'],
+  },
+  {
+    id: 'marketing_lector',
+    title: 'Marketing lector',
+    description: 'Lee UTMs, campanas, grupos, plantillas, eventos ganadores e importador.',
+    permissions: ['Marketing', 'marketing_dashboard', 'marketing_campanas', 'marketing_metricas', 'Ventas', 'ventas_dashboard', 'ventas_grupos', 'ventas_plantillas', 'ventas_importador'],
+  },
+  {
+    id: 'coordinacion_lector',
+    title: 'Coordinacion lectora',
+    description: 'Consulta eventos, fechas, modalidad, entregables y estado academico.',
+    permissions: ['Ventas', 'ventas_dashboard', 'ventas_entregables', 'ventas_importador', 'Gestion Estrategica', 'Reportes'],
+  },
+];
+
 export default function AdminUsuarios() {
   const [usuarios, setUsuarios]              = useState([]);
   const [modulosTree, setModulosTree]        = useState([]);   // árbol de módulos
@@ -341,6 +380,31 @@ export default function AdminUsuarios() {
     });
   };
 
+  const buildPresetTree = (permissions = []) => {
+    const permissionSet = new Set(permissions);
+    const nextTree = {};
+
+    modulosTree.forEach(mod => {
+      const children = {};
+      let hasCheckedChild = false;
+      mod.children?.forEach(child => {
+        const checked = permissionSet.has(child.nombre);
+        children[child.nombre] = checked;
+        if (checked) hasCheckedChild = true;
+      });
+      nextTree[mod.nombre] = {
+        checked: permissionSet.has(mod.nombre) && !hasCheckedChild,
+        children,
+      };
+    });
+
+    return nextTree;
+  };
+
+  const aplicarPreset = (setter, preset) => {
+    setter(buildPresetTree(preset.permissions));
+  };
+
   // ── RENDER ────────────────────────────────────────────────────────────────
   if (loading) return (
     <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
@@ -384,6 +448,29 @@ export default function AdminUsuarios() {
       </div>
 
       {/* ── TABLA (muestra solo módulos raíz) ──────────────────────────── */}
+      <div className="apple-card p-5 mb-8">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-lg font-black text-slate-900">Niveles de acceso comercial</h2>
+            <p className="mt-1 text-xs font-medium text-slate-500">
+              Paquetes recomendados para ejecutivos, supervisores, jefe de ventas, gerencia, marketing y coordinacion.
+            </p>
+          </div>
+          <span className="badge badge-blue">Ventas Operativas 360°</span>
+        </div>
+        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {ACCESS_LEVEL_PRESETS.map((preset) => (
+            <div key={preset.id} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="font-black text-slate-900">{preset.title}</p>
+                <span className="text-[11px] font-black text-blue-700">{preset.permissions.length} permisos</span>
+              </div>
+              <p className="mt-2 text-xs font-medium leading-5 text-slate-500">{preset.description}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
       <div className="bg-white/80 backdrop-blur-sm rounded-3xl border border-blue-50 shadow-xl shadow-blue-100/20 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -504,6 +591,22 @@ export default function AdminUsuarios() {
                 className="w-full bg-gray-50 border-2 border-gray-100 rounded-2xl px-4 py-3 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 text-sm transition-all" />
 
               {/* Árbol de módulos */}
+              <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
+                <p className="mb-3 text-xs font-black uppercase tracking-wider text-blue-700">Aplicar nivel recomendado</p>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {ACCESS_LEVEL_PRESETS.map((preset) => (
+                    <button
+                      key={`crear-${preset.id}`}
+                      type="button"
+                      onClick={() => aplicarPreset(setPermisosTreeCrear, preset)}
+                      className="rounded-xl bg-white px-3 py-2 text-left text-xs font-bold text-slate-700 shadow-sm ring-1 ring-blue-100 transition hover:text-blue-700"
+                    >
+                      {preset.title}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div className="border-t border-gray-100 pt-5">
                 <p className="text-sm font-bold text-[#0B1527] mb-3">Módulos accesibles:</p>
                 <div className="space-y-2 max-h-80 overflow-y-auto p-2 bg-gray-50 rounded-2xl custom-scrollbar">

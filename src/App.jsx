@@ -2,7 +2,7 @@ import { HashRouter, Routes, Route, Navigate, useLocation } from 'react-router-d
 import { useEffect, useState } from 'react';
 import { supabase } from './lib/supabase';
 import Layout from './components/Layout';
-import { getFirstAllowedRoute, hasAnyPermission, isAdminUser } from './lib/access';
+import { SALES_PERMISSIONS, getFirstAllowedRoute, hasAnyPermission, isAdminUser } from './lib/access';
 
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -132,7 +132,7 @@ export default function App() {
   const rutasPrivadas = [
     { path: '/dashboard', component: <Dashboard /> },
     { path: '/inscripciones', component: <Inscripciones />, requiredPermissions: ['Inscripciones'] },
-    { path: '/ventas', component: <Ventas />, requiredPermissions: ['Ventas', 'ventas_dashboard'] },
+    { path: '/ventas', component: <Ventas />, requiredPermissions: SALES_PERMISSIONS },
     { path: '/caja', component: <Caja />, requiredPermissions: ['Caja', 'Caja y Pagos'] },
     { path: '/marketing', component: <Marketing />, requiredPermissions: ['Marketing', 'marketing_dashboard'] },
     { path: '/marketing/dashboard', component: <Marketing />, requiredPermissions: ['Marketing', 'marketing_dashboard'] },

@@ -1,9 +1,28 @@
 export const ADMIN_EMAIL = 'admin@rebagliati.com';
 
+export const SALES_PERMISSIONS = [
+  'Ventas',
+  'ventas_dashboard',
+  'ventas_nueva_venta',
+  'ventas_ranking',
+  'ventas_metas',
+  'ventas_kommo',
+  'ventas_checklist',
+  'ventas_grupos',
+  'ventas_promesas',
+  'ventas_comisiones',
+  'ventas_plantillas',
+  'ventas_entregables',
+  'ventas_accesos',
+  'ventas_alertas',
+  'ventas_importador',
+  'ventas_administracion',
+];
+
 export const ROUTE_PERMISSIONS = [
   { route: '/dashboard', permissions: [] },
   { route: '/inscripciones', permissions: ['Inscripciones'] },
-  { route: '/ventas', permissions: ['Ventas', 'ventas_dashboard'] },
+  { route: '/ventas', permissions: SALES_PERMISSIONS },
   { route: '/caja', permissions: ['Caja', 'Caja y Pagos'] },
   { route: '/marketing', permissions: ['Marketing', 'marketing_dashboard'] },
   { route: '/marketing/dashboard', permissions: ['Marketing', 'marketing_dashboard'] },
