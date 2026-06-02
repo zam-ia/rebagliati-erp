@@ -22,6 +22,15 @@ import {
 import { supabase } from '../lib/supabase';
 import { currentMonthRange, pctOf, todayISO, toPositiveNumber } from '../lib/finance';
 import {
+  DRIVE_FILES,
+  DRIVE_FORMULAS,
+  DRIVE_IMPORT_PHASES,
+  DRIVE_PROCESS_ALERTS,
+  PAYMENT_CONTROL_RULES,
+  buildDriveMetrics,
+  buildImportRisks,
+} from '../lib/driveInsights';
+import {
   CATEGORY_LABELS,
   COMMISSION_MODEL,
   DEMO_CHECKLIST,
@@ -222,6 +231,8 @@ export default function Ventas() {
     () => buildSalesAlerts(metrics, ranking, groups),
     [metrics, ranking, groups],
   );
+  const driveMetrics = useMemo(() => buildDriveMetrics(), []);
+  const importRisks = useMemo(() => buildImportRisks(), []);
   const kommoMetrics = useMemo(() => buildKommoMetrics(kommoQueue), [kommoQueue]);
   const promiseMetrics = useMemo(() => buildPromiseMetrics(paymentPromises), [paymentPromises]);
   const incidentMetrics = useMemo(() => buildIncidentMetrics(incidents), [incidents]);
@@ -316,6 +327,13 @@ export default function Ventas() {
         <MetricCard icon={Clock} label="Tiempo perdido diario" value={`${kommoMetrics.dailyLostMinutes} min`} sub={`${kommoMetrics.monthlyLostHours} h/mes por asignacion y 2FA`} tone="amber" />
         <MetricCard icon={KeyRound} label="Accesos criticos" value={`${kommoMetrics.kasandraAccessMinutes} min`} sub="Caso Kasandra: cambio de autenticacion sin flujo informado" tone="amber" />
         <MetricCard icon={Target} label="Promesas en riesgo" value={promiseMetrics.reassigned} sub={`${promiseMetrics.expired} vencida(s), S/ ${promiseMetrics.amountAtRisk} en seguimiento`} tone="red" />
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard icon={FileText} label="Fuentes Drive" value={driveMetrics.totalFiles} sub={`${driveMetrics.excelFiles} Excel, ${driveMetrics.markdownFiles} Markdown`} />
+        <MetricCard icon={BarChart3} label="Hojas auditadas" value={driveMetrics.totalSheets} sub={`${driveMetrics.totalRows.toLocaleString('es-PE')} filas detectadas`} tone="green" />
+        <MetricCard icon={AlertTriangle} label="Riesgos importacion" value={importRisks.high + importRisks.medium} sub={`${importRisks.high} altos, ${importRisks.medium} medios`} tone="amber" />
+        <MetricCard icon={CheckCircle2} label="Controles caja" value={importRisks.paymentControls} sub="Voucher, cuenta, titular y programa" tone="green" />
       </div>
 
       {showForm && (
@@ -531,6 +549,77 @@ export default function Ventas() {
         </div>
       </div>
 
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+        <div className="apple-card overflow-hidden">
+          <div className="border-b border-slate-100 p-5">
+            <h2 className="flex items-center gap-2 text-lg font-black text-slate-900">
+              <FileText size={19} className="text-blue-600" /> Auditoria Drive y fuentes comerciales
+            </h2>
+            <p className="mt-1 text-xs font-medium text-slate-500">
+              Archivos descargados: eventos, UTMs, ranking, seguimiento, estrategias y plantillas.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="erp-table">
+              <thead>
+                <tr>
+                  <th>Fuente</th>
+                  <th>Area</th>
+                  <th>Hojas</th>
+                  <th>Uso operativo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {DRIVE_FILES.map((item) => (
+                  <tr key={item.name}>
+                    <td>
+                      <p className="font-bold text-slate-900">{item.name}</p>
+                      <p className="text-[11px] text-slate-400">{item.fields.slice(0, 4).join(' / ')}</p>
+                    </td>
+                    <td><span className="badge badge-blue">{item.area}</span></td>
+                    <td className="font-black">{item.sheets.length}</td>
+                    <td className="max-w-md text-xs font-medium leading-5 text-slate-500">{item.use}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          <div className="apple-card p-5">
+            <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
+              <BarChart3 size={19} className="text-blue-600" /> Formulas que deben quedar automatizadas
+            </h2>
+            <div className="space-y-3">
+              {DRIVE_FORMULAS.map((item) => (
+                <div key={item.name} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                  <p className="text-sm font-black text-slate-900">{item.name}</p>
+                  <p className="mt-1 font-mono text-[11px] font-bold text-blue-700">{item.formula}</p>
+                  <p className="mt-2 text-xs font-medium leading-5 text-slate-500">{item.action}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="apple-card p-5">
+            <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
+              <AlertTriangle size={19} className="text-amber-500" /> Alertas de datos
+            </h2>
+            <div className="space-y-3">
+              {DRIVE_PROCESS_ALERTS.map((item) => (
+                <div key={item.title} className={`rounded-2xl border p-4 text-sm font-semibold ${
+                  item.severity === 'high' ? 'border-red-200 bg-red-50 text-red-700' : 'border-amber-200 bg-amber-50 text-amber-700'
+                }`}>
+                  <p className="font-black">{item.title}</p>
+                  <p className="mt-1 text-xs leading-5">{item.detail}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <div className="apple-card p-5">
           <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
@@ -697,6 +786,41 @@ export default function Ventas() {
               </ul>
             </div>
           ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <div className="apple-card p-5">
+          <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
+            <Clock size={19} className="text-blue-600" /> Fases de importacion Drive
+          </h2>
+          <div className="space-y-3">
+            {DRIVE_IMPORT_PHASES.map((item) => (
+              <div key={item.phase} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-black text-slate-900">{item.phase}. {item.name}</p>
+                    <p className="mt-1 text-xs font-medium text-slate-500">{item.owner} - {item.output}</p>
+                  </div>
+                  <span className={`badge ${item.status === 'Listo en ERP' ? 'badge-green' : 'badge-amber'}`}>{item.status}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="apple-card p-5">
+          <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
+            <Gift size={19} className="text-blue-600" /> Reglas Caja - pagos oficiales
+          </h2>
+          <div className="space-y-3">
+            {PAYMENT_CONTROL_RULES.map((item) => (
+              <div key={item} className="flex gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm font-semibold leading-5 text-blue-900">
+                <CheckCircle2 size={17} className="mt-0.5 shrink-0 text-blue-600" />
+                {item}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 

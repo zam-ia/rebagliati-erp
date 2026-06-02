@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { addDaysISO, formatPEN, sumBy, toNumber, toPositiveNumber, todayISO } from '../lib/finance';
+import { PAYMENT_CONTROL_RULES } from '../lib/driveInsights';
 import { 
   Wallet, Plus, DollarSign, CreditCard, Banknote, 
   CalendarClock, User, TrendingDown, TrendingUp, RefreshCw,
-  FileText, AlertTriangle, X, Save
+  FileText, AlertTriangle, X, Save, CheckCircle2
 } from 'lucide-react';
 
 function Caja() {
@@ -228,6 +229,28 @@ function Caja() {
             </div>
           </div>
         ))}
+      </div>
+
+      <div className="apple-card p-5 mb-8">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-lg font-black text-slate-900 flex items-center gap-2">
+              <FileText size={19} className="text-[#185FA5]" /> Controles segun plantillas informativas
+            </h2>
+            <p className="text-xs font-medium text-slate-500 mt-1">
+              Reglas tomadas de los archivos descargados para reducir pagos observados y comisiones mal liquidadas.
+            </p>
+          </div>
+          <span className="badge badge-blue">Drive auditado</span>
+        </div>
+        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+          {PAYMENT_CONTROL_RULES.map((rule) => (
+            <div key={rule} className="flex gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm font-semibold leading-5 text-blue-900">
+              <CheckCircle2 size={17} className="mt-0.5 shrink-0 text-blue-600" />
+              {rule}
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Formulario de nuevo pago */}

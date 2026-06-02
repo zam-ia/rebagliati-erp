@@ -8,6 +8,7 @@ import {
   Clock,
   DollarSign,
   Eye,
+  FileText,
   Megaphone,
   Radio,
   Target,
@@ -15,6 +16,7 @@ import {
   Users,
 } from 'lucide-react';
 import { formatPEN, pctOf, sumBy } from '../../lib/finance';
+import { DRIVE_EVENT_SAMPLES, DRIVE_FILES, DRIVE_FORMULAS, buildDriveMetrics } from '../../lib/driveInsights';
 
 const campaigns = [
   { name: 'Lanzamiento Podologia', leads: 320, sales: 40, spend: 3000, revenue: 12600, status: 'Activa' },
@@ -76,6 +78,11 @@ export default function DashboardMarketing() {
   const conversion = pctOf(totalSales, totalLeads, 1);
   const cpl = totalLeads > 0 ? totalSpend / totalLeads : 0;
   const cpa = totalSales > 0 ? totalSpend / totalSales : 0;
+  const driveMetrics = buildDriveMetrics();
+  const marketingDriveFiles = DRIVE_FILES.filter((item) => item.area.includes('Marketing'));
+  const marketingFormulas = DRIVE_FORMULAS.filter((item) =>
+    ['Conversion por evento', 'Incremento por estrategia', 'SLA de lead reasignado'].includes(item.name),
+  );
   const funnel = [
     { stage: 'Leads', value: totalLeads },
     { stage: 'Contactados', value: 800 },
@@ -113,6 +120,83 @@ export default function DashboardMarketing() {
         <Kpi icon={TrendingUp} label="Inversion" value={formatPEN(totalSpend)} tone="amber" />
         <Kpi icon={BarChart3} label="ROI" value={`${roi}%`} tone={roi >= 250 ? 'green' : 'amber'} sub={`CPL ${formatPEN(cpl)}`} />
         <Kpi icon={Target} label="CPA" value={formatPEN(cpa)} tone="purple" sub="Costo por venta" />
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+        <div className="apple-card overflow-hidden">
+          <div className="border-b border-slate-100 p-5">
+            <h2 className="flex items-center gap-2 text-lg font-black text-slate-900">
+              <FileText size={20} className="text-blue-600" /> Drive comercial auditado
+            </h2>
+            <p className="mt-1 text-xs font-medium text-slate-500">
+              Eventos, UTMs, estrategias y plantillas descargadas quedan como mapa de importacion al ERP.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-3 p-5 md:grid-cols-4">
+            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+              <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Fuentes</p>
+              <p className="mt-2 text-2xl font-black text-slate-900">{driveMetrics.totalFiles}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+              <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Hojas</p>
+              <p className="mt-2 text-2xl font-black text-slate-900">{driveMetrics.totalSheets}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+              <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Filas</p>
+              <p className="mt-2 text-2xl font-black text-slate-900">{driveMetrics.totalRows.toLocaleString('es-PE')}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+              <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Marketing</p>
+              <p className="mt-2 text-2xl font-black text-slate-900">{driveMetrics.marketingSources}</p>
+            </div>
+          </div>
+          <div className="overflow-x-auto border-t border-slate-100">
+            <table className="erp-table">
+              <thead>
+                <tr>
+                  <th>Archivo</th>
+                  <th>Hojas</th>
+                  <th>Uso</th>
+                </tr>
+              </thead>
+              <tbody>
+                {marketingDriveFiles.map((item) => (
+                  <tr key={item.name}>
+                    <td>
+                      <p className="font-bold text-slate-900">{item.name}</p>
+                      <p className="text-[11px] text-slate-400">{item.fields.slice(0, 5).join(' / ')}</p>
+                    </td>
+                    <td className="font-black text-blue-700">{item.sheets.length}</td>
+                    <td className="max-w-lg text-xs font-medium leading-5 text-slate-500">{item.use}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="apple-card p-6">
+          <h2 className="mb-5 flex items-center gap-2 text-lg font-black text-slate-900">
+            <Target size={20} className="text-blue-600" /> Eventos y UTMs detectados
+          </h2>
+          <div className="space-y-3">
+            {DRIVE_EVENT_SAMPLES.map((item) => (
+              <div key={item.code} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-black text-slate-900">{item.code}</p>
+                    <p className="mt-1 text-xs font-medium leading-5 text-slate-500">{item.event}</p>
+                  </div>
+                  <span className="badge badge-blue">{item.month}</span>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <span className="badge badge-gray">{item.modality}</span>
+                  <span className="badge badge-amber">{item.channel}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
@@ -159,6 +243,21 @@ export default function DashboardMarketing() {
             ))}
           </div>
           <p className="mt-4 text-center text-2xl font-black text-emerald-600">ROI {roi}%</p>
+        </div>
+      </div>
+
+      <div className="apple-card p-6">
+        <h2 className="mb-5 flex items-center gap-2 text-lg font-black text-slate-900">
+          <BarChart3 size={20} className="text-blue-600" /> Formulas de marketing conectadas a ventas
+        </h2>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          {marketingFormulas.map((item) => (
+            <div key={item.name} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+              <p className="text-sm font-black text-slate-900">{item.name}</p>
+              <p className="mt-2 font-mono text-[11px] font-bold text-blue-700">{item.formula}</p>
+              <p className="mt-3 text-xs font-medium leading-5 text-slate-500">{item.action}</p>
+            </div>
+          ))}
         </div>
       </div>
 
