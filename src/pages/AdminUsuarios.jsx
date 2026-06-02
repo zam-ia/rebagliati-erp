@@ -114,6 +114,48 @@ const ACCESS_LEVEL_PRESETS = [
   },
 ];
 
+const MODULE_LABELS = {
+  ventas_dashboard: 'Resumen ventas',
+  ventas_nueva_venta: 'Nueva venta',
+  ventas_ranking: 'Ranking',
+  ventas_metas: 'Metas',
+  ventas_kommo: 'Kommo',
+  ventas_checklist: 'Checklist',
+  ventas_grupos: 'Grupos WSP',
+  ventas_promesas: 'Promesas',
+  ventas_comisiones: 'Comisiones',
+  ventas_plantillas: 'Plantillas',
+  ventas_entregables: 'Entregables',
+  ventas_accesos: 'Accesos',
+  ventas_alertas: 'Alertas',
+  ventas_importador: 'Importador',
+  ventas_administracion: 'Admin ventas',
+};
+
+const formatModuleName = (name = '') =>
+  MODULE_LABELS[name] || name
+    .replace(/^ventas_/, '')
+    .replace(/^marketing_/, '')
+    .replace(/^rrhh_/, '')
+    .replaceAll('_', ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+
+const getModuleInitials = (name = '') => {
+  const formatted = formatModuleName(name);
+  const words = formatted.split(/\s+/).filter(Boolean);
+  return words.slice(0, 2).map((word) => word[0]).join('').toUpperCase() || 'M';
+};
+
+function ModuleMark({ name, active = false }) {
+  return (
+    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-[11px] font-black ${
+      active ? 'bg-[#020873] text-white' : 'bg-slate-100 text-slate-600'
+    }`}>
+      {getModuleInitials(name)}
+    </span>
+  );
+}
+
 export default function AdminUsuarios() {
   const [usuarios, setUsuarios]              = useState([]);
   const [modulosTree, setModulosTree]        = useState([]);   // árbol de módulos
@@ -222,13 +264,13 @@ export default function AdminUsuarios() {
       const userId = data.user?.id;
       if (!userId) throw new Error('La funcion no devolvio el ID del usuario creado');
 
-      alert('✅ Usuario creado correctamente');
+      alert('Usuario creado correctamente');
       setModalNuevo(false);
       setNuevoUsuario({ email: '', password: '', confirmPassword: '', nombre: '' });
       setPermisosTreeCrear({});
       cargarDatos();
     } catch (err) {
-      alert('❌ Error al crear usuario: ' + err.message);
+      alert('Error al crear usuario: ' + err.message);
     } finally {
       setCreando(false);
     }
@@ -257,7 +299,7 @@ export default function AdminUsuarios() {
   // ── Guardar cambios de edición (Versión Blindada) ─────────────────────────
   const guardarCambios = async () => {
     if (nuevaPassword && nuevaPassword !== confirmPassword) {
-      alert('❌ Las contraseñas no coinciden');
+      alert('Las contraseñas no coinciden');
       return;
     }
     setEditando(true);
@@ -305,12 +347,12 @@ export default function AdminUsuarios() {
         if (rpcData?.status === 'error') throw new Error(rpcData.message);
       }
 
-      alert('✅ Usuario actualizado correctamente');
+      alert('Usuario actualizado correctamente');
       cerrarEditar();
       cargarDatos();
     } catch (err) {
       console.error(err);
-      alert(`❌ ${err.message}`);
+      alert(err.message);
     } finally {
       setEditando(false);
     }
@@ -480,9 +522,11 @@ export default function AdminUsuarios() {
                   Usuario
                 </th>
                 {modulosTree.map(m => (
-                  <th key={m.id} className="px-3 py-4 text-center text-[10px] font-black text-gray-400 uppercase tracking-widest min-w-[90px]">
-                    <span className="block text-lg mb-1">{m.icono}</span>
-                    {m.nombre}
+                  <th key={m.id} className="px-3 py-4 text-center text-[10px] font-black text-gray-400 uppercase tracking-widest min-w-[96px]">
+                    <div className="flex flex-col items-center gap-1.5">
+                      <ModuleMark name={m.nombre} />
+                      <span>{formatModuleName(m.nombre)}</span>
+                    </div>
                   </th>
                 ))}
                 <th className="px-6 py-4 text-right text-[11px] font-black text-gray-400 uppercase tracking-wider">
@@ -493,6 +537,7 @@ export default function AdminUsuarios() {
             <tbody className="divide-y divide-gray-50">
               {filteredUsers.map(user => {
                 const tieneCambios = permisosTemp[user.id] && Object.keys(permisosTemp[user.id]).length > 0;
+                const permisosActivos = Object.values(user.permisos || {}).filter(Boolean).length;
                 return (
                   <tr key={user.id} className="hover:bg-blue-50/30 transition-colors">
                     <td className="px-6 py-4">
@@ -503,6 +548,7 @@ export default function AdminUsuarios() {
                         <div>
                           <div className="font-bold text-gray-800 text-sm">{user.nombre}</div>
                           <div className="text-xs text-gray-400">{user.email}</div>
+                          <div className="mt-1 text-[11px] font-black text-[#020873]">{permisosActivos} permisos activos</div>
                         </div>
                       </div>
                     </td>
@@ -609,9 +655,9 @@ export default function AdminUsuarios() {
 
               <div className="border-t border-gray-100 pt-5">
                 <p className="text-sm font-bold text-[#0B1527] mb-3">Módulos accesibles:</p>
-                <div className="space-y-2 max-h-80 overflow-y-auto p-2 bg-gray-50 rounded-2xl custom-scrollbar">
+                <div className="grid grid-cols-1 gap-3 max-h-80 overflow-y-auto rounded-2xl bg-slate-50 p-3 custom-scrollbar">
                   {modulosTree.map(mod => (
-                    <div key={mod.id} className="border border-gray-100 rounded-2xl p-4 bg-white hover:border-blue-200 transition-colors">
+                    <div key={mod.id} className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm transition-colors hover:border-blue-200">
                       <label className="flex items-center gap-3 cursor-pointer">
                         <input
                           type="checkbox"
@@ -619,15 +665,19 @@ export default function AdminUsuarios() {
                           onChange={e => handleTreeChange(setPermisosTreeCrear, mod.nombre, e.target.checked)}
                           className="w-5 h-5 rounded-lg border-2 border-gray-300 text-[#185FA5] focus:ring-blue-500"
                         />
-                        <span className="font-semibold text-gray-800">{mod.icono} {mod.nombre}</span>
+                        <ModuleMark name={mod.nombre} active={permisosTreeCrear[mod.nombre]?.checked || false} />
+                        <span className="font-semibold text-gray-800">{formatModuleName(mod.nombre)}</span>
+                        <span className="ml-auto rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-slate-500">
+                          {mod.children.length ? `${mod.children.length} submodulos` : 'Modulo'}
+                        </span>
                       </label>
                       {mod.children.length > 0 && (
-                        <div className="ml-9 mt-3 space-y-1.5 border-l-2 border-gray-100 pl-5">
+                        <div className="ml-14 mt-3 grid grid-cols-1 gap-2 border-l-2 border-gray-100 pl-5">
                           {mod.children.map(child => {
                             const padChequeado = permisosTreeCrear[mod.nombre]?.checked;
                             const childChecked = padChequeado ? true : (permisosTreeCrear[mod.nombre]?.children?.[child.nombre] || false);
                             return (
-                              <label key={child.id} className="flex items-center gap-2.5 text-sm cursor-pointer">
+                              <label key={child.id} className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm cursor-pointer transition-colors hover:bg-slate-50">
                                 <input
                                   type="checkbox"
                                   checked={childChecked}
@@ -635,7 +685,7 @@ export default function AdminUsuarios() {
                                   onChange={e => handleTreeChange(setPermisosTreeCrear, mod.nombre, e.target.checked, false, child.nombre)}
                                   className="w-4 h-4 rounded border-2 border-gray-300 text-[#185FA5] disabled:opacity-50"
                                 />
-                                <span className={padChequeado ? 'text-gray-400' : 'text-gray-700'}>{child.icono} {child.nombre}</span>
+                                <span className={padChequeado ? 'text-gray-400' : 'text-gray-700'}>{formatModuleName(child.nombre)}</span>
                               </label>
                             );
                           })}
@@ -707,9 +757,24 @@ export default function AdminUsuarios() {
               {/* Módulos (árbol) */}
               <div>
                 <p className="text-sm font-bold text-[#11284e] mb-3">Módulos asignados:</p>
-                <div className="space-y-2 max-h-80 overflow-y-auto p-2 bg-gray-50 rounded-2xl custom-scrollbar">
+                <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 mb-4">
+                  <p className="mb-3 text-xs font-black uppercase tracking-wider text-blue-700">Cambiar nivel recomendado</p>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {ACCESS_LEVEL_PRESETS.map((preset) => (
+                      <button
+                        key={`editar-${preset.id}`}
+                        type="button"
+                        onClick={() => aplicarPreset(setPermisosTreeEditar, preset)}
+                        className="rounded-xl bg-white px-3 py-2 text-left text-xs font-bold text-slate-700 shadow-sm ring-1 ring-blue-100 transition hover:text-blue-700"
+                      >
+                        {preset.title}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 gap-3 max-h-80 overflow-y-auto rounded-2xl bg-slate-50 p-3 custom-scrollbar">
                   {modulosTree.map(mod => (
-                    <div key={mod.id} className="border border-gray-100 rounded-2xl p-4 bg-white hover:border-blue-200 transition-colors">
+                    <div key={mod.id} className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm transition-colors hover:border-blue-200">
                       <label className="flex items-center gap-3 cursor-pointer">
                         <input
                           type="checkbox"
@@ -717,15 +782,19 @@ export default function AdminUsuarios() {
                           onChange={e => handleTreeChange(setPermisosTreeEditar, mod.nombre, e.target.checked)}
                           className="w-5 h-5 rounded-lg border-2 border-gray-300 text-[#185FA5] focus:ring-blue-500"
                         />
-                        <span className="font-semibold text-gray-800">{mod.icono} {mod.nombre}</span>
+                        <ModuleMark name={mod.nombre} active={permisosTreeEditar[mod.nombre]?.checked || false} />
+                        <span className="font-semibold text-gray-800">{formatModuleName(mod.nombre)}</span>
+                        <span className="ml-auto rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-slate-500">
+                          {mod.children.length ? `${mod.children.length} submodulos` : 'Modulo'}
+                        </span>
                       </label>
                       {mod.children.length > 0 && (
-                        <div className="ml-9 mt-3 space-y-1.5 border-l-2 border-gray-100 pl-5">
+                        <div className="ml-14 mt-3 grid grid-cols-1 gap-2 border-l-2 border-gray-100 pl-5">
                           {mod.children.map(child => {
                             const padChequeado = permisosTreeEditar[mod.nombre]?.checked;
                             const childChecked = padChequeado ? true : (permisosTreeEditar[mod.nombre]?.children?.[child.nombre] || false);
                             return (
-                              <label key={child.id} className="flex items-center gap-2.5 text-sm cursor-pointer">
+                              <label key={child.id} className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm cursor-pointer transition-colors hover:bg-slate-50">
                                 <input
                                   type="checkbox"
                                   checked={childChecked}
@@ -733,7 +802,7 @@ export default function AdminUsuarios() {
                                   onChange={e => handleTreeChange(setPermisosTreeEditar, mod.nombre, e.target.checked, false, child.nombre)}
                                   className="w-4 h-4 rounded border-2 border-gray-300 text-[#185FA5] disabled:opacity-50"
                                 />
-                                <span className={padChequeado ? 'text-gray-400' : 'text-gray-700'}>{child.icono} {child.nombre}</span>
+                                <span className={padChequeado ? 'text-gray-400' : 'text-gray-700'}>{formatModuleName(child.nombre)}</span>
                               </label>
                             );
                           })}

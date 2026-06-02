@@ -761,9 +761,9 @@ export default function Layout({ children }) {
           </div>
 
           <div className="hidden min-w-0 flex-1 items-center md:flex">
-            <div className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl border border-blue-100 bg-gradient-to-r from-blue-50 via-white to-cyan-50 px-4 py-2 shadow-sm">
+            <div className="flex min-w-0 flex-1 items-center gap-3 px-2 py-1">
               <span className="shrink-0 text-sm font-black text-[#020873]">{getSaludo()}, {nombreUsuario}</span>
-              <span className="h-5 w-px shrink-0 bg-blue-100" />
+              <span className="h-5 w-px shrink-0 bg-slate-200" />
               <p className="min-w-0 truncate text-[15px] font-semibold text-slate-700">
                 {fraseBanner || fraseDelDia}
               </p>
