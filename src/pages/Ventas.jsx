@@ -1,11 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Activity,
   AlertTriangle,
   BarChart3,
   CheckCircle2,
+  Clock,
   ClipboardCheck,
+  FileText,
   Filter,
+  Gift,
+  KeyRound,
   MessageCircle,
   Plus,
   RefreshCw,
@@ -19,15 +23,29 @@ import { supabase } from '../lib/supabase';
 import { currentMonthRange, pctOf, todayISO, toPositiveNumber } from '../lib/finance';
 import {
   CATEGORY_LABELS,
+  COMMISSION_MODEL,
   DEMO_CHECKLIST,
   DEMO_EXECUTIVES,
   DEMO_GOALS,
   DEMO_GROUPS,
+  DEMO_INCIDENTS,
+  DEMO_KOMMO_QUEUE,
+  DEMO_MONTHLY_DELIVERABLES,
+  DEMO_PAYMENT_PROMISES,
   DEMO_SALES,
+  IMPROVEMENT_ROADMAP,
   SALES_CATEGORIES,
+  buildIncidentMetrics,
+  buildKommoMetrics,
+  buildPromiseMetrics,
   buildSalesAlerts,
   buildSalesMetrics,
   buildSalesRanking,
+  normalizeCommissionModel,
+  normalizeIncidents,
+  normalizeKommoQueue,
+  normalizeMonthlyDeliverables,
+  normalizePaymentPromises,
 } from '../lib/sales';
 
 const statusLabel = {
@@ -88,6 +106,11 @@ export default function Ventas() {
   const [goals, setGoals] = useState([]);
   const [checklists, setChecklists] = useState([]);
   const [groups, setGroups] = useState([]);
+  const [kommoQueue, setKommoQueue] = useState(DEMO_KOMMO_QUEUE);
+  const [paymentPromises, setPaymentPromises] = useState(DEMO_PAYMENT_PROMISES);
+  const [incidents, setIncidents] = useState(DEMO_INCIDENTS);
+  const [monthlyDeliverables, setMonthlyDeliverables] = useState(DEMO_MONTHLY_DELIVERABLES);
+  const [commissionModel, setCommissionModel] = useState(COMMISSION_MODEL);
   const [periodId, setPeriodId] = useState(null);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('Todas');
@@ -95,16 +118,21 @@ export default function Ventas() {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(emptyForm);
 
-  const loadDemo = () => {
+  const loadDemo = useCallback(() => {
     setUsingDemo(true);
     setSales(DEMO_SALES);
     setExecutives(DEMO_EXECUTIVES);
     setGoals(DEMO_GOALS);
     setChecklists(DEMO_CHECKLIST);
     setGroups(DEMO_GROUPS);
-  };
+    setKommoQueue(DEMO_KOMMO_QUEUE);
+    setPaymentPromises(DEMO_PAYMENT_PROMISES);
+    setIncidents(DEMO_INCIDENTS);
+    setMonthlyDeliverables(DEMO_MONTHLY_DELIVERABLES);
+    setCommissionModel(COMMISSION_MODEL);
+  }, []);
 
-  const loadSales = async () => {
+  const loadSales = useCallback(async () => {
     setLoading(true);
     const { start, end } = currentMonthRange();
 
@@ -116,6 +144,11 @@ export default function Ventas() {
         goalsResponse,
         checklistResponse,
         groupsResponse,
+        kommoResponse,
+        promisesResponse,
+        incidentsResponse,
+        deliverablesResponse,
+        commissionResponse,
       ] = await Promise.all([
         supabase.from('ventas_ejecutivos').select('*').eq('status', 'active').order('short_name'),
         supabase.from('ventas_periodos').select('*').eq('year', new Date().getFullYear()).eq('month', new Date().getMonth() + 1).maybeSingle(),
@@ -123,6 +156,11 @@ export default function Ventas() {
         supabase.from('ventas_metas').select('*'),
         supabase.from('ventas_checklists').select('*').gte('checklist_date', start).lt('checklist_date', end),
         supabase.from('ventas_grupos_whatsapp').select('*').order('members_count', { ascending: false }),
+        supabase.from('ventas_kommo_turnos').select('*').order('fecha', { ascending: false }).limit(1).maybeSingle(),
+        supabase.from('ventas_promesas_pago').select('*').order('fecha_promesa', { ascending: true }).limit(20),
+        supabase.from('ventas_incidencias').select('*').gte('fecha', start).lt('fecha', end),
+        supabase.from('ventas_entregables_mensuales').select('*').order('id', { ascending: true }),
+        supabase.from('ventas_comisiones_modelos').select('*').eq('activo', true).order('created_at', { ascending: false }).limit(1).maybeSingle(),
       ]);
 
       if (salesResponse.error || executivesResponse.error) {
@@ -146,17 +184,22 @@ export default function Ventas() {
         executive_name: realExecutives.find((exec) => exec.id === item.executive_id)?.short_name || 'Sin ejecutivo',
       })));
       setGroups(groupsResponse.data || []);
+      setKommoQueue(kommoResponse.error ? DEMO_KOMMO_QUEUE : normalizeKommoQueue(kommoResponse.data));
+      setPaymentPromises(promisesResponse.error ? DEMO_PAYMENT_PROMISES : normalizePaymentPromises(promisesResponse.data || [], realExecutives));
+      setIncidents(incidentsResponse.error ? DEMO_INCIDENTS : normalizeIncidents(incidentsResponse.data || [], realExecutives));
+      setMonthlyDeliverables(deliverablesResponse.error ? DEMO_MONTHLY_DELIVERABLES : normalizeMonthlyDeliverables(deliverablesResponse.data || []));
+      setCommissionModel(commissionResponse.error ? COMMISSION_MODEL : normalizeCommissionModel(commissionResponse.data));
     } catch (error) {
       console.error('No se pudo cargar ventas:', error);
       loadDemo();
     } finally {
       setLoading(false);
     }
-  };
+  }, [loadDemo]);
 
   useEffect(() => {
     loadSales();
-  }, []);
+  }, [loadSales]);
 
   const filteredSales = useMemo(() => {
     if (category === 'Todas') return sales;
@@ -179,6 +222,9 @@ export default function Ventas() {
     () => buildSalesAlerts(metrics, ranking, groups),
     [metrics, ranking, groups],
   );
+  const kommoMetrics = useMemo(() => buildKommoMetrics(kommoQueue), [kommoQueue]);
+  const promiseMetrics = useMemo(() => buildPromiseMetrics(paymentPromises), [paymentPromises]);
+  const incidentMetrics = useMemo(() => buildIncidentMetrics(incidents), [incidents]);
 
   const handleSave = async () => {
     const quantity = toPositiveNumber(form.quantity);
@@ -263,6 +309,13 @@ export default function Ventas() {
         <MetricCard icon={Target} label="Concentracion Top 5" value={`${metrics.topFiveConcentration}%`} sub="Riesgo si supera 60%" tone="amber" />
         <MetricCard icon={ClipboardCheck} label="Checklist promedio" value={`${metrics.checklistAverage}%`} sub={`${metrics.criticalChecklists} ejecutivos criticos`} tone={metrics.checklistAverage < 50 ? 'red' : 'green'} />
         <MetricCard icon={MessageCircle} label="Grupos sin uso" value={metrics.unusedGroups} sub={`${metrics.pendingGroups} pendientes de responsable`} tone="red" />
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard icon={MessageCircle} label="Kommo sin asignar" value={kommoMetrics.unassignedMessages} sub={`${kommoMetrics.idealDistribution} mensajes aprox. por usuario`} tone="red" />
+        <MetricCard icon={Clock} label="Tiempo perdido diario" value={`${kommoMetrics.dailyLostMinutes} min`} sub={`${kommoMetrics.monthlyLostHours} h/mes por asignacion y 2FA`} tone="amber" />
+        <MetricCard icon={KeyRound} label="Accesos criticos" value={`${kommoMetrics.kasandraAccessMinutes} min`} sub="Caso Kasandra: cambio de autenticacion sin flujo informado" tone="amber" />
+        <MetricCard icon={Target} label="Promesas en riesgo" value={promiseMetrics.reassigned} sub={`${promiseMetrics.expired} vencida(s), S/ ${promiseMetrics.amountAtRisk} en seguimiento`} tone="red" />
       </div>
 
       {showForm && (
@@ -430,6 +483,54 @@ export default function Ventas() {
         </div>
       </div>
 
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+        <div className="apple-card overflow-hidden">
+          <div className="border-b border-slate-100 p-5">
+            <h2 className="flex items-center gap-2 text-lg font-black text-slate-900">
+              <MessageCircle size={19} className="text-blue-600" /> Cola Kommo y tablero de turno
+            </h2>
+            <p className="mt-1 text-xs font-medium text-slate-500">
+              Sustituye la pizarra acrilica por control de asignacion, SLA y canales pendientes.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 gap-4 p-5 md:grid-cols-3">
+            {[
+              ['Usuarios activos', kommoMetrics.activeUsers, 'Base para distribuir automaticamente'],
+              ['Sin responder', kommoMetrics.unassignedMessages, 'No deben iniciar el dia sin responsable'],
+              ['Redes sin leer', kommoMetrics.redSocialUnread, 'Recepcion y marketing deben tener corte visible'],
+              ['Numeros WSP', kommoMetrics.whatsappNumbersAvailable, 'Inventario operativo por turno'],
+              ['SLA respuesta', `${kommoMetrics.responseLimitMinutes} min`, 'Si excede, reasignacion con trazabilidad'],
+              ['Estado', kommoMetrics.assignmentRisk, 'Automatizacion prioritaria'],
+            ].map(([label, value, detail]) => (
+              <div key={label} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-400">{label}</p>
+                <p className="mt-2 text-2xl font-black text-slate-900">{value}</p>
+                <p className="mt-2 text-xs font-medium leading-5 text-slate-500">{detail}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="apple-card p-5">
+          <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
+            <FileText size={19} className="text-blue-600" /> Entregables mensuales
+          </h2>
+          <div className="space-y-3">
+            {monthlyDeliverables.map((item) => (
+              <div key={item.name} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-bold text-slate-900">{item.name}</p>
+                    <p className="mt-1 text-xs text-slate-500">{item.owner} - {item.window}</p>
+                  </div>
+                  <span className="badge badge-blue">{item.status}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <div className="apple-card p-5">
           <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
@@ -496,6 +597,106 @@ export default function Ventas() {
               </tbody>
             </table>
           </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <div className="apple-card overflow-hidden">
+          <div className="border-b border-slate-100 p-5">
+            <h2 className="flex items-center gap-2 text-lg font-black text-slate-900">
+              <Clock size={19} className="text-blue-600" /> Promesas de pago y propiedad de comision
+            </h2>
+            <p className="mt-1 text-xs font-medium text-slate-500">
+              Evita mezclar comisiones cuando una base se reasigna por demora.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="erp-table">
+              <thead>
+                <tr>
+                  <th>Lead</th>
+                  <th>Original</th>
+                  <th>Actual</th>
+                  <th>Promesa</th>
+                  <th>Riesgo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paymentPromises.map((item) => (
+                  <tr key={item.id}>
+                    <td>
+                      <p className="font-bold text-slate-900">{item.lead}</p>
+                      <p className="text-[11px] text-slate-400">S/ {item.amount}</p>
+                    </td>
+                    <td>{item.originalExecutive}</td>
+                    <td>{item.currentExecutive}</td>
+                    <td>
+                      <span className={`badge ${item.status === 'vencida' ? 'badge-red' : item.status === 'por_vencer' ? 'badge-amber' : 'badge-green'}`}>
+                        {item.status.replace('_', ' ')}
+                      </span>
+                    </td>
+                    <td className="text-xs font-medium text-slate-500">{item.risk}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="apple-card p-5">
+          <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
+            <Gift size={19} className="text-blue-600" /> Comisiones e incidencias
+          </h2>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+              <p className="text-[11px] font-black uppercase tracking-wider text-slate-400">Meta</p>
+              <p className="mt-2 text-2xl font-black text-slate-900">{commissionModel.monthlyGoal}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+              <p className="text-[11px] font-black uppercase tracking-wider text-slate-400">Incidencias</p>
+              <p className="mt-2 text-2xl font-black text-slate-900">{incidentMetrics.totalIncidents}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+              <p className="text-[11px] font-black uppercase tracking-wider text-slate-400">Ajuste sugerido</p>
+              <p className="mt-2 text-2xl font-black text-emerald-600">-{incidentMetrics.currentDiscount - incidentMetrics.suggestedDiscount}</p>
+            </div>
+          </div>
+
+          <div className="mt-4 space-y-3">
+            {commissionModel.weights.map((item) => (
+              <div key={item.category} className="flex items-center justify-between rounded-2xl border border-slate-100 bg-white p-4">
+                <div>
+                  <p className="text-sm font-bold text-slate-900">{item.category}</p>
+                  <p className="text-xs text-slate-500">Mix meta {item.mix}%</p>
+                </div>
+                <span className="text-lg font-black text-slate-900">S/ {item.unit}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50 p-4">
+            <p className="text-xs font-black uppercase tracking-wider text-blue-700">Beneficios no monetarios</p>
+            <ul className="mt-3 space-y-2 text-sm font-medium text-blue-900">
+              {commissionModel.benefits.map((item) => <li key={item}>- {item}</li>)}
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div className="apple-card p-5">
+        <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
+          <Target size={19} className="text-blue-600" /> Plan de mejora del area
+        </h2>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          {IMPROVEMENT_ROADMAP.map((phase) => (
+            <div key={phase.phase} className="rounded-2xl border border-slate-100 bg-slate-50 p-5">
+              <span className="badge badge-navy">{phase.phase}</span>
+              <h3 className="mt-3 text-lg font-black text-slate-900">{phase.title}</h3>
+              <ul className="mt-3 space-y-2 text-sm font-medium leading-5 text-slate-600">
+                {phase.actions.map((action) => <li key={action}>- {action}</li>)}
+              </ul>
+            </div>
+          ))}
         </div>
       </div>
 

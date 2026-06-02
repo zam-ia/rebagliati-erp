@@ -62,6 +62,175 @@ export const DEMO_GROUPS = [
   { id: 4, name: 'Farmacologia aplicada', members_count: 96, status: 'archivado', executive_name: 'Carlos R.', career: 'Farmacia' },
 ];
 
+export const DEMO_KOMMO_QUEUE = {
+  unassignedMessages: 204,
+  activeUsers: 6,
+  manualAssignmentMinutes: 15,
+  twoFactorMinutes: 25,
+  kasandraAccessMinutes: 45,
+  responseLimitMinutes: 10,
+  redSocialUnread: 37,
+  whatsappNumbersAvailable: 8,
+};
+
+export const DEMO_PAYMENT_PROMISES = [
+  { id: 1, lead: 'Rosa Garcia', executive: 'Maria F.', originalExecutive: 'Maria F.', currentExecutive: 'Carlos R.', promisedAt: '2026-06-03', amount: 420, status: 'por_vencer', risk: 'Comision compartida por reasignacion' },
+  { id: 2, lead: 'Carlos Mendoza', executive: 'Andrea P.', originalExecutive: 'Andrea P.', currentExecutive: 'Andrea P.', promisedAt: '2026-06-05', amount: 620, status: 'vigente', risk: 'Seguimiento dentro de SLA' },
+  { id: 3, lead: 'Milagros Torres', executive: 'Luis G.', originalExecutive: 'Luis G.', currentExecutive: 'Rosa M.', promisedAt: '2026-06-01', amount: 310, status: 'vencida', risk: 'Definir propiedad de venta' },
+];
+
+export const DEMO_INCIDENTS = [
+  { executive: 'Maria F.', seniority: 'Antiguo', incidents: 2, baseDiscount: 12, suggestedDiscount: 8 },
+  { executive: 'Carlos R.', seniority: 'Nuevo', incidents: 6, baseDiscount: 36, suggestedDiscount: 18 },
+  { executive: 'Andrea P.', seniority: 'Nuevo', incidents: 4, baseDiscount: 24, suggestedDiscount: 12 },
+  { executive: 'Luis G.', seniority: 'Antiguo', incidents: 1, baseDiscount: 6, suggestedDiscount: 6 },
+  { executive: 'Rosa M.', seniority: 'Nuevo', incidents: 7, baseDiscount: 42, suggestedDiscount: 21 },
+];
+
+export const DEMO_MONTHLY_DELIVERABLES = [
+  { name: 'Cuadro de seguimiento de llamadas', owner: 'Renato', window: 'Dia 1 al 4', status: 'Pendiente automatizar' },
+  { name: 'Ranking de ventas', owner: 'Renato', window: 'Dia 1 al 4', status: 'Integrado en ERP' },
+  { name: 'Direccional de UTMs', owner: 'Marketing', window: 'Dia 1 al 4', status: 'Requiere fuente Google Sheet' },
+  { name: 'Plantillas de automatizacion', owner: 'Ventas', window: 'Dia 1 al 4', status: 'Versionar y aprobar' },
+  { name: 'Plantillas informativas', owner: 'Ventas', window: 'Dia 1 al 4', status: 'Versionar y aprobar' },
+];
+
+export const IMPROVEMENT_ROADMAP = [
+  {
+    phase: '0-7 dias',
+    title: 'Control operativo inmediato',
+    actions: ['Cola Kommo con responsables', 'SLA de 10 minutos visible', 'Tablero de turno digital', 'Bitacora de accesos 2FA'],
+  },
+  {
+    phase: '8-21 dias',
+    title: 'Automatizacion y trazabilidad',
+    actions: ['Reglas de asignacion automatica', 'Promesas de pago con propietario', 'Versionado de plantillas', 'Incidencias y comisiones justas'],
+  },
+  {
+    phase: '22-45 dias',
+    title: 'Inteligencia comercial',
+    actions: ['Historico por evento/producto', 'Ranking ponderado C/CM/D', 'UTMs conectadas', 'Recomendador de eventos ganadores'],
+  },
+];
+
+export const COMMISSION_MODEL = {
+  monthlyGoal: 180,
+  weights: [
+    { category: 'Diplomados / intensivos', unit: 6, mix: 50 },
+    { category: 'Cursos modulares', unit: 2, mix: 15 },
+    { category: 'Cursos', unit: 1, mix: 35 },
+  ],
+  benefits: [
+    'Vale de consumo por cumplimiento sostenido',
+    'Medio dia libre por cero incidencias criticas',
+    'Prioridad en bases ganadoras para quien cumple SLA',
+    'Reconocimiento interno por mejora mensual',
+  ],
+};
+
+export const buildKommoMetrics = (queue = DEMO_KOMMO_QUEUE) => {
+  const idealDistribution = queue.activeUsers > 0 ? Math.ceil(queue.unassignedMessages / queue.activeUsers) : 0;
+  const dailyLostMinutes = queue.manualAssignmentMinutes + queue.twoFactorMinutes;
+  return {
+    ...queue,
+    idealDistribution,
+    dailyLostMinutes,
+    monthlyLostHours: Number(((dailyLostMinutes * 22) / 60).toFixed(1)),
+    assignmentRisk: queue.unassignedMessages > 0 ? 'Asignacion manual critica' : 'Cola controlada',
+  };
+};
+
+export const buildPromiseMetrics = (promises = DEMO_PAYMENT_PROMISES) => ({
+  total: promises.length,
+  expired: promises.filter((item) => item.status === 'vencida').length,
+  reassigned: promises.filter((item) => item.originalExecutive !== item.currentExecutive).length,
+  amountAtRisk: sumBy(promises.filter((item) => item.status !== 'vigente'), (item) => item.amount),
+});
+
+export const buildIncidentMetrics = (incidents = DEMO_INCIDENTS) => ({
+  totalIncidents: sumBy(incidents, (item) => item.incidents),
+  currentDiscount: sumBy(incidents, (item) => item.baseDiscount),
+  suggestedDiscount: sumBy(incidents, (item) => item.suggestedDiscount),
+  newExecutivesIncidents: sumBy(incidents.filter((item) => item.seniority === 'Nuevo'), (item) => item.incidents),
+});
+
+export const normalizeKommoQueue = (row) => {
+  if (!row) return DEMO_KOMMO_QUEUE;
+
+  return {
+    unassignedMessages: toNumber(row.mensajes_sin_asignar),
+    activeUsers: toNumber(row.usuarios_activos),
+    manualAssignmentMinutes: toNumber(row.minutos_asignacion_manual),
+    twoFactorMinutes: toNumber(row.minutos_2fa),
+    kasandraAccessMinutes: toNumber(row.minutos_acceso_critico || row.minutos_2fa),
+    responseLimitMinutes: toNumber(row.sla_minutos || 10),
+    redSocialUnread: toNumber(row.mensajes_redes_sin_leer),
+    whatsappNumbersAvailable: toNumber(row.whatsapp_disponibles),
+  };
+};
+
+export const normalizePaymentPromises = (rows = [], executives = []) => {
+  if (!rows.length) return DEMO_PAYMENT_PROMISES;
+
+  const executiveMap = new Map(executives.map((item) => [String(item.id), item.short_name || item.full_name]));
+
+  return rows.map((row) => ({
+    id: row.id,
+    lead: row.lead_nombre,
+    executive: executiveMap.get(String(row.executive_actual_id)) || 'Sin ejecutivo',
+    originalExecutive: executiveMap.get(String(row.executive_original_id)) || 'Sin ejecutivo',
+    currentExecutive: executiveMap.get(String(row.executive_actual_id)) || 'Sin ejecutivo',
+    promisedAt: row.fecha_promesa,
+    amount: toNumber(row.monto),
+    status: row.estado,
+    risk: row.motivo_reasignacion || row.regla_comision || 'Seguimiento activo',
+  }));
+};
+
+export const normalizeIncidents = (rows = [], executives = []) => {
+  if (!rows.length) return DEMO_INCIDENTS;
+
+  const executiveMap = new Map(executives.map((item) => [String(item.id), item]));
+
+  return rows.map((row) => {
+    const executive = executiveMap.get(String(row.executive_id));
+    return {
+      executive: executive?.short_name || executive?.full_name || 'Sin ejecutivo',
+      seniority: executive?.seniority || executive?.antiguedad || 'Nuevo',
+      incidents: 1,
+      baseDiscount: toNumber(row.descuento_actual),
+      suggestedDiscount: toNumber(row.descuento_sugerido),
+    };
+  });
+};
+
+export const normalizeMonthlyDeliverables = (rows = []) => {
+  if (!rows.length) return DEMO_MONTHLY_DELIVERABLES;
+
+  return rows.map((row) => ({
+    name: row.nombre,
+    owner: row.responsable || 'Sin responsable',
+    window: row.ventana || 'Dia 1 al 4',
+    status: row.estado || 'pendiente',
+  }));
+};
+
+export const normalizeCommissionModel = (row) => {
+  if (!row) return COMMISSION_MODEL;
+
+  return {
+    monthlyGoal: toNumber(row.meta_total),
+    weights: [
+      { category: 'Diplomados / intensivos', unit: toNumber(row.diplomado_unit), mix: toNumber(row.mix_diplomado) },
+      { category: 'Cursos modulares', unit: toNumber(row.curso_modular_unit), mix: toNumber(row.mix_curso_modular) },
+      { category: 'Cursos', unit: toNumber(row.curso_unit), mix: toNumber(row.mix_curso) },
+    ],
+    benefits: Array.isArray(row.beneficios_json) && row.beneficios_json.length
+      ? row.beneficios_json
+      : COMMISSION_MODEL.benefits,
+  };
+};
+
 export const buildSalesRanking = (sales = [], executives = [], goals = []) => {
   const executiveMap = new Map(executives.map((item) => [String(item.id), item]));
   const goalMap = new Map(goals.map((item) => [String(item.executive_id), item]));
