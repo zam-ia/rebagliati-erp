@@ -134,6 +134,30 @@ const newExecutiveInitial = {
   turno: 'mixto',
 };
 
+const emptyLeadSourceForm = {
+  nombre: '',
+  evento_codigo: '',
+  evento_nombre: '',
+  form_url: '',
+  sheet_url: '',
+  sheet_gid: '',
+  canal_default: 'Google Forms',
+  origen_default: 'FORMULARIO',
+  asignacion_modo: 'manual',
+};
+
+const LEAD_PHASES = ['LEAD NUEVO', '1° CONTACTO', '2° CONTACTO', '3° CONTACTO', '4° CONTACTO', 'PROMESA DE PAGO'];
+const LEAD_CLOSURES = ['ACTIVO', 'GANADO', 'PERDIDO'];
+
+const createWebhookSecret = () => {
+  if (globalThis.crypto?.getRandomValues) {
+    const bytes = new Uint8Array(18);
+    globalThis.crypto.getRandomValues(bytes);
+    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  }
+  return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+};
+
 const makeShortName = (value = '') => {
   const parts = value.trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return '';
@@ -373,7 +397,12 @@ export default function Ventas() {
   const [hrPeople, setHrPeople] = useState([]);
   const [currentUserIsAdmin, setCurrentUserIsAdmin] = useState(false);
   const [auditLogs, setAuditLogs] = useState([]);
+  const [leadSources, setLeadSources] = useState([]);
+  const [leadRows, setLeadRows] = useState([]);
+  const [savingLeadSource, setSavingLeadSource] = useState(false);
+  const [leadSourceForm, setLeadSourceForm] = useState(emptyLeadSourceForm);
   const [newExecutive, setNewExecutive] = useState(newExecutiveInitial);
+  const formWebhookUrl = `${import.meta.env.VITE_SUPABASE_URL || ''}/functions/v1/google-form-leads`;
 
   const goToModule = useCallback((moduleId) => {
     const target = SALES_SUBMODULES.find((item) => item.id === moduleId);
@@ -392,6 +421,8 @@ export default function Ventas() {
     setIncidents(DEMO_INCIDENTS);
     setMonthlyDeliverables(DEMO_MONTHLY_DELIVERABLES);
     setCommissionModel(COMMISSION_MODEL);
+    setLeadSources([]);
+    setLeadRows([]);
   }, []);
 
   const loadSales = useCallback(async () => {
@@ -414,6 +445,8 @@ export default function Ventas() {
         employeesResponse,
         contractorsResponse,
         auditResponse,
+        leadSourcesResponse,
+        leadsResponse,
       ] = await Promise.all([
         supabase.from('ventas_ejecutivos').select('*').eq('status', 'active').order('short_name'),
         supabase.from('ventas_periodos').select('*').eq('year', new Date().getFullYear()).eq('month', new Date().getMonth() + 1).maybeSingle(),
@@ -429,10 +462,14 @@ export default function Ventas() {
         supabase.from('empleados').select('id,nombre,apellido,cargo,area,telefono,correo,estado').order('apellido'),
         supabase.from('locadores').select('id,nombre,apellido,modalidad,area,telefono,correo,estado').eq('estado', 'activo').order('apellido'),
         supabase.from('ventas_auditoria').select('*').order('created_at', { ascending: false }).limit(25),
+        supabase.from('ventas_formularios_google').select('*').order('created_at', { ascending: false }),
+        supabase.from('ventas_leads').select('*, ventas_ejecutivos(short_name, full_name)').order('created_at', { ascending: false }).limit(80),
       ]);
 
       setHrPeople(normalizeHrPeople(employeesResponse.data || [], contractorsResponse.data || []));
       setAuditLogs(auditResponse.error ? [] : (auditResponse.data || []));
+      setLeadSources(leadSourcesResponse.error ? [] : (leadSourcesResponse.data || []));
+      setLeadRows(leadsResponse.error ? [] : (leadsResponse.data || []));
 
       if (salesResponse.error || executivesResponse.error) {
         loadDemo();
@@ -572,6 +609,13 @@ export default function Ventas() {
     ? `Top 5 concentra ${metrics.topFiveConcentration}%`
     : 'Sin riesgo critico');
   const projection = Math.round(metrics.total + dailyRequired * 8);
+  const leadStats = useMemo(() => ({
+    total: leadRows.length,
+    active: leadRows.filter((lead) => lead.cierre === 'ACTIVO').length,
+    won: leadRows.filter((lead) => lead.cierre === 'GANADO').length,
+    lost: leadRows.filter((lead) => lead.cierre === 'PERDIDO').length,
+    pendingContact: leadRows.filter((lead) => !lead.fecha_contacto).length,
+  }), [leadRows]);
   const selectedHrPerson = useMemo(
     () => hrPeople.find((person) => person.key === newExecutive.hrPersonKey),
     [hrPeople, newExecutive.hrPersonKey],
@@ -724,6 +768,67 @@ export default function Ventas() {
     });
     setNewExecutive(newExecutiveInitial);
     loadSales();
+  };
+
+  const handleCreateLeadSource = async () => {
+    const sourceName = leadSourceForm.nombre.trim();
+    if (!sourceName) {
+      alert('Ingresa un nombre para la fuente.');
+      return;
+    }
+
+    if (!leadSourceForm.form_url.trim() && !leadSourceForm.sheet_url.trim()) {
+      alert('Agrega el enlace del formulario o de la hoja de respuestas.');
+      return;
+    }
+
+    const payload = {
+      ...leadSourceForm,
+      nombre: sourceName,
+      evento_codigo: leadSourceForm.evento_codigo.trim() || null,
+      evento_nombre: leadSourceForm.evento_nombre.trim() || null,
+      form_url: leadSourceForm.form_url.trim() || null,
+      sheet_url: leadSourceForm.sheet_url.trim() || null,
+      sheet_gid: leadSourceForm.sheet_gid.trim() || null,
+      canal_default: leadSourceForm.canal_default.trim() || 'Google Forms',
+      origen_default: leadSourceForm.origen_default.trim() || 'FORMULARIO',
+      webhook_secret: createWebhookSecret(),
+      estado: 'activo',
+    };
+
+    setSavingLeadSource(true);
+    const { data, error } = await supabase.from('ventas_formularios_google').insert(payload).select('*').single();
+    setSavingLeadSource(false);
+
+    if (error) {
+      alert(`No se pudo guardar la fuente: ${error.message}`);
+      return;
+    }
+
+    setLeadSources((current) => [data, ...current]);
+    setLeadSourceForm(emptyLeadSourceForm);
+    await logSalesAction({
+      action: 'crear_fuente_formulario',
+      entityType: 'ventas_formularios_google',
+      entityId: data.id,
+      detail: `Fuente Google Forms creada: ${data.nombre}`,
+      afterData: data,
+    });
+  };
+
+  const handleUpdateLead = async (leadId, patch) => {
+    const updatedAt = new Date().toISOString();
+    setLeadRows((current) => current.map((lead) => (lead.id === leadId ? { ...lead, ...patch, updated_at: updatedAt } : lead)));
+
+    const { error } = await supabase
+      .from('ventas_leads')
+      .update({ ...patch, updated_at: updatedAt })
+      .eq('id', leadId);
+
+    if (error) {
+      alert(`No se pudo actualizar el lead: ${error.message}`);
+      loadSales();
+    }
   };
 
   const handleSave = async () => {
@@ -1173,6 +1278,111 @@ export default function Ventas() {
         </div>}
       </div>}
 
+      {shouldShow('kommo') && (
+        <div className="apple-card overflow-hidden">
+          <div className="flex flex-col gap-3 border-b border-slate-100 p-5 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h2 className="flex items-center gap-2 text-lg font-black text-slate-900">
+                <Database size={19} className="text-blue-600" /> Leads desde formularios
+              </h2>
+              <p className="mt-1 text-xs font-medium text-slate-500">
+                Bandeja alimentada por Google Forms, campañas WSP y cargas manuales por evento.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-right sm:grid-cols-4">
+              {[
+                ['Total', leadStats.total],
+                ['Activos', leadStats.active],
+                ['Ganados', leadStats.won],
+                ['Sin contacto', leadStats.pendingContact],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-2xl bg-slate-50 px-3 py-2">
+                  <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">{label}</p>
+                  <p className="text-lg font-black text-slate-900">{value}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="erp-table min-w-[1180px]">
+              <thead>
+                <tr>
+                  <th>Lead</th>
+                  <th>Contacto</th>
+                  <th>Evento</th>
+                  <th>Origen</th>
+                  <th>Fase</th>
+                  <th>Observacion</th>
+                  <th>Cierre</th>
+                  <th>Fecha contacto</th>
+                </tr>
+              </thead>
+              <tbody>
+                {leadRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="py-8 text-center text-sm font-medium text-slate-400">
+                      Aun no hay leads sincronizados. Registra una fuente en Configuracion y conecta el webhook.
+                    </td>
+                  </tr>
+                ) : leadRows.map((lead) => (
+                  <tr key={lead.id}>
+                    <td>
+                      <p className="font-bold text-slate-900">{lead.nombre || 'Sin nombre'}</p>
+                      <p className="text-[11px] text-slate-400">{lead.profesion || lead.departamento || 'Sin detalle'}</p>
+                    </td>
+                    <td>
+                      <p className="font-semibold text-slate-700">{lead.telefono || '-'}</p>
+                      <p className="text-[11px] text-slate-400">{lead.correo || '-'}</p>
+                    </td>
+                    <td>
+                      <p className="font-semibold text-slate-700">{lead.evento_codigo || '-'}</p>
+                      <p className="max-w-[220px] truncate text-[11px] text-slate-400">{lead.evento_nombre || '-'}</p>
+                    </td>
+                    <td><span className="badge badge-blue">{lead.origen || lead.canal || 'FORMULARIO'}</span></td>
+                    <td>
+                      <select
+                        className="erp-input min-w-[150px]"
+                        value={lead.fase || 'LEAD NUEVO'}
+                        onChange={(event) => handleUpdateLead(lead.id, { fase: event.target.value })}
+                      >
+                        {LEAD_PHASES.map((phase) => <option key={phase}>{phase}</option>)}
+                      </select>
+                    </td>
+                    <td>
+                      <input
+                        className="erp-input min-w-[220px]"
+                        value={lead.observacion || ''}
+                        onChange={(event) => setLeadRows((current) => current.map((item) => (item.id === lead.id ? { ...item, observacion: event.target.value } : item)))}
+                        onBlur={(event) => handleUpdateLead(lead.id, { observacion: event.target.value })}
+                        placeholder="Observacion comercial"
+                      />
+                    </td>
+                    <td>
+                      <select
+                        className="erp-input min-w-[120px]"
+                        value={lead.cierre || 'ACTIVO'}
+                        onChange={(event) => handleUpdateLead(lead.id, { cierre: event.target.value })}
+                      >
+                        {LEAD_CLOSURES.map((closure) => <option key={closure}>{closure}</option>)}
+                      </select>
+                    </td>
+                    <td>
+                      <input
+                        className="erp-input min-w-[150px]"
+                        type="date"
+                        value={lead.fecha_contacto || ''}
+                        onChange={(event) => handleUpdateLead(lead.id, { fecha_contacto: event.target.value || null })}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {shouldShow('importador') && <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.2fr_0.8fr]">
         <div className="apple-card overflow-hidden">
           <div className="border-b border-slate-100 p-5">
@@ -1579,6 +1789,90 @@ export default function Ventas() {
 
       {shouldShow('administracion') && (
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <div className="apple-card p-5">
+            <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
+              <Database size={19} className="text-blue-600" /> Fuentes Google Forms
+            </h2>
+            <div className="mb-5 rounded-2xl border border-blue-100 bg-blue-50 p-4">
+              <p className="text-sm font-black text-blue-950">Webhook Supabase</p>
+              <p className="mt-2 break-all rounded-xl bg-white px-3 py-2 font-mono text-[11px] font-semibold text-blue-900">
+                {formWebhookUrl || 'Configura VITE_SUPABASE_URL para generar el endpoint'}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <label className="space-y-1.5">
+                <span className="erp-label">Nombre de fuente</span>
+                <input className="erp-input" value={leadSourceForm.nombre} onChange={(event) => setLeadSourceForm({ ...leadSourceForm, nombre: event.target.value })} placeholder="Sondas nasogastricas - Junio" />
+              </label>
+              <label className="space-y-1.5">
+                <span className="erp-label">Codigo evento</span>
+                <input className="erp-input" value={leadSourceForm.evento_codigo} onChange={(event) => setLeadSourceForm({ ...leadSourceForm, evento_codigo: event.target.value })} placeholder="CI.COLOCACIONSONDAS-0626" />
+              </label>
+              <label className="space-y-1.5 md:col-span-2">
+                <span className="erp-label">Evento / curso / diplomado</span>
+                <input className="erp-input" value={leadSourceForm.evento_nombre} onChange={(event) => setLeadSourceForm({ ...leadSourceForm, evento_nombre: event.target.value })} placeholder="Taller intensivo colocacion de sondas" />
+              </label>
+              <label className="space-y-1.5 md:col-span-2">
+                <span className="erp-label">Enlace Google Form</span>
+                <input className="erp-input" value={leadSourceForm.form_url} onChange={(event) => setLeadSourceForm({ ...leadSourceForm, form_url: event.target.value })} placeholder="https://docs.google.com/forms/..." />
+              </label>
+              <label className="space-y-1.5 md:col-span-2">
+                <span className="erp-label">Hoja de respuestas</span>
+                <input className="erp-input" value={leadSourceForm.sheet_url} onChange={(event) => setLeadSourceForm({ ...leadSourceForm, sheet_url: event.target.value })} placeholder="https://docs.google.com/spreadsheets/..." />
+              </label>
+              <label className="space-y-1.5">
+                <span className="erp-label">GID hoja</span>
+                <input className="erp-input" value={leadSourceForm.sheet_gid} onChange={(event) => setLeadSourceForm({ ...leadSourceForm, sheet_gid: event.target.value })} placeholder="0" />
+              </label>
+              <label className="space-y-1.5">
+                <span className="erp-label">Asignacion</span>
+                <select className="erp-input" value={leadSourceForm.asignacion_modo} onChange={(event) => setLeadSourceForm({ ...leadSourceForm, asignacion_modo: event.target.value })}>
+                  <option value="manual">Manual</option>
+                  <option value="round_robin">Round robin</option>
+                  <option value="por_turno">Por turno</option>
+                </select>
+              </label>
+              <label className="space-y-1.5">
+                <span className="erp-label">Canal por defecto</span>
+                <input className="erp-input" value={leadSourceForm.canal_default} onChange={(event) => setLeadSourceForm({ ...leadSourceForm, canal_default: event.target.value })} />
+              </label>
+              <label className="space-y-1.5">
+                <span className="erp-label">Origen por defecto</span>
+                <input className="erp-input" value={leadSourceForm.origen_default} onChange={(event) => setLeadSourceForm({ ...leadSourceForm, origen_default: event.target.value })} />
+              </label>
+              <div className="md:col-span-2">
+                <button onClick={handleCreateLeadSource} disabled={savingLeadSource} className="btn-apple-primary w-full justify-center">
+                  <Save size={16} /> {savingLeadSource ? 'Guardando...' : 'Guardar fuente de leads'}
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-5 overflow-hidden rounded-2xl border border-slate-100">
+              <div className="border-b border-slate-100 px-4 py-3">
+                <p className="text-sm font-black text-slate-900">Fuentes registradas</p>
+              </div>
+              <div className="max-h-64 overflow-y-auto custom-scrollbar">
+                {leadSources.length === 0 ? (
+                  <p className="p-4 text-sm font-medium text-slate-500">Aun no hay fuentes Google Forms registradas.</p>
+                ) : leadSources.map((source) => (
+                  <div key={source.id} className="border-b border-slate-50 px-4 py-3 last:border-b-0">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-black text-slate-900">{source.nombre}</p>
+                        <p className="mt-1 text-xs font-medium text-slate-500">{source.evento_codigo || 'Sin codigo'} - {source.origen_default}</p>
+                      </div>
+                      <span className={`badge ${source.estado === 'activo' ? 'badge-green' : source.estado === 'error' ? 'badge-red' : 'badge-amber'}`}>{source.estado}</span>
+                    </div>
+                    <p className="mt-2 break-all rounded-xl bg-slate-50 px-3 py-2 font-mono text-[11px] font-semibold text-slate-500">
+                      source_id: {source.id} | api_key: {source.webhook_secret || 'sin secreto'}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
           <div className="apple-card p-5">
             <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
               <Settings size={19} className="text-blue-600" /> Administracion comercial
