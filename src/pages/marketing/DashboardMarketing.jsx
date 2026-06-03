@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { formatPEN, pctOf, sumBy } from '../../lib/finance';
 import { DRIVE_EVENT_SAMPLES, DRIVE_FILES, DRIVE_FORMULAS, buildDriveMetrics } from '../../lib/driveInsights';
+import { COMMERCIAL_REPORTS } from '../../config/reportTypes';
 
 const campaigns = [
   { name: 'Lanzamiento Podologia', leads: 320, sales: 40, spend: 3000, revenue: 12600, status: 'Activa' },
@@ -256,6 +257,21 @@ export default function DashboardMarketing() {
               <p className="text-sm font-black text-slate-900">{item.name}</p>
               <p className="mt-2 font-mono text-[11px] font-bold text-blue-700">{item.formula}</p>
               <p className="mt-3 text-xs font-medium leading-5 text-slate-500">{item.action}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="apple-card p-6">
+        <h2 className="mb-5 flex items-center gap-2 text-lg font-black text-slate-900">
+          <FileText size={20} className="text-blue-600" /> Reportes comerciales obligatorios
+        </h2>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {COMMERCIAL_REPORTS.map((report) => (
+            <div key={report.name} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+              <p className="font-black text-slate-900">{report.name}</p>
+              <p className="mt-2 text-xs font-medium text-slate-500">{report.description}</p>
+              <span className="badge badge-blue mt-3 inline-flex">{report.format}</span>
             </div>
           ))}
         </div>

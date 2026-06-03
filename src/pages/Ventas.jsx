@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
   Activity,
   AlertTriangle,
   BarChart3,
   Bell,
-  CalendarCheck,
   CheckCircle2,
   Clock,
   ClipboardCheck,
   ClipboardList,
   Database,
   DollarSign,
+  Edit2,
   FileText,
   Filter,
   Gift,
@@ -24,7 +25,9 @@ import {
   ShieldAlert,
   Target,
   Trophy,
+  Trash2,
   Upload,
+  UserPlus,
   Users,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
@@ -93,22 +96,68 @@ const emptyForm = {
 };
 
 const SALES_SUBMODULES = [
-  { id: 'resumen', label: 'Resumen ejecutivo', icon: Activity, permission: 'ventas_dashboard' },
-  { id: 'nueva-venta', label: 'Nueva venta', icon: Plus, permission: 'ventas_nueva_venta' },
-  { id: 'ranking', label: 'Ranking comercial', icon: Trophy, permission: 'ventas_ranking' },
-  { id: 'metas', label: 'Metas y proyeccion', icon: Target, permission: 'ventas_metas' },
-  { id: 'kommo', label: 'Cola Kommo', icon: MessageCircle, permission: 'ventas_kommo' },
-  { id: 'checklist', label: 'Checklist diario', icon: ClipboardCheck, permission: 'ventas_checklist' },
-  { id: 'grupos', label: 'Grupos WhatsApp', icon: Users, permission: 'ventas_grupos' },
-  { id: 'promesas', label: 'Promesas de pago', icon: Clock, permission: 'ventas_promesas' },
-  { id: 'comisiones', label: 'Comisiones e incidencias', icon: Gift, permission: 'ventas_comisiones' },
-  { id: 'plantillas', label: 'Plantillas comerciales', icon: FileText, permission: 'ventas_plantillas' },
-  { id: 'entregables', label: 'Entregables mensuales', icon: CalendarCheck, permission: 'ventas_entregables' },
-  { id: 'accesos', label: 'Accesos criticos', icon: KeyRound, permission: 'ventas_accesos' },
-  { id: 'alertas', label: 'Alertas inteligentes', icon: Bell, permission: 'ventas_alertas' },
-  { id: 'importador', label: 'Importador', icon: Upload, permission: 'ventas_importador' },
-  { id: 'administracion', label: 'Administracion', icon: Settings, permission: 'ventas_administracion' },
+  { id: 'resumen', path: 'resumen', label: 'Resumen ejecutivo', icon: Activity, permission: 'ventas_dashboard' },
+  { id: 'nueva-venta', path: 'nueva-venta', label: 'Nueva venta', icon: Plus, permission: 'ventas_nueva_venta' },
+  { id: 'ranking', path: 'ranking', label: 'Ranking comercial', icon: Trophy, permission: 'ventas_ranking' },
+  { id: 'metas', path: 'metas', label: 'Metas y proyeccion', icon: Target, permission: 'ventas_metas' },
+  { id: 'kommo', path: 'kommo', label: 'Cola Kommo', icon: MessageCircle, permission: 'ventas_kommo' },
+  { id: 'checklist', path: 'checklist', label: 'Checklist diario', icon: ClipboardCheck, permission: 'ventas_checklist' },
+  { id: 'grupos', path: 'grupos', label: 'Grupos WhatsApp', icon: Users, permission: 'ventas_grupos' },
+  { id: 'promesas', path: 'promesas', label: 'Promesas de pago', icon: Clock, permission: 'ventas_promesas' },
+  { id: 'comisiones', path: 'comisiones', label: 'Comisiones e incidencias', icon: Gift, permission: 'ventas_comisiones' },
+  { id: 'reportes', path: 'reportes', label: 'Reportes comerciales', icon: FileText, permission: 'ventas_entregables' },
+  { id: 'plantillas', path: 'plantillas', label: 'Plantillas comerciales', icon: FileText, permission: 'ventas_plantillas' },
+  { id: 'accesos', path: 'accesos', label: 'Accesos criticos', icon: KeyRound, permission: 'ventas_accesos' },
+  { id: 'alertas', path: 'alertas', label: 'Alertas inteligentes', icon: Bell, permission: 'ventas_alertas' },
+  { id: 'importador', path: 'importador', label: 'Importador', icon: Upload, permission: 'ventas_importador' },
+  { id: 'administracion', path: 'administracion', label: 'Administracion', icon: Settings, permission: 'ventas_administracion' },
 ];
+
+const newExecutiveInitial = {
+  hrPersonKey: '',
+  full_name: '',
+  short_name: '',
+  turno: 'mixto',
+};
+
+const makeShortName = (value = '') => {
+  const parts = value.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '';
+  if (parts.length === 1) return parts[0];
+  return `${parts[0]} ${parts[1][0] || ''}.`;
+};
+
+const normalizeHrPeople = (employees = [], contractors = []) => {
+  const normalize = (person, type) => {
+    const fullName = `${person.nombre || ''} ${person.apellido || ''}`.trim();
+    const role = person.cargo || person.modalidad || 'Sin cargo';
+    const area = person.area || 'Sin area';
+    return {
+      key: `${type}:${person.id}`,
+      id: person.id,
+      type,
+      sourceLabel: type === 'empleado' ? 'Planilla' : 'Complementario',
+      fullName,
+      shortName: makeShortName(fullName),
+      role,
+      area,
+      phone: person.telefono || '',
+      email: person.correo || '',
+    };
+  };
+
+  const people = [
+    ...employees.map((person) => normalize(person, 'empleado')),
+    ...contractors.map((person) => normalize(person, 'locador')),
+  ];
+
+  return people
+    .filter((person) => {
+      const searchable = `${person.fullName} ${person.role} ${person.area}`.toLowerCase();
+      return ['ventas', 'comercial', 'ejecutivo', 'asesor'].some((word) => searchable.includes(word));
+    })
+    .sort((a, b) => a.fullName.localeCompare(b.fullName));
+};
 
 const actionQueue = [
   { action: 'Asignar leads pendientes', detail: 'Kommo inicia con cola alta sin responsable.', severity: 'critical' },
@@ -120,7 +169,7 @@ const actionQueue = [
 const accessLevels = [
   { role: 'Ejecutivo comercial', scope: 'Nueva venta, checklist, promesas propias, plantillas activas', badge: 'Operativo' },
   { role: 'Supervisor / encargado', scope: 'Cola Kommo, ranking de equipo, grupos, reasignaciones y alertas', badge: 'Control' },
-  { role: 'Jefe de ventas', scope: 'Metas, comisiones, incidencias, entregables, importador y administracion comercial', badge: 'Direccion' },
+  { role: 'Jefe de ventas', scope: 'Metas, comisiones, incidencias, reportes, importador y administracion comercial', badge: 'Direccion' },
   { role: 'Gerencia', scope: 'Resumen, rentabilidad, metas, comisiones aprobadas y alertas criticas', badge: 'Lectura ejecutiva' },
   { role: 'Marketing', scope: 'UTMs, campanas, grupos, plantillas y eventos ganadores', badge: 'Lectura + fuentes' },
   { role: 'Coordinacion', scope: 'Eventos, fechas, modalidad, vacantes y estado academico', badge: 'Lectura coordinacion' },
@@ -157,6 +206,10 @@ function MetricCard({ icon: Icon, label, value, sub, tone = 'blue' }) {
 }
 
 export default function Ventas() {
+  const navigate = useNavigate();
+  const params = useParams();
+  const salesRoutePath = params['*'] || '';
+  const requestedPath = salesRoutePath.split('/')[0] || 'resumen';
   const [loading, setLoading] = useState(true);
   const [usingDemo, setUsingDemo] = useState(false);
   const [sales, setSales] = useState([]);
@@ -175,7 +228,17 @@ export default function Ventas() {
   const [activeModule, setActiveModule] = useState('resumen');
   const [allowedSalesModules, setAllowedSalesModules] = useState(SALES_SUBMODULES);
   const [saving, setSaving] = useState(false);
+  const [savingExecutive, setSavingExecutive] = useState(false);
   const [form, setForm] = useState(emptyForm);
+  const [hrPeople, setHrPeople] = useState([]);
+  const [currentUserIsAdmin, setCurrentUserIsAdmin] = useState(false);
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [newExecutive, setNewExecutive] = useState(newExecutiveInitial);
+
+  const goToModule = useCallback((moduleId) => {
+    const target = SALES_SUBMODULES.find((item) => item.id === moduleId);
+    navigate(`/ventas/${target?.path || 'resumen'}`);
+  }, [navigate]);
 
   const loadDemo = useCallback(() => {
     setUsingDemo(true);
@@ -208,6 +271,9 @@ export default function Ventas() {
         incidentsResponse,
         deliverablesResponse,
         commissionResponse,
+        employeesResponse,
+        contractorsResponse,
+        auditResponse,
       ] = await Promise.all([
         supabase.from('ventas_ejecutivos').select('*').eq('status', 'active').order('short_name'),
         supabase.from('ventas_periodos').select('*').eq('year', new Date().getFullYear()).eq('month', new Date().getMonth() + 1).maybeSingle(),
@@ -220,7 +286,13 @@ export default function Ventas() {
         supabase.from('ventas_incidencias').select('*').gte('fecha', start).lt('fecha', end),
         supabase.from('ventas_entregables_mensuales').select('*').order('id', { ascending: true }),
         supabase.from('ventas_comisiones_modelos').select('*').eq('activo', true).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+        supabase.from('empleados').select('id,nombre,apellido,cargo,area,telefono,correo,estado').order('apellido'),
+        supabase.from('locadores').select('id,nombre,apellido,modalidad,area,telefono,correo,estado').eq('estado', 'activo').order('apellido'),
+        supabase.from('ventas_auditoria').select('*').order('created_at', { ascending: false }).limit(25),
       ]);
+
+      setHrPeople(normalizeHrPeople(employeesResponse.data || [], contractorsResponse.data || []));
+      setAuditLogs(auditResponse.error ? [] : (auditResponse.data || []));
 
       if (salesResponse.error || executivesResponse.error) {
         loadDemo();
@@ -229,7 +301,18 @@ export default function Ventas() {
 
       const realExecutives = executivesResponse.data || [];
       if (realExecutives.length === 0) {
-        loadDemo();
+        setUsingDemo(false);
+        setExecutives([]);
+        setPeriodId(periodResponse.data?.id || null);
+        setSales(salesResponse.data || []);
+        setGoals(goalsResponse.data || []);
+        setChecklists([]);
+        setGroups(groupsResponse.data || []);
+        setKommoQueue(kommoResponse.error ? DEMO_KOMMO_QUEUE : normalizeKommoQueue(kommoResponse.data));
+        setPaymentPromises([]);
+        setIncidents([]);
+        setMonthlyDeliverables(deliverablesResponse.error ? DEMO_MONTHLY_DELIVERABLES : normalizeMonthlyDeliverables(deliverablesResponse.data || []));
+        setCommissionModel(commissionResponse.error ? COMMISSION_MODEL : normalizeCommissionModel(commissionResponse.data));
         return;
       }
 
@@ -263,8 +346,14 @@ export default function Ventas() {
   useEffect(() => {
     const loadModulePermissions = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user || isAdminUser(user.email)) {
+      const requestedModule = SALES_SUBMODULES.find((item) => item.path === requestedPath || item.id === requestedPath) || SALES_SUBMODULES[0];
+
+      const isAdmin = Boolean(user && isAdminUser(user.email));
+      setCurrentUserIsAdmin(isAdmin);
+      if (!user || isAdmin) {
         setAllowedSalesModules(SALES_SUBMODULES);
+        setActiveModule(requestedModule.id);
+        if (!salesRoutePath) navigate(`/ventas/${requestedModule.path}`, { replace: true });
         return;
       }
 
@@ -282,13 +371,16 @@ export default function Ventas() {
 
       const visibleModules = modules.length ? modules : SALES_SUBMODULES.slice(0, 1);
       setAllowedSalesModules(visibleModules);
-      if (!visibleModules.some((item) => item.id === activeModule)) {
+      if (visibleModules.some((item) => item.id === requestedModule.id)) {
+        setActiveModule(requestedModule.id);
+      } else {
         setActiveModule(visibleModules[0].id);
+        navigate(`/ventas/${visibleModules[0].path}`, { replace: true });
       }
     };
 
     loadModulePermissions();
-  }, [activeModule]);
+  }, [navigate, requestedPath, salesRoutePath]);
 
   const filteredSales = useMemo(() => {
     if (category === 'Todas') return sales;
@@ -317,9 +409,164 @@ export default function Ventas() {
   const promiseMetrics = useMemo(() => buildPromiseMetrics(paymentPromises), [paymentPromises]);
   const incidentMetrics = useMemo(() => buildIncidentMetrics(incidents), [incidents]);
   const shouldShow = (...ids) => ids.includes(activeModule);
+  const canCreateSale = allowedSalesModules.some((item) => item.id === 'nueva-venta');
+  const canManageSales = allowedSalesModules.some((item) => item.id === 'administracion');
   const globalGoal = useMemo(() => goals.reduce((sum, item) => sum + (Number(item.target_total) || 0), 0), [goals]);
   const globalProgress = globalGoal > 0 ? pctOf(metrics.total, globalGoal) : pctOf(metrics.total, 1800);
   const dailyRequired = Math.max(Math.ceil((globalGoal - metrics.total) / 8), 0);
+  const selectedHrPerson = useMemo(
+    () => hrPeople.find((person) => person.key === newExecutive.hrPersonKey),
+    [hrPeople, newExecutive.hrPersonKey],
+  );
+
+  const appendLocalAudit = useCallback((entry) => {
+    setAuditLogs((current) => [
+      {
+        id: `local-${Date.now()}`,
+        created_at: new Date().toISOString(),
+        module: 'ventas',
+        ...entry,
+      },
+      ...current,
+    ].slice(0, 25));
+  }, []);
+
+  const logSalesAction = useCallback(async ({ action, entityType, entityId, detail, afterData }) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    const entry = {
+      action,
+      entity_type: entityType,
+      entity_id: entityId ? String(entityId) : null,
+      detail,
+      actor_email: user?.email || 'sistema',
+      actor_id: user?.id || null,
+      after_data: afterData || null,
+    };
+
+    const { error } = await supabase.from('ventas_auditoria').insert(entry);
+    if (error) appendLocalAudit(entry);
+  }, [appendLocalAudit]);
+
+  const handleHrPersonChange = (value) => {
+    const person = hrPeople.find((item) => item.key === value);
+    setNewExecutive({
+      ...newExecutive,
+      hrPersonKey: value,
+      full_name: person?.fullName || newExecutive.full_name,
+      short_name: person?.shortName || newExecutive.short_name,
+    });
+  };
+
+  const handleEditExecutive = async (exec) => {
+    const newShortName = window.prompt('Actualiza el nombre corto del ejecutivo', exec.short_name || exec.full_name);
+    if (!newShortName) return;
+    const updatedExecutive = { ...exec, short_name: newShortName };
+
+    if (!usingDemo) {
+      const { error } = await supabase.from('ventas_ejecutivos').update({ short_name: newShortName }).eq('id', exec.id);
+      if (error) {
+        alert(`No se pudo actualizar el ejecutivo: ${error.message}`);
+        return;
+      }
+    }
+
+    setExecutives((current) => current.map((item) => (item.id === exec.id ? updatedExecutive : item)));
+    await logSalesAction({
+      action: 'editar_ejecutivo',
+      entityType: 'ventas_ejecutivos',
+      entityId: exec.id,
+      detail: `Nombre corto actualizado a ${newShortName}`,
+      afterData: updatedExecutive,
+    });
+  };
+
+  const handleRemoveExecutive = async (exec) => {
+    if (!window.confirm(`Eliminar ejecutivo ${exec.short_name || exec.full_name}?`)) return;
+    if (!usingDemo) {
+      const { error } = await supabase.from('ventas_ejecutivos').delete().eq('id', exec.id);
+      if (error) {
+        alert(`No se pudo eliminar el ejecutivo: ${error.message}`);
+        return;
+      }
+    }
+
+    setExecutives((current) => current.filter((item) => item.id !== exec.id));
+    await logSalesAction({
+      action: 'eliminar_ejecutivo',
+      entityType: 'ventas_ejecutivos',
+      entityId: exec.id,
+      detail: `Ejecutivo eliminado ${exec.short_name || exec.full_name}`,
+      afterData: exec,
+    });
+  };
+
+  const handleCreateExecutive = async () => {
+    const fullName = newExecutive.full_name.trim();
+    if (!fullName) {
+      alert('Ingresa o vincula el nombre del ejecutivo.');
+      return;
+    }
+
+    const payloadBase = {
+      full_name: fullName,
+      short_name: newExecutive.short_name.trim() || makeShortName(fullName),
+      turno: newExecutive.turno,
+      role_type: 'full_time',
+      status: 'active',
+      start_date: todayISO(),
+      phone: selectedHrPerson?.phone || null,
+    };
+
+    if (usingDemo) {
+      const localExecutive = {
+        id: `local-exec-${Date.now()}`,
+        ...payloadBase,
+        team: newExecutive.turno,
+      };
+      setExecutives((current) => [...current, localExecutive]);
+      setNewExecutive(newExecutiveInitial);
+      appendLocalAudit({
+        action: 'crear_ejecutivo',
+        entity_type: 'ventas_ejecutivos',
+        entity_id: localExecutive.id,
+        detail: `Ejecutivo creado localmente: ${payloadBase.short_name}`,
+        actor_email: 'modo demo',
+        after_data: localExecutive,
+      });
+      return;
+    }
+
+    setSavingExecutive(true);
+    const linkedPayload = selectedHrPerson ? {
+      ...payloadBase,
+      hr_person_type: selectedHrPerson.type,
+      hr_person_id: selectedHrPerson.id,
+      hr_linked_at: new Date().toISOString(),
+    } : payloadBase;
+
+    let response = await supabase.from('ventas_ejecutivos').insert(linkedPayload).select('*').single();
+    if (response.error && selectedHrPerson && /hr_person|schema cache|column/i.test(response.error.message || '')) {
+      response = await supabase.from('ventas_ejecutivos').insert(payloadBase).select('*').single();
+    }
+    setSavingExecutive(false);
+
+    if (response.error) {
+      alert(`No se pudo crear el ejecutivo: ${response.error.message}`);
+      return;
+    }
+
+    await logSalesAction({
+      action: 'crear_ejecutivo',
+      entityType: 'ventas_ejecutivos',
+      entityId: response.data?.id,
+      detail: selectedHrPerson
+        ? `Ejecutivo vinculado a RRHH: ${payloadBase.short_name} (${selectedHrPerson.sourceLabel})`
+        : `Ejecutivo creado manualmente: ${payloadBase.short_name}`,
+      afterData: response.data,
+    });
+    setNewExecutive(newExecutiveInitial);
+    loadSales();
+  };
 
   const handleSave = async () => {
     const quantity = toPositiveNumber(form.quantity);
@@ -330,22 +577,31 @@ export default function Ventas() {
 
     if (usingDemo || !periodId) {
       const executive = executives.find((item) => String(item.id) === String(form.executive_id));
+      const localSale = {
+        id: `local-${Date.now()}`,
+        ...form,
+        executive_id: form.executive_id,
+        executive_name: executive?.short_name,
+        quantity,
+      };
       setSales((current) => [
-        {
-          id: `local-${Date.now()}`,
-          ...form,
-          executive_id: form.executive_id,
-          executive_name: executive?.short_name,
-          quantity,
-        },
+        localSale,
         ...current,
       ]);
+      appendLocalAudit({
+        action: 'crear_venta',
+        entity_type: 'ventas_registros',
+        entity_id: localSale.id,
+        detail: `Venta local registrada para ${executive?.short_name || 'Sin ejecutivo'}`,
+        actor_email: usingDemo ? 'modo demo' : 'sistema',
+        after_data: localSale,
+      });
       setForm(emptyForm);
       return;
     }
 
     setSaving(true);
-    const { error } = await supabase.from('ventas_registros').insert({
+    const payload = {
       period_id: periodId,
       executive_id: Number(form.executive_id),
       sale_date: form.sale_date,
@@ -353,7 +609,9 @@ export default function Ventas() {
       quantity,
       source: form.source,
       observation: form.observation || null,
-    });
+    };
+
+    const { data, error } = await supabase.from('ventas_registros').insert(payload).select('*').single();
     setSaving(false);
 
     if (error) {
@@ -361,6 +619,13 @@ export default function Ventas() {
       return;
     }
 
+    await logSalesAction({
+      action: 'crear_venta',
+      entityType: 'ventas_registros',
+      entityId: data?.id,
+      detail: `Venta prevalidada registrada: ${quantity} ${form.category}`,
+      afterData: data || payload,
+    });
     setForm(emptyForm);
     loadSales();
   };
@@ -371,22 +636,24 @@ export default function Ventas() {
         <div className="relative z-10 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <div className="inline-flex items-center gap-2 rounded-full bg-white/70 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-blue-700 ring-1 ring-blue-100">
-              <Activity size={13} /> Ventas operativas
+              <Activity size={13} /> Dashboard de Ventas
             </div>
             <h1 className="mt-4 text-3xl font-black tracking-tight text-slate-950 md:text-5xl">
               Ventas Operativas 360°
             </h1>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
-              Control comercial por submodulos: ventas, metas, Kommo, promesas, comisiones, plantillas, alertas e importacion historica.
+              Dashboard comercial integrado con RRHH, transparencia de gestión y un único punto de control para ventas, caja, marketing y finanzas.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button onClick={loadSales} className="btn-apple-secondary">
               <RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> Actualizar
             </button>
-            <button onClick={() => setActiveModule('nueva-venta')} className="btn-apple-primary">
-              <Plus size={16} /> Nueva venta
-            </button>
+            {canCreateSale && (
+              <button onClick={() => goToModule('nueva-venta')} className="btn-apple-primary">
+                <Plus size={16} /> Nueva venta
+              </button>
+            )}
           </div>
         </div>
       </section>
@@ -397,24 +664,6 @@ export default function Ventas() {
         </div>
       )}
 
-      <div className="apple-card p-3">
-        <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar">
-          {allowedSalesModules.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              onClick={() => setActiveModule(id)}
-              className={`flex min-w-max items-center gap-2 rounded-2xl px-3.5 py-2.5 text-xs font-black transition-all ${
-                activeModule === id
-                  ? 'bg-[#020873] text-white shadow-lg shadow-blue-900/15'
-                  : 'bg-slate-50 text-slate-500 hover:bg-blue-50 hover:text-blue-700'
-              }`}
-            >
-              <Icon size={15} />
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
 
       {shouldShow('resumen') && <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard icon={Trophy} label="Ventas del periodo" value={metrics.total.toLocaleString('es-PE')} sub="Registros C + CM + D" />
@@ -429,6 +678,23 @@ export default function Ventas() {
         <MetricCard icon={Users} label="Grupos sin uso" value={metrics.unusedGroups} sub={`${metrics.pendingGroups} pendientes de responsable`} tone="red" />
         <MetricCard icon={Clock} label="Tiempo perdido diario" value={`${kommoMetrics.dailyLostMinutes} min`} sub={`${kommoMetrics.monthlyLostHours} h/mes por asignacion y 2FA`} tone="amber" />
       </div>}
+
+      {shouldShow('resumen') && (
+        <div className="apple-card p-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">Conexión RRHH</p>
+              <h3 className="mt-3 text-2xl font-black text-slate-900">{hrPeople.length} perfiles comerciales detectados</h3>
+              <p className="mt-2 text-sm text-slate-500">
+                Los ejecutivos de Ventas pueden vincularse con el directorio corporativo de RR.HH. para registrar roles y turnos reales.
+              </p>
+            </div>
+            <button onClick={() => navigate('/rrhh/directorio')} className="btn-apple-secondary inline-flex items-center gap-2">
+              <Users size={16} /> Ver directorio RRHH
+            </button>
+          </div>
+        </div>
+      )}
 
       {shouldShow('resumen') && (
         <div className="apple-card p-5">
@@ -618,7 +884,7 @@ export default function Ventas() {
         </div>
       </div>}
 
-      {(shouldShow('kommo', 'resumen') || shouldShow('entregables')) && <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+      {(shouldShow('kommo', 'resumen') || shouldShow('reportes')) && <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         {shouldShow('kommo', 'resumen') && <div className="apple-card overflow-hidden">
           <div className="border-b border-slate-100 p-5">
             <h2 className="flex items-center gap-2 text-lg font-black text-slate-900">
@@ -646,10 +912,13 @@ export default function Ventas() {
           </div>
         </div>}
 
-        {shouldShow('entregables', 'resumen') && <div className="apple-card p-5">
+        {shouldShow('reportes', 'resumen') && <div className="apple-card p-5">
           <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
-            <FileText size={19} className="text-blue-600" /> Entregables mensuales
+            <FileText size={19} className="text-blue-600" /> Reportes comerciales
           </h2>
+          <p className="mb-4 text-xs font-medium leading-5 text-slate-500">
+            Genera sustento mensual para direccion, marketing, caja y finanzas sin rehacer Excel manual.
+          </p>
           <div className="space-y-3">
             {monthlyDeliverables.map((item) => (
               <div key={item.name} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
@@ -889,22 +1158,7 @@ export default function Ventas() {
         </div>}
       </div>}
 
-      {shouldShow('administracion', 'resumen') && <div className="apple-card p-5">
-        <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
-          <Target size={19} className="text-blue-600" /> Plan de mejora del area
-        </h2>
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          {IMPROVEMENT_ROADMAP.map((phase) => (
-            <div key={phase.phase} className="rounded-2xl border border-slate-100 bg-slate-50 p-5">
-              <span className="badge badge-navy">{phase.phase}</span>
-              <h3 className="mt-3 text-lg font-black text-slate-900">{phase.title}</h3>
-              <ul className="mt-3 space-y-2 text-sm font-medium leading-5 text-slate-600">
-                {phase.actions.map((action) => <li key={action}>- {action}</li>)}
-              </ul>
-            </div>
-          ))}
-        </div>
-      </div>}
+      {/* Sección 'Plan de mejora del area' removida según solicitud */}
 
       {shouldShow('importador', 'administracion') && <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         {shouldShow('importador') && <div className="apple-card p-5">
@@ -926,19 +1180,7 @@ export default function Ventas() {
           </div>
         </div>}
 
-        {shouldShow('administracion') && <div className="apple-card p-5">
-          <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
-            <Gift size={19} className="text-blue-600" /> Reglas Caja - pagos oficiales
-          </h2>
-          <div className="space-y-3">
-            {PAYMENT_CONTROL_RULES.map((item) => (
-              <div key={item} className="flex gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm font-semibold leading-5 text-blue-900">
-                <CheckCircle2 size={17} className="mt-0.5 shrink-0 text-blue-600" />
-                {item}
-              </div>
-            ))}
-          </div>
-        </div>}
+        {/* Reglas Caja removidas del módulo según solicitud */}
       </div>}
 
       {shouldShow('metas') && (
@@ -1103,6 +1345,100 @@ export default function Ventas() {
             <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
               <Settings size={19} className="text-blue-600" /> Administracion comercial
             </h2>
+            <div className="mb-5 rounded-2xl border border-blue-100 bg-blue-50 p-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <p className="text-sm font-black text-blue-950">Ejecutivos comerciales</p>
+                  <p className="mt-1 text-xs font-medium leading-5 text-blue-800">
+                    Vincula el ejecutivo con Directorio Corporativo de RR.HH. o crea un nombre comercial temporal si todavia no existe.
+                  </p>
+                </div>
+                <span className="badge badge-blue">{executives.length} activos</span>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                <label className="space-y-1.5 md:col-span-2">
+                  <span className="erp-label">Vincular desde RR.HH. (solo perfiles comerciales)</span>
+                  <select className="erp-input" value={newExecutive.hrPersonKey} onChange={(event) => handleHrPersonChange(event.target.value)}>
+                    <option value="">Crear manual o elegir persona</option>
+                    {hrPeople.map((person) => (
+                      <option key={person.key} value={person.key}>
+                        {person.fullName} - {person.role} - {person.sourceLabel}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="space-y-1.5">
+                  <span className="erp-label">Nombre completo</span>
+                  <input className="erp-input" value={newExecutive.full_name} onChange={(event) => setNewExecutive({ ...newExecutive, full_name: event.target.value, short_name: newExecutive.short_name || makeShortName(event.target.value) })} placeholder="Nombre del ejecutivo" />
+                </label>
+                <label className="space-y-1.5">
+                  <span className="erp-label">Nombre corto</span>
+                  <input className="erp-input" value={newExecutive.short_name} onChange={(event) => setNewExecutive({ ...newExecutive, short_name: event.target.value })} placeholder="Ej: Maria F." />
+                </label>
+                <label className="space-y-1.5">
+                  <span className="erp-label">Turno</span>
+                  <select className="erp-input" value={newExecutive.turno} onChange={(event) => setNewExecutive({ ...newExecutive, turno: event.target.value })}>
+                    <option value="manana">Manana</option>
+                    <option value="tarde">Tarde</option>
+                    <option value="mixto">Mixto</option>
+                  </select>
+                </label>
+                <div className="flex items-end">
+                  <button onClick={handleCreateExecutive} disabled={savingExecutive} className="btn-apple-primary w-full justify-center">
+                    <UserPlus size={16} /> {savingExecutive ? 'Creando...' : 'Crear ejecutivo'}
+                  </button>
+                </div>
+              </div>
+
+              {hrPeople.length === 0 && (
+                <p className="mt-3 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-500">
+                  No se detectaron perfiles comerciales en RR.HH.; puedes crear el ejecutivo manualmente y vincularlo despues.
+                </p>
+              )}
+            </div>
+
+            <div className="mb-5 overflow-hidden rounded-2xl border border-slate-100 bg-white">
+              <div className="border-b border-slate-100 px-4 py-3">
+                <p className="text-sm font-black text-slate-900">Ejecutivos visibles en ventas</p>
+              </div>
+              <div className="max-h-56 overflow-y-auto custom-scrollbar">
+                {executives.length === 0 ? (
+                  <p className="p-4 text-sm font-medium text-slate-500">Aun no hay ejecutivos activos. Crea el primero desde este panel.</p>
+                ) : executives.map((exec) => (
+                  <div key={exec.id} className="flex items-center justify-between gap-3 border-b border-slate-50 px-4 py-3 last:border-b-0">
+                    <div>
+                      <p className="text-sm font-black text-slate-900">{exec.short_name || exec.full_name}</p>
+                      <p className="text-xs font-medium text-slate-500">{exec.full_name} - {exec.turno || exec.team || 'mixto'}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {canManageSales && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleEditExecutive(exec)}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-500 hover:border-blue-200 hover:text-blue-600 transition-colors"
+                            title="Editar ejecutivo"
+                          >
+                            <Edit2 size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveExecutive(exec)}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-500 hover:border-red-200 hover:text-red-600 transition-colors"
+                            title="Eliminar ejecutivo"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </>
+                      )}
+                      <span className="badge badge-green">Activo</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               {['Ejecutivos', 'Equipos y turnos', 'Metas', 'Productos/eventos', 'Canales', 'Reglas de comision', 'SLA', 'Periodos'].map((item) => (
                 <div key={item} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
@@ -1112,44 +1448,59 @@ export default function Ventas() {
               ))}
             </div>
           </div>
-          <div className="apple-card p-5">
-            <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
-              <ShieldAlert size={19} className="text-blue-600" /> Niveles de acceso
-            </h2>
-            <div className="space-y-3">
-              {accessLevels.map((item) => (
-                <div key={item.role} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="font-black text-slate-900">{item.role}</p>
-                    <span className="badge badge-blue">{item.badge}</span>
-                  </div>
-                  <p className="mt-2 text-xs font-medium leading-5 text-slate-500">{item.scope}</p>
-                </div>
-              ))}
+          {/* Niveles de acceso removidos del módulo según solicitud */}
+        </div>
+      )}
+
+      {currentUserIsAdmin && (
+        <div className="apple-card overflow-hidden">
+          <div className="flex flex-col gap-2 border-b border-slate-100 p-5 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="flex items-center gap-2 text-lg font-black text-slate-900">
+                <Clock size={19} className="text-blue-600" /> Historico de cambios comerciales
+              </h2>
+              <p className="mt-1 text-xs font-medium text-slate-500">
+                Registra acciones clave del modulo Ventas: ventas creadas, ejecutivos y futuros cambios operativos.
+              </p>
             </div>
+            <span className="badge badge-blue">{auditLogs.length} registros</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="erp-table">
+              <thead>
+                <tr>
+                  <th>Fecha y hora</th>
+                  <th>Usuario</th>
+                  <th>Accion</th>
+                  <th>Entidad</th>
+                  <th>Detalle</th>
+                </tr>
+              </thead>
+              <tbody>
+                {auditLogs.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-8 text-center text-sm font-medium text-slate-400">
+                      Sin registros todavia. El historial se activara cuando exista la tabla ventas_auditoria o se registren cambios locales.
+                    </td>
+                  </tr>
+                ) : auditLogs.map((log) => (
+                  <tr key={log.id}>
+                    <td className="text-xs font-semibold text-slate-500">
+                      {log.created_at ? new Date(log.created_at).toLocaleString('es-PE') : '-'}
+                    </td>
+                    <td className="font-bold text-slate-900">{log.actor_email || 'sistema'}</td>
+                    <td><span className="badge badge-blue">{log.action}</span></td>
+                    <td className="text-sm text-slate-600">{log.entity_type || '-'}</td>
+                    <td className="max-w-xl text-xs font-medium leading-5 text-slate-500">{log.detail || '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
 
-      {shouldShow('administracion', 'resumen') && <div className="apple-card p-5">
-        <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
-          <Users size={19} className="text-blue-600" /> Enlaces entre modulos
-        </h2>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-          {[
-            ['Marketing', 'Leads y campanas alimentan el ranking por canal.'],
-            ['Caja', 'Pagos confirmados validan el cierre comercial diario.'],
-            ['Finanzas', 'Ingresos, egresos y metas muestran margen real.'],
-          ].map(([title, text]) => (
-            <div key={title} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-              <div className="mb-2 flex items-center gap-2 text-sm font-black text-slate-900">
-                <CheckCircle2 size={16} className="text-emerald-600" /> {title}
-              </div>
-              <p className="text-xs font-medium leading-5 text-slate-500">{text}</p>
-            </div>
-          ))}
-        </div>
-      </div>}
+      {/* Enlaces entre modulos removidos del módulo según solicitud */}
     </div>
   );
 }

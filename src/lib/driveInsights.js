@@ -1,4 +1,11 @@
 import { pctOf, sumBy } from './finance';
+import {
+  excelSerialToIso,
+  normalizeDateField,
+  buildEventKey,
+  buildCampaignKey,
+  detectDuplicateKeys,
+} from '../services/driveImportService';
 
 export const DRIVE_FILES = [
   {
@@ -175,3 +182,11 @@ export const buildImportRisks = () => ({
   medium: DRIVE_PROCESS_ALERTS.filter((item) => item.severity === 'medium').length,
   paymentControls: PAYMENT_CONTROL_RULES.length,
 });
+
+export {
+  excelSerialToIso,
+  normalizeDateField,
+  buildEventKey,
+  buildCampaignKey,
+  detectDuplicateKeys,
+};

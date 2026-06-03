@@ -1,71 +1,68 @@
-// src/pages/AdminUsuarios.jsx
-// ─────────────────────────────────────────────────────────────────────────────
-// VERSIÓN CON SOPORTE DE MÓDULOS JERÁRQUICOS (COMPLETOS / PARCIALES)
-//   - Se basa en la columna parent_id de modulos_sistema.
-//   - Los módulos raíz (sin padre) se muestran en la tabla con toggle rápido.
-//   - En creación/edición se muestra un árbol: check padre activa todos sus
-//     hijos; si se desmarca el padre se pueden seleccionar submódulos
-//     individualmente (acceso parcial).
-// ─────────────────────────────────────────────────────────────────────────────
-
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import {
-  Save, UserPlus, Lock, RefreshCw, Shield,
-  Search, X, User, Loader2   // ⭐ Loader2 agregado
+  Activity,
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  Download,
+  Eye,
+  FileText,
+  KeyRound,
+  Layers,
+  Loader2,
+  Lock,
+  RefreshCw,
+  Save,
+  Search,
+  Shield,
+  ShieldCheck,
+  SlidersHorizontal,
+  User,
+  UserPlus,
+  Users,
+  X,
 } from 'lucide-react';
 
-// ─── Helpers para el árbol de módulos ────────────────────────────────────────
-const buildModuleTree = (flatList) => {
+const buildModuleTree = (flatList = []) => {
   const roots = [];
   const map = {};
 
-  flatList.forEach(m => {
-    map[m.id] = { ...m, children: [] };
+  flatList.forEach((item) => {
+    map[item.id] = { ...item, children: [] };
   });
 
-  flatList.forEach(m => {
-    if (m.parent_id && map[m.parent_id]) {
-      map[m.parent_id].children.push(map[m.id]);
-    } else if (!m.parent_id) {
-      roots.push(map[m.id]);
-    }
-    // Si tiene parent_id pero el padre no existe, lo tratamos como raíz
-    else {
-      roots.push(map[m.id]);
+  flatList.forEach((item) => {
+    if (item.parent_id && map[item.parent_id]) {
+      map[item.parent_id].children.push(map[item.id]);
+    } else {
+      roots.push(map[item.id]);
     }
   });
 
-  // Ordenar hijos por orden
-  roots.forEach(r => r.children.sort((a, b) => a.orden - b.orden));
-  roots.sort((a, b) => a.orden - b.orden);
+  roots.forEach((root) => root.children.sort((a, b) => (a.orden || 0) - (b.orden || 0)));
+  roots.sort((a, b) => (a.orden || 0) - (b.orden || 0));
   return roots;
 };
 
-// Convierte un objeto de permisos planos { modulo: true/false } a un estado de árbol
-const flatPermisosToTree = (modulosTree, permisosFlat) => {
+const flatPermisosToTree = (modulosTree, permisosFlat = {}) => {
   const treeState = {};
-  modulosTree.forEach(mod => {
+  modulosTree.forEach((mod) => {
     const hasParent = permisosFlat[mod.nombre] === true;
     const children = {};
-    mod.children?.forEach(child => {
-      children[child.nombre] = hasParent ? true : (permisosFlat[child.nombre] || false);
+    mod.children?.forEach((child) => {
+      children[child.nombre] = hasParent ? true : Boolean(permisosFlat[child.nombre]);
     });
-    treeState[mod.nombre] = {
-      checked: hasParent,
-      children
-    };
+    treeState[mod.nombre] = { checked: hasParent, children };
   });
   return treeState;
 };
 
-// Convierte el estado del árbol a un objeto plano de permisos a insertar
-const treePermisosToFlat = (treeState) => {
+const treePermisosToFlat = (treeState = {}) => {
   const flat = {};
   Object.entries(treeState).forEach(([modName, state]) => {
     if (state.checked) {
       flat[modName] = true;
-      // Si el padre está chequeado, no guardamos hijos (no hacen falta)
     } else {
       Object.entries(state.children || {}).forEach(([childName, checked]) => {
         if (checked) flat[childName] = true;
@@ -75,42 +72,90 @@ const treePermisosToFlat = (treeState) => {
   return flat;
 };
 
-const ACCESS_LEVEL_PRESETS = [
+const ACCESS_ROLES = [
   {
-    id: 'ejecutivo_comercial',
-    title: 'Ejecutivo comercial',
-    description: 'Opera ventas propias, checklist, promesas y plantillas activas.',
-    permissions: ['Ventas', 'ventas_nueva_venta', 'ventas_checklist', 'ventas_promesas', 'ventas_plantillas'],
+    id: 'superadmin_tecnico',
+    title: 'Superadministrador tecnico',
+    area: 'Sistemas',
+    level: 'Sistema',
+    permissions: ['Dashboard', 'Ventas', 'Caja', 'Finanzas', 'Marketing', 'RRHH', 'Reportes', 'Administrar Usuarios', 'admin usuarios'],
   },
   {
-    id: 'supervisor_comercial',
-    title: 'Supervisor / encargado',
-    description: 'Controla equipo, Kommo, ranking, grupos, reasignaciones y alertas.',
-    permissions: ['Ventas', 'ventas_dashboard', 'ventas_ranking', 'ventas_metas', 'ventas_kommo', 'ventas_checklist', 'ventas_grupos', 'ventas_promesas', 'ventas_alertas'],
+    id: 'administrador_general',
+    title: 'Administrador general',
+    area: 'Direccion',
+    level: 'Administracion general',
+    permissions: ['Dashboard', 'Ventas', 'Caja', 'Finanzas', 'Marketing', 'RRHH', 'Reportes', 'Administrar Usuarios'],
+  },
+  {
+    id: 'direccion',
+    title: 'Direccion',
+    area: 'Direccion',
+    level: 'Direccion',
+    permissions: ['Dashboard', 'Ventas', 'ventas_dashboard', 'ventas_ranking', 'ventas_metas', 'Finanzas', 'Reportes'],
   },
   {
     id: 'jefe_ventas',
     title: 'Jefe de ventas',
-    description: 'Acceso completo comercial, comisiones, importador y administracion.',
+    area: 'Ventas',
+    level: 'Jefatura',
     permissions: ['Ventas', 'ventas_dashboard', 'ventas_nueva_venta', 'ventas_ranking', 'ventas_metas', 'ventas_kommo', 'ventas_checklist', 'ventas_grupos', 'ventas_promesas', 'ventas_comisiones', 'ventas_plantillas', 'ventas_entregables', 'ventas_accesos', 'ventas_alertas', 'ventas_importador', 'ventas_administracion'],
   },
   {
-    id: 'gerencia',
-    title: 'Gerencia',
-    description: 'Lectura ejecutiva de resumen, metas, alertas, rentabilidad y comisiones.',
-    permissions: ['Ventas', 'ventas_dashboard', 'ventas_ranking', 'ventas_metas', 'ventas_comisiones', 'ventas_alertas', 'Finanzas', 'Reportes'],
+    id: 'supervisor_comercial',
+    title: 'Supervisor comercial',
+    area: 'Ventas',
+    level: 'Supervision',
+    permissions: ['Ventas', 'ventas_dashboard', 'ventas_ranking', 'ventas_metas', 'ventas_kommo', 'ventas_checklist', 'ventas_grupos', 'ventas_promesas', 'ventas_alertas'],
   },
   {
-    id: 'marketing_lector',
-    title: 'Marketing lector',
-    description: 'Lee UTMs, campanas, grupos, plantillas, eventos ganadores e importador.',
-    permissions: ['Marketing', 'marketing_dashboard', 'marketing_campanas', 'marketing_metricas', 'Ventas', 'ventas_dashboard', 'ventas_grupos', 'ventas_plantillas', 'ventas_importador'],
+    id: 'ejecutivo_ventas',
+    title: 'Ejecutivo ventas',
+    area: 'Ventas',
+    level: 'Operativo',
+    permissions: ['Ventas', 'ventas_nueva_venta', 'ventas_checklist', 'ventas_promesas', 'ventas_plantillas'],
   },
   {
-    id: 'coordinacion_lector',
-    title: 'Coordinacion lectora',
-    description: 'Consulta eventos, fechas, modalidad, entregables y estado academico.',
-    permissions: ['Ventas', 'ventas_dashboard', 'ventas_entregables', 'ventas_importador', 'Gestion Estrategica', 'Reportes'],
+    id: 'marketing_admin',
+    title: 'Marketing administrador',
+    area: 'Marketing',
+    level: 'Jefatura',
+    permissions: ['Marketing', 'marketing_dashboard', 'marketing_campanas', 'marketing_metricas', 'marketing_planeacion', 'marketing_crm'],
+  },
+  {
+    id: 'marketing_lectura',
+    title: 'Marketing lectura',
+    area: 'Marketing',
+    level: 'Lectura',
+    permissions: ['Marketing', 'marketing_dashboard', 'marketing_campanas', 'marketing_metricas'],
+  },
+  {
+    id: 'caja_operativo',
+    title: 'Caja operativo',
+    area: 'Caja',
+    level: 'Operativo',
+    permissions: ['Caja', 'Caja y Pagos'],
+  },
+  {
+    id: 'finanzas',
+    title: 'Finanzas',
+    area: 'Finanzas',
+    level: 'Jefatura',
+    permissions: ['Finanzas', 'Reportes'],
+  },
+  {
+    id: 'academico',
+    title: 'Academico',
+    area: 'Academico',
+    level: 'Operativo',
+    permissions: ['Gestion Estrategica', 'Reportes'],
+  },
+  {
+    id: 'auditoria_lectura',
+    title: 'Auditoria lectura',
+    area: 'Direccion',
+    level: 'Lectura',
+    permissions: ['Dashboard', 'Reportes'],
   },
 ];
 
@@ -125,12 +170,38 @@ const MODULE_LABELS = {
   ventas_promesas: 'Promesas',
   ventas_comisiones: 'Comisiones',
   ventas_plantillas: 'Plantillas',
-  ventas_entregables: 'Entregables',
+  ventas_entregables: 'Reportes comerciales',
   ventas_accesos: 'Accesos',
   ventas_alertas: 'Alertas',
   ventas_importador: 'Importador',
   ventas_administracion: 'Admin ventas',
 };
+
+const ADMIN_TABS = [
+  { id: 'usuarios', label: 'Usuarios', icon: Users },
+  { id: 'roles', label: 'Roles', icon: ShieldCheck },
+  { id: 'accesos', label: 'Accesos', icon: Layers },
+  { id: 'solicitudes', label: 'Solicitudes', icon: FileText },
+  { id: 'seguridad', label: 'Seguridad', icon: KeyRound },
+  { id: 'actividad', label: 'Actividad', icon: Activity },
+];
+
+const AREAS = ['Todas', 'Ventas', 'Marketing', 'Caja', 'Finanzas', 'Academico', 'Direccion', 'Sistemas'];
+const ESTADOS = ['Todos', 'Activo', 'Pendiente', 'Suspendido', 'Sin acceso', 'Requiere revision', 'Invitado'];
+const LEVELS = ['Todos', 'Sistema', 'Direccion', 'Administracion general', 'Jefatura', 'Supervision', 'Operativo', 'Lectura'];
+
+const CRITICAL_PERMISSIONS = new Set([
+  'Administrar Usuarios',
+  'admin usuarios',
+  'Caja',
+  'Caja y Pagos',
+  'Finanzas',
+  'Reportes',
+  'ventas_comisiones',
+  'ventas_importador',
+  'ventas_administracion',
+  'ventas_entregables',
+]);
 
 const formatModuleName = (name = '') =>
   MODULE_LABELS[name] || name
@@ -140,83 +211,167 @@ const formatModuleName = (name = '') =>
     .replaceAll('_', ' ')
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 
-const getModuleInitials = (name = '') => {
-  const formatted = formatModuleName(name);
-  const words = formatted.split(/\s+/).filter(Boolean);
-  return words.slice(0, 2).map((word) => word[0]).join('').toUpperCase() || 'M';
+const initials = (value = '') =>
+  value
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join('')
+    .toUpperCase() || 'U';
+
+const roleMatchScore = (userPermissions, role) =>
+  role.permissions.reduce((score, permission) => score + (userPermissions.includes(permission) ? 1 : 0), 0);
+
+const inferArea = (permissions = []) => {
+  if (permissions.some((item) => item === 'Finanzas')) return 'Finanzas';
+  if (permissions.some((item) => item === 'Caja' || item === 'Caja y Pagos')) return 'Caja';
+  if (permissions.some((item) => item === 'Marketing' || item.startsWith('marketing_'))) return 'Marketing';
+  if (permissions.some((item) => item === 'RRHH' || item.startsWith('rrhh_'))) return 'Sistemas';
+  if (permissions.some((item) => item === 'Ventas' || item.startsWith('ventas_'))) return 'Ventas';
+  if (permissions.some((item) => item === 'Gestion Estrategica')) return 'Academico';
+  if (permissions.some((item) => item === 'Administrar Usuarios' || item === 'admin usuarios')) return 'Sistemas';
+  return 'Direccion';
 };
+
+const deriveUserGovernance = (user) => {
+  const permissions = Object.entries(user.permisos || {})
+    .filter(([, value]) => value)
+    .map(([permission]) => permission);
+  const rankedRoles = ACCESS_ROLES
+    .map((role) => ({ ...role, score: roleMatchScore(permissions, role) }))
+    .sort((a, b) => b.score - a.score);
+  const role = rankedRoles[0]?.score > 0 ? rankedRoles[0] : ACCESS_ROLES.find((item) => item.id === 'auditoria_lectura');
+  const criticalCount = permissions.filter((permission) => CRITICAL_PERMISSIONS.has(permission)).length;
+  const risk = criticalCount >= 4 ? 'Alto' : criticalCount > 0 || permissions.length > 12 ? 'Medio' : 'Bajo';
+  const state = permissions.length ? 'Activo' : 'Sin acceso';
+  const area = inferArea(permissions);
+
+  return {
+    permissions,
+    permissionCount: permissions.length,
+    criticalCount,
+    role: role?.title || 'Sin rol',
+    area,
+    level: role?.level || 'Lectura',
+    state,
+    risk,
+    lastAccess: 'Sin registro',
+    position: role?.title || 'Usuario ERP',
+  };
+};
+
+function Badge({ children, tone = 'slate' }) {
+  const tones = {
+    blue: 'bg-blue-50 text-blue-700 ring-blue-100',
+    green: 'bg-emerald-50 text-emerald-700 ring-emerald-100',
+    amber: 'bg-amber-50 text-amber-700 ring-amber-100',
+    red: 'bg-red-50 text-red-700 ring-red-100',
+    slate: 'bg-slate-100 text-slate-600 ring-slate-200',
+    navy: 'bg-[#020873] text-white ring-[#020873]',
+  };
+  return (
+    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-black ring-1 ${tones[tone] || tones.slate}`}>
+      {children}
+    </span>
+  );
+}
+
+function MetricCard({ label, value, icon: Icon, tone = 'blue' }) {
+  const tones = {
+    blue: 'bg-blue-50 text-blue-700',
+    green: 'bg-emerald-50 text-emerald-700',
+    amber: 'bg-amber-50 text-amber-700',
+    red: 'bg-red-50 text-red-700',
+    slate: 'bg-slate-100 text-slate-600',
+  };
+
+  return (
+    <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
+          <p className="mt-2 text-2xl font-black text-slate-950">{value}</p>
+        </div>
+        <div className={`rounded-2xl p-3 ${tones[tone] || tones.blue}`}>
+          <Icon size={19} />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function ModuleMark({ name, active = false }) {
   return (
     <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-[11px] font-black ${
       active ? 'bg-[#020873] text-white' : 'bg-slate-100 text-slate-600'
     }`}>
-      {getModuleInitials(name)}
+      {initials(formatModuleName(name))}
     </span>
   );
 }
 
 export default function AdminUsuarios() {
-  const [usuarios, setUsuarios]              = useState([]);
-  const [modulosTree, setModulosTree]        = useState([]);   // árbol de módulos
-  const [loading, setLoading]                = useState(true);
-  const [permisosTemp, setPermisosTemp]      = useState({});
-  const [busqueda, setBusqueda]              = useState('');
+  const [usuarios, setUsuarios] = useState([]);
+  const [modulosTree, setModulosTree] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [busqueda, setBusqueda] = useState('');
+  const [activeTab, setActiveTab] = useState('usuarios');
+  const [filters, setFilters] = useState({ area: 'Todas', estado: 'Todos', nivel: 'Todos' });
+  const [selectedUserId, setSelectedUserId] = useState(null);
 
-  // ── Estados Modal Crear ──────────────────────────────────────────────────
-  const [modalNuevo, setModalNuevo]                     = useState(false);
-  const [creando, setCreando]                           = useState(false);
-  const [nuevoUsuario, setNuevoUsuario]                 = useState({
-    email: '', password: '', confirmPassword: '', nombre: ''
-  });
-  // Ahora usamos un estado de árbol para los permisos en creación
-  const [permisosTreeCrear, setPermisosTreeCrear]       = useState({});
+  const [modalNuevo, setModalNuevo] = useState(false);
+  const [creando, setCreando] = useState(false);
+  const [nuevoUsuario, setNuevoUsuario] = useState({ email: '', password: '', confirmPassword: '', nombre: '' });
+  const [permisosTreeCrear, setPermisosTreeCrear] = useState({});
 
-  // ── Estados Modal Editar ─────────────────────────────────────────────────
-  const [modalEditar, setModalEditar]                   = useState(false);
-  const [editando, setEditando]                         = useState(false);
-  const [usuarioEditando, setUsuarioEditando]           = useState(null);
-  const [nombreEditando, setNombreEditando]             = useState('');
-  const [permisosTreeEditar, setPermisosTreeEditar]     = useState({});
-  const [nuevaPassword, setNuevaPassword]               = useState('');
-  const [confirmPassword, setConfirmPassword]           = useState('');
+  const [modalEditar, setModalEditar] = useState(false);
+  const [editando, setEditando] = useState(false);
+  const [usuarioEditando, setUsuarioEditando] = useState(null);
+  const [nombreEditando, setNombreEditando] = useState('');
+  const [permisosTreeEditar, setPermisosTreeEditar] = useState({});
+  const [nuevaPassword, setNuevaPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
 
-  // ── Carga de datos ───────────────────────────────────────────────────────
   const cargarDatos = async () => {
     setLoading(true);
     try {
-      // 1. Obtener todos los módulos (padres e hijos) ordenados
-      const { data: modulosData } = await supabase
+      const { data: modulosData, error: modulosError } = await supabase
         .from('modulos_sistema')
         .select('*')
         .order('orden');
+      if (modulosError) throw modulosError;
 
       const tree = buildModuleTree(modulosData || []);
       setModulosTree(tree);
 
-      // 2. Permisos actuales
-      const { data: permisos } = await supabase
+      const { data: permisos, error: permisosError } = await supabase
         .from('permisos_usuarios')
         .select('*');
+      if (permisosError) throw permisosError;
+
       const permisosMap = {};
-      permisos?.forEach(p => {
-        if (!permisosMap[p.user_id]) permisosMap[p.user_id] = {};
-        permisosMap[p.user_id][p.modulo] = p.puede_ver;
+      permisos?.forEach((permiso) => {
+        if (!permisosMap[permiso.user_id]) permisosMap[permiso.user_id] = {};
+        permisosMap[permiso.user_id][permiso.modulo] = permiso.puede_ver;
       });
 
-      // 3. Perfiles de usuario
-      const { data: perfiles, error } = await supabase
+      const { data: perfiles, error: perfilesError } = await supabase
         .from('perfiles_usuarios')
         .select('*')
         .order('email');
-      if (error) throw error;
+      if (perfilesError) throw perfilesError;
 
-      setUsuarios(perfiles.map(perfil => ({
-        id:      perfil.id,
-        email:   perfil.email,
-        nombre:  perfil.nombre || perfil.email?.split('@')[0],
-        permisos: permisosMap[perfil.id] || {}
-      })));
+      const nextUsers = (perfiles || []).map((perfil) => ({
+        id: perfil.id,
+        email: perfil.email,
+        nombre: perfil.nombre || perfil.email?.split('@')[0],
+        raw: perfil,
+        permisos: permisosMap[perfil.id] || {},
+      }));
+
+      setUsuarios(nextUsers);
+      setSelectedUserId((current) => current || nextUsers[0]?.id || null);
     } catch (err) {
       alert('Error al cargar usuarios: ' + err.message);
     } finally {
@@ -224,64 +379,61 @@ export default function AdminUsuarios() {
     }
   };
 
-  useEffect(() => { cargarDatos(); }, []);
+  useEffect(() => {
+    cargarDatos();
+  }, []);
 
-  // ── Inicializar árbol de creación cada vez que se abra el modal ──────────
+  const enrichedUsers = useMemo(
+    () => usuarios.map((user) => ({ ...user, governance: deriveUserGovernance(user) })),
+    [usuarios],
+  );
+
+  const selectedUser = useMemo(
+    () => enrichedUsers.find((user) => user.id === selectedUserId) || enrichedUsers[0] || null,
+    [enrichedUsers, selectedUserId],
+  );
+
+  const filteredUsers = useMemo(() => {
+    const term = busqueda.trim().toLowerCase();
+    return enrichedUsers.filter((user) => {
+      const matchesTerm = !term || `${user.nombre} ${user.email} ${user.governance.role}`.toLowerCase().includes(term);
+      const matchesArea = filters.area === 'Todas' || user.governance.area === filters.area;
+      const matchesState = filters.estado === 'Todos' || user.governance.state === filters.estado;
+      const matchesLevel = filters.nivel === 'Todos' || user.governance.level === filters.nivel;
+      return matchesTerm && matchesArea && matchesState && matchesLevel;
+    });
+  }, [busqueda, enrichedUsers, filters]);
+
+  const metrics = useMemo(() => {
+    const active = enrichedUsers.filter((user) => user.governance.state === 'Activo').length;
+    const noAccess = enrichedUsers.filter((user) => user.governance.state === 'Sin acceso').length;
+    const critical = enrichedUsers.filter((user) => user.governance.criticalCount > 0).length;
+    const highRisk = enrichedUsers.filter((user) => user.governance.risk === 'Alto').length;
+    return {
+      active,
+      pending: 0,
+      suspended: 0,
+      critical,
+      recentChanges: 0,
+      inactive: noAccess + highRisk,
+    };
+  }, [enrichedUsers]);
+
   const abrirModalNuevo = () => {
     const initialTree = {};
-    modulosTree.forEach(mod => {
+    modulosTree.forEach((mod) => {
       const children = {};
-      mod.children?.forEach(child => { children[child.nombre] = false; });
+      mod.children?.forEach((child) => { children[child.nombre] = false; });
       initialTree[mod.nombre] = { checked: false, children };
     });
     setPermisosTreeCrear(initialTree);
     setModalNuevo(true);
   };
 
-  // ── Crear usuario ─────────────────────────────────────────────────────────
-  const crearNuevoUsuario = async () => {
-    if (!nuevoUsuario.email || !nuevoUsuario.password) {
-      alert('Correo y contraseña son obligatorios'); return;
-    }
-    if (nuevoUsuario.password !== nuevoUsuario.confirmPassword) {
-      alert('Las contraseñas no coinciden'); return;
-    }
-    setCreando(true);
-    try {
-      const permisosFlat = treePermisosToFlat(permisosTreeCrear);
-      const modulosActivos = Object.keys(permisosFlat);
-      const { data, error } = await supabase.functions.invoke('create-user', {
-        method: 'POST',
-        body: {
-          email: nuevoUsuario.email,
-          password: nuevoUsuario.password,
-          nombre: nuevoUsuario.nombre,
-          permisos: modulosActivos,
-        }
-      });
-      if (error) throw error;
-
-      const userId = data.user?.id;
-      if (!userId) throw new Error('La funcion no devolvio el ID del usuario creado');
-
-      alert('Usuario creado correctamente');
-      setModalNuevo(false);
-      setNuevoUsuario({ email: '', password: '', confirmPassword: '', nombre: '' });
-      setPermisosTreeCrear({});
-      cargarDatos();
-    } catch (err) {
-      alert('Error al crear usuario: ' + err.message);
-    } finally {
-      setCreando(false);
-    }
-  };
-
-  // ── Abrir / cerrar modal edición ──────────────────────────────────────────
   const abrirEditar = (usuario) => {
     setUsuarioEditando(usuario);
     setNombreEditando(usuario.nombre || '');
-    const treeState = flatPermisosToTree(modulosTree, usuario.permisos);
-    setPermisosTreeEditar(treeState);
+    setPermisosTreeEditar(flatPermisosToTree(modulosTree, usuario.permisos));
     setNuevaPassword('');
     setConfirmPassword('');
     setModalEditar(true);
@@ -296,140 +448,13 @@ export default function AdminUsuarios() {
     setPermisosTreeEditar({});
   };
 
-  // ── Guardar cambios de edición (Versión Blindada) ─────────────────────────
-  const guardarCambios = async () => {
-    if (nuevaPassword && nuevaPassword !== confirmPassword) {
-      alert('Las contraseñas no coinciden');
-      return;
-    }
-    setEditando(true);
-    try {
-      // ── 1. Actualizar nombre en perfiles_usuarios ─────────────────────
-      const { data: perfilActualizado, error: errorPerfil } = await supabase
-        .from('perfiles_usuarios')
-        .update({ nombre: nombreEditando })
-        .eq('id', usuarioEditando.id)
-        .select();
-      if (errorPerfil) throw new Error(`Error al guardar nombre: ${errorPerfil.message}`);
-      if (!perfilActualizado || perfilActualizado.length === 0) {
-        throw new Error(`No se pudo actualizar el perfil. Verifica el ID y RLS.`);
-      }
-
-      // ── 2. Actualizar permisos ────────────────────────────────────────
-      const permisosFlat = treePermisosToFlat(permisosTreeEditar);
-      // Eliminar permisos anteriores
-      const { error: errorDelete } = await supabase
-        .from('permisos_usuarios')
-        .delete()
-        .eq('user_id', usuarioEditando.id);
-      if (errorDelete) throw new Error(`Error al limpiar permisos: ${errorDelete.message}`);
-
-      // Insertar nuevos permisos
-      const modulosActivos = Object.keys(permisosFlat);
-      if (modulosActivos.length > 0) {
-        const { error: errorInsert } = await supabase
-          .from('permisos_usuarios')
-          .insert(modulosActivos.map(modulo => ({
-            user_id: usuarioEditando.id,
-            modulo,
-            puede_ver: true
-          })));
-        if (errorInsert) throw new Error(`Error al asignar módulos: ${errorInsert.message}`);
-      }
-
-      // ── 3. Cambiar contraseña (opcional) ──────────────────────────────
-      if (nuevaPassword) {
-        const { data: rpcData, error: rpcError } = await supabase.rpc('admin_update_user_password', {
-          target_user_id: usuarioEditando.id,
-          new_password: nuevaPassword
-        });
-        if (rpcError) throw new Error(`Error al cambiar contraseña: ${rpcError.message}`);
-        if (rpcData?.status === 'error') throw new Error(rpcData.message);
-      }
-
-      alert('Usuario actualizado correctamente');
-      cerrarEditar();
-      cargarDatos();
-    } catch (err) {
-      console.error(err);
-      alert(err.message);
-    } finally {
-      setEditando(false);
-    }
-  };
-
-  // ── Permisos inline (toggle en la tabla para módulos raíz) ─────────────
-  const togglePermiso = (userId, modulo, valorActual) => {
-    setPermisosTemp(prev => ({
-      ...prev,
-      [userId]: { ...prev[userId], [modulo]: valorActual === undefined ? true : !valorActual }
-    }));
-  };
-
-  const guardarPermisosInline = async (userId) => {
-    const cambios = permisosTemp[userId];
-    if (!cambios) return;
-    try {
-      for (const [modulo, puedeVer] of Object.entries(cambios)) {
-        await supabase.from('permisos_usuarios').upsert(
-          { user_id: userId, modulo, puede_ver: puedeVer },
-          { onConflict: 'user_id,modulo' }
-        );
-      }
-      setPermisosTemp(prev => { const s = { ...prev }; delete s[userId]; return s; });
-      cargarDatos();
-    } catch (err) {
-      alert('Error al guardar permisos: ' + err.message);
-    }
-  };
-
-  const getPermiso = (userId, modulo) => {
-    if (permisosTemp[userId]?.[modulo] !== undefined) return permisosTemp[userId][modulo];
-    return usuarios.find(u => u.id === userId)?.permisos[modulo] || false;
-  };
-
-  const filteredUsers = usuarios.filter(u =>
-    (u.nombre || '').toLowerCase().includes(busqueda.toLowerCase()) ||
-    (u.email  || '').toLowerCase().includes(busqueda.toLowerCase())
-  );
-
-  // ── Helper para cambiar el estado del árbol (crear/editar) ──────────────
-  const handleTreeChange = (setter, moduleName, value, isParent = true, childName = null) => {
-    setter(prev => {
-      const current = { ...prev };
-      const mod = current[moduleName] || { checked: false, children: {} };
-      const newMod = { ...mod };
-      if (isParent) {
-        newMod.checked = value;
-        // Si se marca el padre, todos los hijos se marcan automáticamente
-        if (value) {
-          const children = { ...newMod.children };
-          Object.keys(children).forEach(k => { children[k] = true; });
-          newMod.children = children;
-        }
-      } else {
-        // Es un hijo
-        const children = { ...newMod.children, [childName]: value };
-        newMod.children = children;
-        // Si se desmarca cualquier hijo, el padre debe desmarcarse (si estuviera marcado)
-        if (!value && newMod.checked) {
-          newMod.checked = false;
-        }
-        // Si todos los hijos se marcan, podríamos sugerir marcar el padre? Mejor dejamos manual.
-      }
-      current[moduleName] = newMod;
-      return current;
-    });
-  };
-
   const buildPresetTree = (permissions = []) => {
     const permissionSet = new Set(permissions);
     const nextTree = {};
-
-    modulosTree.forEach(mod => {
+    modulosTree.forEach((mod) => {
       const children = {};
       let hasCheckedChild = false;
-      mod.children?.forEach(child => {
+      mod.children?.forEach((child) => {
         const checked = permissionSet.has(child.nombre);
         children[child.nombre] = checked;
         if (checked) hasCheckedChild = true;
@@ -439,403 +464,641 @@ export default function AdminUsuarios() {
         children,
       };
     });
-
     return nextTree;
   };
 
-  const aplicarPreset = (setter, preset) => {
-    setter(buildPresetTree(preset.permissions));
+  const aplicarRol = (setter, role) => {
+    setter(buildPresetTree(role.permissions));
   };
 
-  // ── RENDER ────────────────────────────────────────────────────────────────
-  if (loading) return (
-    <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
-      <Loader2 className="animate-spin text-[#185FA5]" size={28} />  {/* ⭐ Ahora sí está definido */}
-      <p className="text-gray-500 font-medium">Cargando usuarios...</p>
-    </div>
-  );
+  const handleTreeChange = (setter, moduleName, value, isParent = true, childName = null) => {
+    setter((prev) => {
+      const current = { ...prev };
+      const mod = current[moduleName] || { checked: false, children: {} };
+      const nextMod = { ...mod };
+      if (isParent) {
+        nextMod.checked = value;
+        if (value) {
+          const children = { ...nextMod.children };
+          Object.keys(children).forEach((key) => { children[key] = true; });
+          nextMod.children = children;
+        }
+      } else {
+        nextMod.children = { ...nextMod.children, [childName]: value };
+        if (!value && nextMod.checked) nextMod.checked = false;
+      }
+      current[moduleName] = nextMod;
+      return current;
+    });
+  };
+
+  const crearNuevoUsuario = async () => {
+    if (!nuevoUsuario.email || !nuevoUsuario.password) {
+      alert('Correo y contrasena son obligatorios');
+      return;
+    }
+    if (nuevoUsuario.password !== nuevoUsuario.confirmPassword) {
+      alert('Las contrasenas no coinciden');
+      return;
+    }
+
+    setCreando(true);
+    try {
+      const permisosFlat = treePermisosToFlat(permisosTreeCrear);
+      const { data, error } = await supabase.functions.invoke('create-user', {
+        method: 'POST',
+        body: {
+          email: nuevoUsuario.email,
+          password: nuevoUsuario.password,
+          nombre: nuevoUsuario.nombre,
+          permisos: Object.keys(permisosFlat),
+        },
+      });
+      if (error) throw error;
+      if (!data.user?.id) throw new Error('La funcion no devolvio el ID del usuario creado');
+
+      setModalNuevo(false);
+      setNuevoUsuario({ email: '', password: '', confirmPassword: '', nombre: '' });
+      setPermisosTreeCrear({});
+      cargarDatos();
+    } catch (err) {
+      alert('Error al crear usuario: ' + err.message);
+    } finally {
+      setCreando(false);
+    }
+  };
+
+  const guardarCambios = async () => {
+    if (nuevaPassword && nuevaPassword !== confirmPassword) {
+      alert('Las contrasenas no coinciden');
+      return;
+    }
+    if (!usuarioEditando) return;
+
+    setEditando(true);
+    try {
+      const { error: errorPerfil } = await supabase
+        .from('perfiles_usuarios')
+        .update({ nombre: nombreEditando })
+        .eq('id', usuarioEditando.id);
+      if (errorPerfil) throw new Error(`Error al guardar nombre: ${errorPerfil.message}`);
+
+      const permisosFlat = treePermisosToFlat(permisosTreeEditar);
+      const { error: errorDelete } = await supabase
+        .from('permisos_usuarios')
+        .delete()
+        .eq('user_id', usuarioEditando.id);
+      if (errorDelete) throw new Error(`Error al limpiar permisos: ${errorDelete.message}`);
+
+      const modulosActivos = Object.keys(permisosFlat);
+      if (modulosActivos.length > 0) {
+        const { error: errorInsert } = await supabase
+          .from('permisos_usuarios')
+          .insert(modulosActivos.map((modulo) => ({
+            user_id: usuarioEditando.id,
+            modulo,
+            puede_ver: true,
+          })));
+        if (errorInsert) throw new Error(`Error al asignar modulos: ${errorInsert.message}`);
+      }
+
+      if (nuevaPassword) {
+        const { data: rpcData, error: rpcError } = await supabase.rpc('admin_update_user_password', {
+          target_user_id: usuarioEditando.id,
+          new_password: nuevaPassword,
+        });
+        if (rpcError) throw new Error(`Error al cambiar contrasena: ${rpcError.message}`);
+        if (rpcData?.status === 'error') throw new Error(rpcData.message);
+      }
+
+      cerrarEditar();
+      cargarDatos();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setEditando(false);
+    }
+  };
+
+  const exportarUsuarios = () => {
+    const rows = filteredUsers.map((user) => ({
+      usuario: user.nombre,
+      email: user.email,
+      area: user.governance.area,
+      rol: user.governance.role,
+      nivel: user.governance.level,
+      estado: user.governance.state,
+      riesgo: user.governance.risk,
+      permisos: user.governance.permissionCount,
+    }));
+    const csv = [
+      Object.keys(rows[0] || { usuario: '', email: '', area: '', rol: '', nivel: '', estado: '', riesgo: '', permisos: '' }).join(','),
+      ...rows.map((row) => Object.values(row).map((value) => `"${String(value).replaceAll('"', '""')}"`).join(',')),
+    ].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `usuarios_accesos_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
+
+  if (loading) {
+    return (
+      <div className="flex min-h-[420px] flex-col items-center justify-center gap-4">
+        <Loader2 className="animate-spin text-[#020873]" size={30} />
+        <p className="text-sm font-semibold text-slate-500">Cargando usuarios...</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="p-6 lg:p-8 min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50/30 animate-in fade-in duration-500">
-
-      {/* ── HEADER ─────────────────────────────────────────────────────── */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-        <div>
-          <div className="flex items-center gap-3 mb-1">
-            <div className="p-2 bg-blue-50 rounded-xl shadow-sm">
-              <Shield size={24} className="text-[#185FA5]" />
+    <div className="min-h-screen space-y-6 bg-[#F2F2F2] p-4 md:p-8">
+      <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+          <div>
+            <div className="flex items-center gap-3">
+              <div className="rounded-2xl bg-[#020873] p-3 text-white">
+                <Shield size={22} />
+              </div>
+              <div>
+                <h1 className="text-3xl font-black tracking-tight text-slate-950">Usuarios y accesos</h1>
+                <p className="mt-1 text-sm font-medium text-slate-500">Controla quien entra, que puede hacer y que accesos requieren revision.</p>
+              </div>
             </div>
-            <h1 className="text-3xl font-black text-[#0B1527] tracking-tight">Control de Accesos</h1>
           </div>
-          <p className="text-sm text-gray-500 font-medium ml-12">Gestiona identidades, nombres y permisos (completos o parciales)</p>
+          <div className="flex flex-col gap-3 md:flex-row">
+            <label className="relative min-w-[280px]">
+              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                value={busqueda}
+                onChange={(event) => setBusqueda(event.target.value)}
+                className="h-11 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-10 pr-4 text-sm font-semibold outline-none transition focus:border-[#05C7F2] focus:bg-white focus:ring-4 focus:ring-[#05C7F2]/15"
+                placeholder="Buscar usuario, correo o rol"
+              />
+            </label>
+            <button onClick={exportarUsuarios} className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-700 transition hover:border-[#05C7F2] hover:text-[#020873]">
+              <Download size={16} /> Exportar
+            </button>
+            <button onClick={abrirModalNuevo} className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-[#020873] px-5 text-sm font-black text-white shadow-lg shadow-blue-950/10 transition hover:bg-[#05C7F2] hover:text-[#020873]">
+              <UserPlus size={16} /> Nuevo usuario
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-            <input
-              type="text"
-              placeholder="Buscar usuario..."
-              className="pl-10 pr-4 py-2.5 bg-white border-2 border-gray-100 rounded-xl text-sm w-72 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 transition-all shadow-sm"
-              value={busqueda}
-              onChange={e => setBusqueda(e.target.value)}
-            />
+
+        <div className="mt-5 flex flex-col gap-3 lg:flex-row lg:items-center">
+          <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-slate-400">
+            <SlidersHorizontal size={15} /> Filtros
           </div>
+          <div className="grid flex-1 grid-cols-1 gap-3 md:grid-cols-3">
+            <select value={filters.area} onChange={(event) => setFilters({ ...filters, area: event.target.value })} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 outline-none">
+              {AREAS.map((area) => <option key={area}>{area}</option>)}
+            </select>
+            <select value={filters.estado} onChange={(event) => setFilters({ ...filters, estado: event.target.value })} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 outline-none">
+              {ESTADOS.map((estado) => <option key={estado}>{estado}</option>)}
+            </select>
+            <select value={filters.nivel} onChange={(event) => setFilters({ ...filters, nivel: event.target.value })} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 outline-none">
+              {LEVELS.map((level) => <option key={level}>{level}</option>)}
+            </select>
+          </div>
+        </div>
+      </section>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
+        <MetricCard label="Usuarios activos" value={metrics.active} icon={Users} tone="green" />
+        <MetricCard label="Pendientes" value={metrics.pending} icon={Clock} tone="amber" />
+        <MetricCard label="Suspendidos" value={metrics.suspended} icon={Lock} tone="red" />
+        <MetricCard label="Accesos criticos" value={metrics.critical} icon={AlertTriangle} tone="amber" />
+        <MetricCard label="Cambios recientes" value={metrics.recentChanges} icon={RefreshCw} tone="blue" />
+        <MetricCard label="Sin actividad" value={metrics.inactive} icon={Eye} tone="slate" />
+      </div>
+
+      <div className="flex gap-2 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
+        {ADMIN_TABS.map(({ id, label, icon: Icon }) => (
           <button
-            onClick={abrirModalNuevo}
-            className="bg-gradient-to-r from-[#185FA5] to-[#144b82] hover:from-[#1a6ab8] hover:to-[#15569c] text-white px-5 py-2.5 rounded-xl flex items-center gap-2 transition-all font-medium text-sm shadow-lg shadow-blue-500/25 active:scale-[0.98]"
+            key={id}
+            onClick={() => setActiveTab(id)}
+            className={`flex min-w-max items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-black transition ${
+              activeTab === id ? 'bg-[#020873] text-white' : 'text-slate-500 hover:bg-slate-50 hover:text-[#020873]'
+            }`}
           >
-            <UserPlus size={18} /> Nuevo Usuario
+            <Icon size={16} /> {label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'usuarios' && (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_380px]">
+          <UsersTable users={filteredUsers} selectedUserId={selectedUser?.id} onSelect={setSelectedUserId} onEdit={abrirEditar} />
+          <UserDetail user={selectedUser} onEdit={abrirEditar} />
+        </div>
+      )}
+
+      {activeTab === 'roles' && <RolesView roles={ACCESS_ROLES} />}
+      {activeTab === 'accesos' && <AccessMatrix modulosTree={modulosTree} roles={ACCESS_ROLES} />}
+      {activeTab === 'solicitudes' && <RequestsView />}
+      {activeTab === 'seguridad' && <SecurityView users={enrichedUsers} />}
+      {activeTab === 'actividad' && <ActivityView />}
+
+      {modalNuevo && (
+        <UserAccessModal
+          title="Nuevo usuario"
+          submitLabel={creando ? 'Creando...' : 'Crear usuario'}
+          loading={creando}
+          onClose={() => setModalNuevo(false)}
+          onSubmit={crearNuevoUsuario}
+        >
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <label className="space-y-1.5 md:col-span-2">
+              <span className="text-xs font-black uppercase tracking-[0.12em] text-slate-400">Nombre</span>
+              <input className="erp-input" value={nuevoUsuario.nombre} onChange={(event) => setNuevoUsuario({ ...nuevoUsuario, nombre: event.target.value })} placeholder="Nombre visible" />
+            </label>
+            <label className="space-y-1.5">
+              <span className="text-xs font-black uppercase tracking-[0.12em] text-slate-400">Correo institucional</span>
+              <input className="erp-input" type="email" value={nuevoUsuario.email} onChange={(event) => setNuevoUsuario({ ...nuevoUsuario, email: event.target.value })} placeholder="correo@rebagliati.com" />
+            </label>
+            <label className="space-y-1.5">
+              <span className="text-xs font-black uppercase tracking-[0.12em] text-slate-400">Contrasena</span>
+              <input className="erp-input" type="password" value={nuevoUsuario.password} onChange={(event) => setNuevoUsuario({ ...nuevoUsuario, password: event.target.value })} />
+            </label>
+            <label className="space-y-1.5 md:col-span-2">
+              <span className="text-xs font-black uppercase tracking-[0.12em] text-slate-400">Confirmar contrasena</span>
+              <input className="erp-input" type="password" value={nuevoUsuario.confirmPassword} onChange={(event) => setNuevoUsuario({ ...nuevoUsuario, confirmPassword: event.target.value })} />
+            </label>
+          </div>
+          <RolePicker onApply={(role) => aplicarRol(setPermisosTreeCrear, role)} />
+          <PermissionTree modulosTree={modulosTree} treeState={permisosTreeCrear} setter={setPermisosTreeCrear} onChange={handleTreeChange} />
+        </UserAccessModal>
+      )}
+
+      {modalEditar && usuarioEditando && (
+        <UserAccessModal
+          title={usuarioEditando.email}
+          submitLabel={editando ? 'Guardando...' : 'Guardar cambios'}
+          loading={editando}
+          onClose={cerrarEditar}
+          onSubmit={guardarCambios}
+        >
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <label className="space-y-1.5 md:col-span-2">
+              <span className="text-xs font-black uppercase tracking-[0.12em] text-slate-400">Nombre visible</span>
+              <input className="erp-input" value={nombreEditando} onChange={(event) => setNombreEditando(event.target.value)} />
+            </label>
+            <label className="space-y-1.5">
+              <span className="text-xs font-black uppercase tracking-[0.12em] text-slate-400">Nueva contrasena</span>
+              <input className="erp-input" type="password" value={nuevaPassword} onChange={(event) => setNuevaPassword(event.target.value)} />
+            </label>
+            <label className="space-y-1.5">
+              <span className="text-xs font-black uppercase tracking-[0.12em] text-slate-400">Confirmar</span>
+              <input className="erp-input" type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
+            </label>
+          </div>
+          <RolePicker onApply={(role) => aplicarRol(setPermisosTreeEditar, role)} />
+          <PermissionTree modulosTree={modulosTree} treeState={permisosTreeEditar} setter={setPermisosTreeEditar} onChange={handleTreeChange} />
+        </UserAccessModal>
+      )}
+    </div>
+  );
+}
+
+function UsersTable({ users, selectedUserId, onSelect, onEdit }) {
+  const riskTone = { Bajo: 'green', Medio: 'amber', Alto: 'red' };
+  const stateTone = { Activo: 'green', Pendiente: 'amber', Suspendido: 'red', 'Sin acceso': 'slate', 'Requiere revision': 'amber', Invitado: 'blue' };
+
+  return (
+    <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-slate-100 bg-slate-50 text-left text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">
+              <th className="px-5 py-4">Usuario</th>
+              <th className="px-5 py-4">Area</th>
+              <th className="px-5 py-4">Cargo</th>
+              <th className="px-5 py-4">Rol</th>
+              <th className="px-5 py-4">Nivel</th>
+              <th className="px-5 py-4">Estado</th>
+              <th className="px-5 py-4">Ultimo acceso</th>
+              <th className="px-5 py-4">Riesgo</th>
+              <th className="px-5 py-4 text-right">Acciones</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-50">
+            {users.map((user) => (
+              <tr key={user.id} className={`${selectedUserId === user.id ? 'bg-blue-50/60' : 'hover:bg-slate-50'} transition`}>
+                <td className="px-5 py-4">
+                  <button onClick={() => onSelect(user.id)} className="flex items-center gap-3 text-left">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#020873] text-xs font-black text-white">
+                      {initials(user.nombre || user.email)}
+                    </span>
+                    <span>
+                      <span className="block font-black text-slate-900">{user.nombre}</span>
+                      <span className="block text-xs font-medium text-slate-400">{user.email}</span>
+                    </span>
+                  </button>
+                </td>
+                <td className="px-5 py-4 font-semibold text-slate-600">{user.governance.area}</td>
+                <td className="px-5 py-4 font-semibold text-slate-600">{user.governance.position}</td>
+                <td className="px-5 py-4"><Badge tone="blue">{user.governance.role}</Badge></td>
+                <td className="px-5 py-4 font-semibold text-slate-600">{user.governance.level}</td>
+                <td className="px-5 py-4"><Badge tone={stateTone[user.governance.state]}>{user.governance.state}</Badge></td>
+                <td className="px-5 py-4 text-xs font-semibold text-slate-400">{user.governance.lastAccess}</td>
+                <td className="px-5 py-4"><Badge tone={riskTone[user.governance.risk]}>{user.governance.risk}</Badge></td>
+                <td className="px-5 py-4">
+                  <div className="flex justify-end gap-2">
+                    <button onClick={() => onSelect(user.id)} className="rounded-xl border border-slate-200 p-2 text-slate-500 transition hover:border-blue-200 hover:text-blue-700" title="Ver perfil">
+                      <Eye size={16} />
+                    </button>
+                    <button onClick={() => onEdit(user)} className="rounded-xl border border-slate-200 p-2 text-slate-500 transition hover:border-blue-200 hover:text-blue-700" title="Editar accesos">
+                      <KeyRound size={16} />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {users.length === 0 && (
+              <tr>
+                <td colSpan={9} className="px-5 py-12 text-center text-sm font-semibold text-slate-400">No hay usuarios para los filtros actuales.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function UserDetail({ user, onEdit }) {
+  if (!user) {
+    return (
+      <aside className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+        <p className="text-sm font-semibold text-slate-400">Selecciona un usuario.</p>
+      </aside>
+    );
+  }
+
+  const permissions = user.governance.permissions.slice(0, 10);
+
+  return (
+    <aside className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#020873] text-sm font-black text-white">{initials(user.nombre)}</div>
+          <div>
+            <h2 className="text-lg font-black text-slate-950">{user.nombre}</h2>
+            <p className="text-xs font-semibold text-slate-400">{user.email}</p>
+          </div>
+        </div>
+        <button onClick={() => onEdit(user)} className="rounded-xl bg-[#020873] px-3 py-2 text-xs font-black text-white">Editar</button>
+      </div>
+
+      <div className="mt-5 grid grid-cols-2 gap-3">
+        <InfoTile label="Area" value={user.governance.area} />
+        <InfoTile label="Rol" value={user.governance.role} />
+        <InfoTile label="Nivel" value={user.governance.level} />
+        <InfoTile label="Estado" value={user.governance.state} />
+      </div>
+
+      <div className="mt-5 space-y-4">
+        <DetailBlock title="Acceso asignado">
+          <div className="flex flex-wrap gap-2">
+            {permissions.map((permission) => <Badge key={permission}>{formatModuleName(permission)}</Badge>)}
+            {user.governance.permissionCount > permissions.length && <Badge tone="blue">+{user.governance.permissionCount - permissions.length}</Badge>}
+          </div>
+        </DetailBlock>
+        <DetailBlock title="Seguridad">
+          <div className="grid grid-cols-2 gap-2 text-xs font-semibold text-slate-500">
+            <span>Riesgo: {user.governance.risk}</span>
+            <span>Criticos: {user.governance.criticalCount}</span>
+            <span>Ultimo acceso: {user.governance.lastAccess}</span>
+            <span>2FA: Pendiente</span>
+          </div>
+        </DetailBlock>
+        <DetailBlock title="Actividad">
+          <div className="space-y-2 text-xs font-medium text-slate-500">
+            <p>Sin eventos recientes conectados.</p>
+          </div>
+        </DetailBlock>
+      </div>
+    </aside>
+  );
+}
+
+function InfoTile({ label, value }) {
+  return (
+    <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
+      <p className="mt-1 text-sm font-black text-slate-900">{value}</p>
+    </div>
+  );
+}
+
+function DetailBlock({ title, children }) {
+  return (
+    <section className="rounded-2xl border border-slate-100 p-4">
+      <h3 className="mb-3 text-xs font-black uppercase tracking-[0.14em] text-slate-400">{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+function RolesView({ roles }) {
+  return (
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {roles.map((role) => (
+        <div key={role.id} className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-black text-slate-950">{role.title}</h2>
+              <p className="mt-1 text-sm font-bold text-slate-500">{role.area}</p>
+            </div>
+            <Badge tone="blue">{role.level}</Badge>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {role.permissions.slice(0, 8).map((permission) => <Badge key={permission}>{formatModuleName(permission)}</Badge>)}
+            {role.permissions.length > 8 && <Badge tone="blue">+{role.permissions.length - 8}</Badge>}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AccessMatrix({ modulosTree, roles }) {
+  const visibleModules = modulosTree.length ? modulosTree : [{ id: 'fallback-ventas', nombre: 'Ventas', children: [] }];
+  return (
+    <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-slate-100 bg-slate-50 text-left text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">
+              <th className="px-5 py-4">Rol</th>
+              {visibleModules.map((mod) => <th key={mod.id} className="px-5 py-4 text-center">{formatModuleName(mod.nombre)}</th>)}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-50">
+            {roles.map((role) => (
+              <tr key={role.id}>
+                <td className="px-5 py-4">
+                  <p className="font-black text-slate-900">{role.title}</p>
+                  <p className="text-xs font-semibold text-slate-400">{role.area} / {role.level}</p>
+                </td>
+                {visibleModules.map((mod) => {
+                  const active = role.permissions.includes(mod.nombre) || mod.children?.some((child) => role.permissions.includes(child.nombre));
+                  return (
+                    <td key={`${role.id}-${mod.id}`} className="px-5 py-4 text-center">
+                      {active ? <CheckCircle2 className="mx-auto text-emerald-600" size={18} /> : <span className="text-slate-300">-</span>}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function RequestsView() {
+  const rows = [
+    ['Crear usuario', 'Pendiente', 'Ventas'],
+    ['Cambiar rol', 'En revision', 'Marketing'],
+    ['Acceso temporal', 'Aprobada', 'Finanzas'],
+  ];
+  return <SimpleBoard title="Solicitudes" rows={rows} columns={['Tipo', 'Estado', 'Area']} />;
+}
+
+function SecurityView({ users }) {
+  const highRisk = users.filter((user) => user.governance.risk !== 'Bajo');
+  const rows = highRisk.map((user) => [user.nombre, user.governance.risk, `${user.governance.criticalCount} criticos`]);
+  return <SimpleBoard title="Seguridad" rows={rows.length ? rows : [['Sin alertas', 'Bajo', '0 criticos']]} columns={['Usuario', 'Riesgo', 'Accesos']} />;
+}
+
+function ActivityView() {
+  const rows = [
+    ['Sistema', 'Cambio de permisos', 'Operativo'],
+    ['Admin', 'Restablecer contrasena', 'Sensible'],
+    ['Admin', 'Actualizar rol', 'Critico'],
+  ];
+  return <SimpleBoard title="Actividad" rows={rows} columns={['Responsable', 'Accion', 'Severidad']} />;
+}
+
+function SimpleBoard({ title, rows, columns }) {
+  return (
+    <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-100 p-5">
+        <h2 className="text-lg font-black text-slate-950">{title}</h2>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-slate-100 bg-slate-50 text-left text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">
+              {columns.map((column) => <th key={column} className="px-5 py-4">{column}</th>)}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-50">
+            {rows.map((row, index) => (
+              <tr key={`${row[0]}-${index}`}>
+                {row.map((cell, cellIndex) => <td key={`${cell}-${cellIndex}`} className="px-5 py-4 font-semibold text-slate-600">{cell}</td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function RolePicker({ onApply }) {
+  return (
+    <section className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
+      <p className="mb-3 text-xs font-black uppercase tracking-[0.14em] text-blue-700">Rol base</p>
+      <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+        {ACCESS_ROLES.map((role) => (
+          <button
+            key={role.id}
+            type="button"
+            onClick={() => onApply(role)}
+            className="rounded-xl bg-white px-3 py-2 text-left text-xs font-black text-slate-700 ring-1 ring-blue-100 transition hover:text-blue-700"
+          >
+            <span className="block">{role.title}</span>
+            <span className="mt-1 block text-[10px] font-bold text-slate-400">{role.area} / {role.level}</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function PermissionTree({ modulosTree, treeState, setter, onChange }) {
+  return (
+    <section>
+      <p className="mb-3 text-xs font-black uppercase tracking-[0.14em] text-slate-400">Accesos por modulo</p>
+      <div className="grid max-h-80 grid-cols-1 gap-3 overflow-y-auto rounded-2xl bg-slate-50 p-3 custom-scrollbar">
+        {modulosTree.map((mod) => (
+          <div key={mod.id} className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+            <label className="flex cursor-pointer items-center gap-3">
+              <input
+                type="checkbox"
+                checked={treeState[mod.nombre]?.checked || false}
+                onChange={(event) => onChange(setter, mod.nombre, event.target.checked)}
+                className="h-5 w-5 rounded-lg border-2 border-slate-300 text-[#020873]"
+              />
+              <ModuleMark name={mod.nombre} active={treeState[mod.nombre]?.checked || false} />
+              <span className="font-black text-slate-800">{formatModuleName(mod.nombre)}</span>
+              <span className="ml-auto text-[11px] font-black uppercase tracking-[0.12em] text-slate-400">{mod.children.length} submodulos</span>
+            </label>
+            {mod.children.length > 0 && (
+              <div className="ml-14 mt-3 grid gap-2 border-l-2 border-slate-100 pl-5">
+                {mod.children.map((child) => {
+                  const parentChecked = treeState[mod.nombre]?.checked;
+                  const childChecked = parentChecked ? true : Boolean(treeState[mod.nombre]?.children?.[child.nombre]);
+                  return (
+                    <label key={child.id} className="flex cursor-pointer items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">
+                      <input
+                        type="checkbox"
+                        checked={childChecked}
+                        disabled={parentChecked}
+                        onChange={(event) => onChange(setter, mod.nombre, event.target.checked, false, child.nombre)}
+                        className="h-4 w-4 rounded border-2 border-slate-300 text-[#020873] disabled:opacity-50"
+                      />
+                      {formatModuleName(child.nombre)}
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function UserAccessModal({ title, submitLabel, loading, onClose, onSubmit, children }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-[#0a1930]/60 p-4 backdrop-blur-md">
+      <div className="w-full max-w-4xl rounded-[28px] border border-slate-100 bg-white p-6 shadow-2xl">
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-black text-slate-950">{title}</h2>
+            <p className="mt-1 text-sm font-semibold text-slate-400">Rol base, excepciones y permisos por modulo.</p>
+          </div>
+          <button onClick={onClose} className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700">
+            <X size={20} />
+          </button>
+        </div>
+        <div className="space-y-5">{children}</div>
+        <div className="mt-6 flex flex-col gap-3 border-t border-slate-100 pt-5 md:flex-row">
+          <button onClick={onSubmit} disabled={loading} className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-[#020873] px-5 py-3 text-sm font-black text-white transition hover:bg-[#05C7F2] hover:text-[#020873] disabled:opacity-60">
+            {loading ? <RefreshCw className="animate-spin" size={17} /> : <Save size={17} />}
+            {submitLabel}
+          </button>
+          <button onClick={onClose} disabled={loading} className="flex-1 rounded-2xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-600 transition hover:bg-slate-200">
+            Cancelar
           </button>
         </div>
       </div>
-
-      {/* ── TABLA (muestra solo módulos raíz) ──────────────────────────── */}
-      <div className="apple-card p-5 mb-8">
-        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h2 className="text-lg font-black text-slate-900">Niveles de acceso comercial</h2>
-            <p className="mt-1 text-xs font-medium text-slate-500">
-              Paquetes recomendados para ejecutivos, supervisores, jefe de ventas, gerencia, marketing y coordinacion.
-            </p>
-          </div>
-          <span className="badge badge-blue">Ventas Operativas 360°</span>
-        </div>
-        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {ACCESS_LEVEL_PRESETS.map((preset) => (
-            <div key={preset.id} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <p className="font-black text-slate-900">{preset.title}</p>
-                <span className="text-[11px] font-black text-blue-700">{preset.permissions.length} permisos</span>
-              </div>
-              <p className="mt-2 text-xs font-medium leading-5 text-slate-500">{preset.description}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="bg-white/80 backdrop-blur-sm rounded-3xl border border-blue-50 shadow-xl shadow-blue-100/20 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="bg-gradient-to-r from-gray-50 to-white border-b border-gray-100">
-                <th className="px-6 py-4 text-left text-[11px] font-black text-gray-400 uppercase tracking-wider">
-                  Usuario
-                </th>
-                {modulosTree.map(m => (
-                  <th key={m.id} className="px-3 py-4 text-center text-[10px] font-black text-gray-400 uppercase tracking-widest min-w-[96px]">
-                    <div className="flex flex-col items-center gap-1.5">
-                      <ModuleMark name={m.nombre} />
-                      <span>{formatModuleName(m.nombre)}</span>
-                    </div>
-                  </th>
-                ))}
-                <th className="px-6 py-4 text-right text-[11px] font-black text-gray-400 uppercase tracking-wider">
-                  Acciones
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {filteredUsers.map(user => {
-                const tieneCambios = permisosTemp[user.id] && Object.keys(permisosTemp[user.id]).length > 0;
-                const permisosActivos = Object.values(user.permisos || {}).filter(Boolean).length;
-                return (
-                  <tr key={user.id} className="hover:bg-blue-50/30 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#11284e] to-[#185FA5] flex items-center justify-center text-white font-bold text-sm shadow-md">
-                          {(user.nombre || user.email || 'U').slice(0, 2).toUpperCase()}
-                        </div>
-                        <div>
-                          <div className="font-bold text-gray-800 text-sm">{user.nombre}</div>
-                          <div className="text-xs text-gray-400">{user.email}</div>
-                          <div className="mt-1 text-[11px] font-black text-[#020873]">{permisosActivos} permisos activos</div>
-                        </div>
-                      </div>
-                    </td>
-                    {modulosTree.map(modulo => {
-                      const activo = getPermiso(user.id, modulo.nombre);
-                      return (
-                        <td key={modulo.id} className="px-3 py-4 text-center">
-                          <button
-                            onClick={() => togglePermiso(user.id, modulo.nombre, activo)}
-                            className={`w-10 h-5 rounded-full relative transition-all duration-300 ${activo ? 'bg-emerald-500 shadow-sm' : 'bg-gray-200'}`}
-                          >
-                            <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all shadow ${activo ? 'left-6' : 'left-1'}`} />
-                          </button>
-                        </td>
-                      );
-                    })}
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex justify-end gap-2">
-                        {tieneCambios && (
-                          <button
-                            onClick={() => guardarPermisosInline(user.id)}
-                            className="bg-emerald-50 hover:bg-emerald-100 text-emerald-600 p-2 rounded-xl border border-emerald-200 transition-all"
-                            title="Guardar permisos rápidos"
-                          >
-                            <Save size={16} />
-                          </button>
-                        )}
-                        <button
-                          onClick={() => abrirEditar(user)}
-                          className="p-2 text-gray-400 hover:text-[#185FA5] hover:bg-blue-50 rounded-xl transition-all border border-gray-100 hover:border-blue-200"
-                          title="Editar nombre, contraseña y submódulos"
-                        >
-                          <Lock size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-              {filteredUsers.length === 0 && (
-                <tr>
-                  <td colSpan={modulosTree.length + 2} className="px-6 py-16 text-center text-gray-400">
-                    <Shield size={40} className="mx-auto mb-3 opacity-20" />
-                    <p className="font-medium">No se encontraron usuarios</p>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* ══════════════════════════════════════════════════════════════════
-          MODAL CREAR USUARIO
-      ══════════════════════════════════════════════════════════════════ */}
-      {modalNuevo && (
-        <div className="fixed inset-0 bg-[#0a1930]/60 backdrop-blur-md flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl w-full max-w-2xl p-8 shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h3 className="text-2xl font-black text-[#11284e]">Alta de Usuario</h3>
-                <p className="text-gray-500 text-sm mt-1">Crear acceso y asignar módulos (completos o parciales)</p>
-              </div>
-              <button onClick={() => setModalNuevo(false)} className="p-2 hover:bg-gray-100 rounded-xl text-gray-400 transition-colors"><X size={20} /></button>
-            </div>
-
-            <div className="space-y-5">
-              {/* Nombre para saludo */}
-              <div>
-                <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">Nombre para saludo *</label>
-                <div className="relative">
-                  <User className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                  <input type="text" placeholder='Ej: "Lic. Flores" o "Sara"' value={nuevoUsuario.nombre}
-                    onChange={e => setNuevoUsuario({ ...nuevoUsuario, nombre: e.target.value })}
-                    className="w-full bg-gray-50 border-2 border-gray-100 rounded-2xl pl-10 pr-4 py-3 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 text-sm transition-all" />
-                </div>
-              </div>
-              <input type="email" placeholder="Email institucional *" value={nuevoUsuario.email}
-                onChange={e => setNuevoUsuario({ ...nuevoUsuario, email: e.target.value })}
-                className="w-full bg-gray-50 border-2 border-gray-100 rounded-2xl px-4 py-3 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 text-sm transition-all" />
-              <input type="password" placeholder="Contraseña *" value={nuevoUsuario.password}
-                onChange={e => setNuevoUsuario({ ...nuevoUsuario, password: e.target.value })}
-                className="w-full bg-gray-50 border-2 border-gray-100 rounded-2xl px-4 py-3 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 text-sm transition-all" />
-              <input type="password" placeholder="Confirmar contraseña *" value={nuevoUsuario.confirmPassword}
-                onChange={e => setNuevoUsuario({ ...nuevoUsuario, confirmPassword: e.target.value })}
-                className="w-full bg-gray-50 border-2 border-gray-100 rounded-2xl px-4 py-3 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 text-sm transition-all" />
-
-              {/* Árbol de módulos */}
-              <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
-                <p className="mb-3 text-xs font-black uppercase tracking-wider text-blue-700">Aplicar nivel recomendado</p>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {ACCESS_LEVEL_PRESETS.map((preset) => (
-                    <button
-                      key={`crear-${preset.id}`}
-                      type="button"
-                      onClick={() => aplicarPreset(setPermisosTreeCrear, preset)}
-                      className="rounded-xl bg-white px-3 py-2 text-left text-xs font-bold text-slate-700 shadow-sm ring-1 ring-blue-100 transition hover:text-blue-700"
-                    >
-                      {preset.title}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="border-t border-gray-100 pt-5">
-                <p className="text-sm font-bold text-[#0B1527] mb-3">Módulos accesibles:</p>
-                <div className="grid grid-cols-1 gap-3 max-h-80 overflow-y-auto rounded-2xl bg-slate-50 p-3 custom-scrollbar">
-                  {modulosTree.map(mod => (
-                    <div key={mod.id} className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm transition-colors hover:border-blue-200">
-                      <label className="flex items-center gap-3 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={permisosTreeCrear[mod.nombre]?.checked || false}
-                          onChange={e => handleTreeChange(setPermisosTreeCrear, mod.nombre, e.target.checked)}
-                          className="w-5 h-5 rounded-lg border-2 border-gray-300 text-[#185FA5] focus:ring-blue-500"
-                        />
-                        <ModuleMark name={mod.nombre} active={permisosTreeCrear[mod.nombre]?.checked || false} />
-                        <span className="font-semibold text-gray-800">{formatModuleName(mod.nombre)}</span>
-                        <span className="ml-auto rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-slate-500">
-                          {mod.children.length ? `${mod.children.length} submodulos` : 'Modulo'}
-                        </span>
-                      </label>
-                      {mod.children.length > 0 && (
-                        <div className="ml-14 mt-3 grid grid-cols-1 gap-2 border-l-2 border-gray-100 pl-5">
-                          {mod.children.map(child => {
-                            const padChequeado = permisosTreeCrear[mod.nombre]?.checked;
-                            const childChecked = padChequeado ? true : (permisosTreeCrear[mod.nombre]?.children?.[child.nombre] || false);
-                            return (
-                              <label key={child.id} className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm cursor-pointer transition-colors hover:bg-slate-50">
-                                <input
-                                  type="checkbox"
-                                  checked={childChecked}
-                                  disabled={padChequeado}
-                                  onChange={e => handleTreeChange(setPermisosTreeCrear, mod.nombre, e.target.checked, false, child.nombre)}
-                                  className="w-4 h-4 rounded border-2 border-gray-300 text-[#185FA5] disabled:opacity-50"
-                                />
-                                <span className={padChequeado ? 'text-gray-400' : 'text-gray-700'}>{formatModuleName(child.nombre)}</span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-                <p className="text-[10px] text-gray-400 mt-2 font-medium">
-                  Marca el módulo principal para acceso completo. Desmárcalo para elegir submódulos específicos.
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-8">
-              <button onClick={crearNuevoUsuario} disabled={creando}
-                className="w-full bg-gradient-to-r from-[#11284e] to-[#185FA5] hover:from-[#185FA5] hover:to-[#1a6ab8] text-white py-4 rounded-2xl font-bold shadow-xl shadow-blue-500/20 flex items-center justify-center gap-2 transition-all disabled:opacity-60 active:scale-[0.98]">
-                {creando ? <><RefreshCw className="animate-spin" size={20} /> Creando...</> : 'Crear Usuario y Asignar Permisos'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ══════════════════════════════════════════════════════════════════
-          MODAL EDITAR USUARIO
-      ══════════════════════════════════════════════════════════════════ */}
-      {modalEditar && usuarioEditando && (
-        <div className="fixed inset-0 bg-[#0a1930]/60 backdrop-blur-md flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl w-full max-w-2xl p-8 shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h3 className="text-2xl font-black text-[#11284e]">Editar Usuario</h3>
-                <p className="text-gray-500 text-sm mt-1">{usuarioEditando.email}</p>
-              </div>
-              <button onClick={cerrarEditar} className="p-2 hover:bg-gray-100 rounded-xl text-gray-400 transition-colors"><X size={20} /></button>
-            </div>
-
-            <div className="space-y-6">
-              {/* Nombre */}
-              <div>
-                <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Nombre para saludo en el Dashboard</label>
-                <div className="relative">
-                  <User className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                  <input type="text" placeholder='Ej: "Lic. Flores"' value={nombreEditando}
-                    onChange={e => setNombreEditando(e.target.value)}
-                    className="w-full bg-blue-50 border-2 border-blue-200 rounded-2xl pl-10 pr-4 py-3 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 text-sm font-medium transition-all" />
-                </div>
-              </div>
-
-              {/* Contraseña */}
-              <div className="border-2 border-amber-200 p-5 rounded-2xl bg-amber-50">
-                <div className="flex items-center gap-2 mb-3">
-                  <Lock size={18} className="text-amber-600" />
-                  <p className="font-bold text-sm text-[#11284e]">Cambiar contraseña (opcional)</p>
-                </div>
-                <div className="space-y-3">
-                  <input type="password" placeholder="Nueva contraseña (mín. 6 caracteres)" value={nuevaPassword}
-                    onChange={e => setNuevaPassword(e.target.value)}
-                    className="w-full bg-white border-2 border-amber-200 rounded-xl px-4 py-3 outline-none focus:border-amber-400 focus:ring-4 focus:ring-amber-400/20 text-sm transition-all" />
-                  {nuevaPassword && (
-                    <input type="password" placeholder="Confirmar nueva contraseña" value={confirmPassword}
-                      onChange={e => setConfirmPassword(e.target.value)}
-                      className="w-full bg-white border-2 border-amber-200 rounded-xl px-4 py-3 outline-none focus:border-amber-400 focus:ring-4 focus:ring-amber-400/20 text-sm transition-all" />
-                  )}
-                </div>
-              </div>
-
-              {/* Módulos (árbol) */}
-              <div>
-                <p className="text-sm font-bold text-[#11284e] mb-3">Módulos asignados:</p>
-                <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 mb-4">
-                  <p className="mb-3 text-xs font-black uppercase tracking-wider text-blue-700">Cambiar nivel recomendado</p>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    {ACCESS_LEVEL_PRESETS.map((preset) => (
-                      <button
-                        key={`editar-${preset.id}`}
-                        type="button"
-                        onClick={() => aplicarPreset(setPermisosTreeEditar, preset)}
-                        className="rounded-xl bg-white px-3 py-2 text-left text-xs font-bold text-slate-700 shadow-sm ring-1 ring-blue-100 transition hover:text-blue-700"
-                      >
-                        {preset.title}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 gap-3 max-h-80 overflow-y-auto rounded-2xl bg-slate-50 p-3 custom-scrollbar">
-                  {modulosTree.map(mod => (
-                    <div key={mod.id} className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm transition-colors hover:border-blue-200">
-                      <label className="flex items-center gap-3 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={permisosTreeEditar[mod.nombre]?.checked || false}
-                          onChange={e => handleTreeChange(setPermisosTreeEditar, mod.nombre, e.target.checked)}
-                          className="w-5 h-5 rounded-lg border-2 border-gray-300 text-[#185FA5] focus:ring-blue-500"
-                        />
-                        <ModuleMark name={mod.nombre} active={permisosTreeEditar[mod.nombre]?.checked || false} />
-                        <span className="font-semibold text-gray-800">{formatModuleName(mod.nombre)}</span>
-                        <span className="ml-auto rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-slate-500">
-                          {mod.children.length ? `${mod.children.length} submodulos` : 'Modulo'}
-                        </span>
-                      </label>
-                      {mod.children.length > 0 && (
-                        <div className="ml-14 mt-3 grid grid-cols-1 gap-2 border-l-2 border-gray-100 pl-5">
-                          {mod.children.map(child => {
-                            const padChequeado = permisosTreeEditar[mod.nombre]?.checked;
-                            const childChecked = padChequeado ? true : (permisosTreeEditar[mod.nombre]?.children?.[child.nombre] || false);
-                            return (
-                              <label key={child.id} className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm cursor-pointer transition-colors hover:bg-slate-50">
-                                <input
-                                  type="checkbox"
-                                  checked={childChecked}
-                                  disabled={padChequeado}
-                                  onChange={e => handleTreeChange(setPermisosTreeEditar, mod.nombre, e.target.checked, false, child.nombre)}
-                                  className="w-4 h-4 rounded border-2 border-gray-300 text-[#185FA5] disabled:opacity-50"
-                                />
-                                <span className={padChequeado ? 'text-gray-400' : 'text-gray-700'}>{formatModuleName(child.nombre)}</span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-                <p className="text-xs text-gray-500 mt-2 text-center font-medium">
-                  {Object.keys(treePermisosToFlat(permisosTreeEditar)).length} módulo(s) activo(s)
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-8 flex flex-col sm:flex-row gap-3 pt-6 border-t border-gray-100">
-              <button onClick={guardarCambios} disabled={editando}
-                className="flex-1 bg-gradient-to-r from-[#11284e] to-[#185FA5] hover:from-[#185FA5] hover:to-[#1a6ab8] text-white py-4 rounded-2xl font-bold shadow-xl shadow-blue-500/20 flex items-center justify-center gap-2 transition-all disabled:opacity-50 active:scale-[0.98]">
-                {editando ? <><RefreshCw className="animate-spin" size={20} /> Guardando...</> : <><Save size={20} /> Guardar cambios</>}
-              </button>
-              <button onClick={cerrarEditar} disabled={editando}
-                className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-4 rounded-2xl font-medium transition-all disabled:opacity-50">
-                Cancelar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <style dangerouslySetInnerHTML={{ __html: `
-        .custom-scrollbar::-webkit-scrollbar { width: 5px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.08); border-radius: 20px; }
-      `}} />
     </div>
   );
 }

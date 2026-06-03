@@ -132,7 +132,7 @@ export default function App() {
   const rutasPrivadas = [
     { path: '/dashboard', component: <Dashboard /> },
     { path: '/inscripciones', component: <Inscripciones />, requiredPermissions: ['Inscripciones'] },
-    { path: '/ventas', component: <Ventas />, requiredPermissions: SALES_PERMISSIONS },
+    { path: '/ventas/*', component: <Ventas />, requiredPermissions: SALES_PERMISSIONS },
     { path: '/caja', component: <Caja />, requiredPermissions: ['Caja', 'Caja y Pagos'] },
     { path: '/marketing', component: <Marketing />, requiredPermissions: ['Marketing', 'marketing_dashboard'] },
     { path: '/marketing/dashboard', component: <Marketing />, requiredPermissions: ['Marketing', 'marketing_dashboard'] },

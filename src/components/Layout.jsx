@@ -13,7 +13,8 @@ import {
   Clock, Calendar, AlertCircle, FileText, UserPlus,
   Target, Megaphone, CalendarDays, Palette,
   FolderOpen, Bot, BarChart3, Building2, MessageSquare,
-  Trophy
+  Trophy, Activity, Plus, MessageCircle, Gift, KeyRound,
+  Upload, Settings, ClipboardCheck, Bell
 } from 'lucide-react';
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -337,7 +338,29 @@ const NAV_GRUPOS = [
     items: [
       { path: '/dashboard',     nombre: 'Dashboard', icon: LayoutDashboard, permiso: 'Dashboard' },
       { path: '/inscripciones', nombre: 'Inscripciones', icon: FileEdit, permiso: 'Inscripciones' },
-      { path: '/ventas',        nombre: 'Ventas 360°', icon: Trophy, permiso: 'Ventas', permisos: SALES_PERMISSIONS },
+      {
+        nombre: 'Ventas 360°',
+        icon: Trophy,
+        permiso: 'Ventas',
+        permisos: SALES_PERMISSIONS,
+        subItems: [
+          { path: '/ventas/resumen',        nombre: 'Resumen ejecutivo', icon: Activity, permiso: 'ventas_dashboard' },
+          { path: '/ventas/nueva-venta',   nombre: 'Nueva venta', icon: Plus, permiso: 'ventas_nueva_venta' },
+          { path: '/ventas/ranking',       nombre: 'Ranking comercial', icon: Trophy, permiso: 'ventas_ranking' },
+          { path: '/ventas/metas',         nombre: 'Metas y proyección', icon: Target, permiso: 'ventas_metas' },
+          { path: '/ventas/kommo',         nombre: 'Cola Kommo', icon: MessageCircle, permiso: 'ventas_kommo' },
+          { path: '/ventas/checklist',     nombre: 'Checklist diario', icon: ClipboardCheck, permiso: 'ventas_checklist' },
+          { path: '/ventas/grupos',        nombre: 'Grupos WhatsApp', icon: Users, permiso: 'ventas_grupos' },
+          { path: '/ventas/promesas',      nombre: 'Promesas de pago', icon: Clock, permiso: 'ventas_promesas' },
+          { path: '/ventas/comisiones',    nombre: 'Comisiones e incidencias', icon: Gift, permiso: 'ventas_comisiones' },
+          { path: '/ventas/reportes',      nombre: 'Reportes comerciales', icon: FileText, permiso: 'ventas_entregables' },
+          { path: '/ventas/plantillas',    nombre: 'Plantillas comerciales', icon: ClipboardList, permiso: 'ventas_plantillas' },
+          { path: '/ventas/accesos',       nombre: 'Accesos críticos', icon: KeyRound, permiso: 'ventas_accesos' },
+          { path: '/ventas/alertas',       nombre: 'Alertas inteligentes', icon: Bell, permiso: 'ventas_alertas' },
+          { path: '/ventas/importador',    nombre: 'Importador', icon: Upload, permiso: 'ventas_importador' },
+          { path: '/ventas/administracion', nombre: 'Administración', icon: Settings, permiso: 'ventas_administracion' },
+        ],
+      },
       { path: '/caja',          nombre: 'Caja y Pagos', icon: Wallet, permiso: 'Caja' },
     ],
   },
@@ -395,7 +418,7 @@ const NAV_GRUPOS = [
   {
     label: 'Sistema',
     items: [
-      { path: '/admin/usuarios', nombre: 'Usuarios', icon: ShieldCheck, permiso: 'admin usuarios' },
+      { path: '/admin/usuarios', nombre: 'Usuarios y accesos', icon: ShieldCheck, permiso: 'admin usuarios' },
     ],
   },
 ];
