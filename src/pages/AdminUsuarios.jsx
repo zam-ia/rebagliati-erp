@@ -203,6 +203,8 @@ const CRITICAL_PERMISSIONS = new Set([
   'ventas_entregables',
 ]);
 
+const FORM_INPUT_CLASS = 'h-11 w-full rounded-full border border-black/10 bg-white px-4 text-sm font-normal text-slate-800 outline-none transition placeholder:text-slate-300 focus:border-[#05C7F2] focus:ring-4 focus:ring-[#05C7F2]/15';
+
 const formatModuleName = (name = '') =>
   MODULE_LABELS[name] || name
     .replace(/^ventas_/, '')
@@ -271,7 +273,7 @@ function Badge({ children, tone = 'slate' }) {
     navy: 'bg-[#020873] text-white ring-[#020873]',
   };
   return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-black ring-1 ${tones[tone] || tones.slate}`}>
+    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium ring-1 ${tones[tone] || tones.slate}`}>
       {children}
     </span>
   );
@@ -287,11 +289,11 @@ function MetricCard({ label, value, icon: Icon, tone = 'blue' }) {
   };
 
   return (
-    <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+    <div className="rounded-2xl border border-black/5 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.06),0_1px_2px_rgba(0,0,0,0.04)]">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
-          <p className="mt-2 text-2xl font-black text-slate-950">{value}</p>
+          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">{label}</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-950">{value}</p>
         </div>
         <div className={`rounded-2xl p-3 ${tones[tone] || tones.blue}`}>
           <Icon size={19} />
@@ -303,7 +305,7 @@ function MetricCard({ label, value, icon: Icon, tone = 'blue' }) {
 
 function ModuleMark({ name, active = false }) {
   return (
-    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-[11px] font-black ${
+    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-[11px] font-medium ${
       active ? 'bg-[#020873] text-white' : 'bg-slate-100 text-slate-600'
     }`}>
       {initials(formatModuleName(name))}
@@ -446,29 +448,6 @@ export default function AdminUsuarios() {
     setNuevaPassword('');
     setConfirmPassword('');
     setPermisosTreeEditar({});
-  };
-
-  const buildPresetTree = (permissions = []) => {
-    const permissionSet = new Set(permissions);
-    const nextTree = {};
-    modulosTree.forEach((mod) => {
-      const children = {};
-      let hasCheckedChild = false;
-      mod.children?.forEach((child) => {
-        const checked = permissionSet.has(child.nombre);
-        children[child.nombre] = checked;
-        if (checked) hasCheckedChild = true;
-      });
-      nextTree[mod.nombre] = {
-        checked: permissionSet.has(mod.nombre) && !hasCheckedChild,
-        children,
-      };
-    });
-    return nextTree;
-  };
-
-  const aplicarRol = (setter, role) => {
-    setter(buildPresetTree(role.permissions));
   };
 
   const handleTreeChange = (setter, moduleName, value, isParent = true, childName = null) => {
@@ -614,16 +593,16 @@ export default function AdminUsuarios() {
 
   return (
     <div className="min-h-screen space-y-6 bg-[#F2F2F2] p-4 md:p-8">
-      <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="rounded-[24px] border border-black/5 bg-white/90 p-5 shadow-[0_1px_3px_rgba(0,0,0,0.06),0_1px_2px_rgba(0,0,0,0.04)] backdrop-blur">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <div className="flex items-center gap-3">
-              <div className="rounded-2xl bg-[#020873] p-3 text-white">
+              <div className="rounded-2xl bg-[#020873] p-3 text-white shadow-[0_4px_16px_rgba(0,0,0,0.08),0_2px_6px_rgba(0,0,0,0.04)]">
                 <Shield size={22} />
               </div>
               <div>
-                <h1 className="text-3xl font-black tracking-tight text-slate-950">Usuarios y accesos</h1>
-                <p className="mt-1 text-sm font-medium text-slate-500">Controla quien entra, que puede hacer y que accesos requieren revision.</p>
+                <h1 className="text-3xl font-semibold tracking-tight text-slate-950">Usuarios y accesos</h1>
+                <p className="mt-1 text-sm font-normal text-slate-500">Control de usuarios, modulos, submodulos y permisos criticos.</p>
               </div>
             </div>
           </div>
@@ -633,31 +612,31 @@ export default function AdminUsuarios() {
               <input
                 value={busqueda}
                 onChange={(event) => setBusqueda(event.target.value)}
-                className="h-11 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-10 pr-4 text-sm font-semibold outline-none transition focus:border-[#05C7F2] focus:bg-white focus:ring-4 focus:ring-[#05C7F2]/15"
+                className="h-11 w-full rounded-full border border-black/10 bg-slate-50 pl-10 pr-4 text-sm font-normal outline-none transition focus:border-[#05C7F2] focus:bg-white focus:ring-4 focus:ring-[#05C7F2]/15"
                 placeholder="Buscar usuario, correo o rol"
               />
             </label>
-            <button onClick={exportarUsuarios} className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-700 transition hover:border-[#05C7F2] hover:text-[#020873]">
+            <button onClick={exportarUsuarios} className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-black/10 bg-white px-4 text-sm font-medium text-slate-700 transition hover:border-[#05C7F2] hover:text-[#020873] active:scale-[0.97]">
               <Download size={16} /> Exportar
             </button>
-            <button onClick={abrirModalNuevo} className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-[#020873] px-5 text-sm font-black text-white shadow-lg shadow-blue-950/10 transition hover:bg-[#05C7F2] hover:text-[#020873]">
+            <button onClick={abrirModalNuevo} className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-[#020873] px-5 text-sm font-medium text-white shadow-[0_4px_16px_rgba(0,0,0,0.08),0_2px_6px_rgba(0,0,0,0.04)] transition hover:bg-[#05C7F2] hover:text-[#020873] active:scale-[0.97]">
               <UserPlus size={16} /> Nuevo usuario
             </button>
           </div>
         </div>
 
         <div className="mt-5 flex flex-col gap-3 lg:flex-row lg:items-center">
-          <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-slate-400">
+          <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.14em] text-slate-400">
             <SlidersHorizontal size={15} /> Filtros
           </div>
           <div className="grid flex-1 grid-cols-1 gap-3 md:grid-cols-3">
-            <select value={filters.area} onChange={(event) => setFilters({ ...filters, area: event.target.value })} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 outline-none">
+            <select value={filters.area} onChange={(event) => setFilters({ ...filters, area: event.target.value })} className="h-10 rounded-full border border-black/10 bg-white px-3 text-xs font-medium text-slate-600 outline-none transition focus:border-[#05C7F2] focus:ring-4 focus:ring-[#05C7F2]/15">
               {AREAS.map((area) => <option key={area}>{area}</option>)}
             </select>
-            <select value={filters.estado} onChange={(event) => setFilters({ ...filters, estado: event.target.value })} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 outline-none">
+            <select value={filters.estado} onChange={(event) => setFilters({ ...filters, estado: event.target.value })} className="h-10 rounded-full border border-black/10 bg-white px-3 text-xs font-medium text-slate-600 outline-none transition focus:border-[#05C7F2] focus:ring-4 focus:ring-[#05C7F2]/15">
               {ESTADOS.map((estado) => <option key={estado}>{estado}</option>)}
             </select>
-            <select value={filters.nivel} onChange={(event) => setFilters({ ...filters, nivel: event.target.value })} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 outline-none">
+            <select value={filters.nivel} onChange={(event) => setFilters({ ...filters, nivel: event.target.value })} className="h-10 rounded-full border border-black/10 bg-white px-3 text-xs font-medium text-slate-600 outline-none transition focus:border-[#05C7F2] focus:ring-4 focus:ring-[#05C7F2]/15">
               {LEVELS.map((level) => <option key={level}>{level}</option>)}
             </select>
           </div>
@@ -673,12 +652,12 @@ export default function AdminUsuarios() {
         <MetricCard label="Sin actividad" value={metrics.inactive} icon={Eye} tone="slate" />
       </div>
 
-      <div className="flex gap-2 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
+      <div className="flex gap-2 overflow-x-auto rounded-full border border-black/5 bg-white/90 p-1.5 shadow-[0_1px_3px_rgba(0,0,0,0.06),0_1px_2px_rgba(0,0,0,0.04)]">
         {ADMIN_TABS.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             onClick={() => setActiveTab(id)}
-            className={`flex min-w-max items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-black transition ${
+            className={`flex min-w-max items-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium transition active:scale-[0.97] ${
               activeTab === id ? 'bg-[#020873] text-white' : 'text-slate-500 hover:bg-slate-50 hover:text-[#020873]'
             }`}
           >
@@ -710,23 +689,22 @@ export default function AdminUsuarios() {
         >
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <label className="space-y-1.5 md:col-span-2">
-              <span className="text-xs font-black uppercase tracking-[0.12em] text-slate-400">Nombre</span>
-              <input className="erp-input" value={nuevoUsuario.nombre} onChange={(event) => setNuevoUsuario({ ...nuevoUsuario, nombre: event.target.value })} placeholder="Nombre visible" />
+              <span className="text-xs font-medium uppercase tracking-[0.12em] text-slate-400">Nombre</span>
+              <input className={FORM_INPUT_CLASS} value={nuevoUsuario.nombre} onChange={(event) => setNuevoUsuario({ ...nuevoUsuario, nombre: event.target.value })} placeholder="Nombre visible" />
             </label>
             <label className="space-y-1.5">
-              <span className="text-xs font-black uppercase tracking-[0.12em] text-slate-400">Correo institucional</span>
-              <input className="erp-input" type="email" value={nuevoUsuario.email} onChange={(event) => setNuevoUsuario({ ...nuevoUsuario, email: event.target.value })} placeholder="correo@rebagliati.com" />
+              <span className="text-xs font-medium uppercase tracking-[0.12em] text-slate-400">Correo institucional</span>
+              <input className={FORM_INPUT_CLASS} type="email" value={nuevoUsuario.email} onChange={(event) => setNuevoUsuario({ ...nuevoUsuario, email: event.target.value })} placeholder="correo@rebagliati.com" />
             </label>
             <label className="space-y-1.5">
-              <span className="text-xs font-black uppercase tracking-[0.12em] text-slate-400">Contrasena</span>
-              <input className="erp-input" type="password" value={nuevoUsuario.password} onChange={(event) => setNuevoUsuario({ ...nuevoUsuario, password: event.target.value })} />
+              <span className="text-xs font-medium uppercase tracking-[0.12em] text-slate-400">Contrasena</span>
+              <input className={FORM_INPUT_CLASS} type="password" value={nuevoUsuario.password} onChange={(event) => setNuevoUsuario({ ...nuevoUsuario, password: event.target.value })} />
             </label>
             <label className="space-y-1.5 md:col-span-2">
-              <span className="text-xs font-black uppercase tracking-[0.12em] text-slate-400">Confirmar contrasena</span>
-              <input className="erp-input" type="password" value={nuevoUsuario.confirmPassword} onChange={(event) => setNuevoUsuario({ ...nuevoUsuario, confirmPassword: event.target.value })} />
+              <span className="text-xs font-medium uppercase tracking-[0.12em] text-slate-400">Confirmar contrasena</span>
+              <input className={FORM_INPUT_CLASS} type="password" value={nuevoUsuario.confirmPassword} onChange={(event) => setNuevoUsuario({ ...nuevoUsuario, confirmPassword: event.target.value })} />
             </label>
           </div>
-          <RolePicker onApply={(role) => aplicarRol(setPermisosTreeCrear, role)} />
           <PermissionTree modulosTree={modulosTree} treeState={permisosTreeCrear} setter={setPermisosTreeCrear} onChange={handleTreeChange} />
         </UserAccessModal>
       )}
@@ -741,19 +719,18 @@ export default function AdminUsuarios() {
         >
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <label className="space-y-1.5 md:col-span-2">
-              <span className="text-xs font-black uppercase tracking-[0.12em] text-slate-400">Nombre visible</span>
-              <input className="erp-input" value={nombreEditando} onChange={(event) => setNombreEditando(event.target.value)} />
+              <span className="text-xs font-medium uppercase tracking-[0.12em] text-slate-400">Nombre visible</span>
+              <input className={FORM_INPUT_CLASS} value={nombreEditando} onChange={(event) => setNombreEditando(event.target.value)} />
             </label>
             <label className="space-y-1.5">
-              <span className="text-xs font-black uppercase tracking-[0.12em] text-slate-400">Nueva contrasena</span>
-              <input className="erp-input" type="password" value={nuevaPassword} onChange={(event) => setNuevaPassword(event.target.value)} />
+              <span className="text-xs font-medium uppercase tracking-[0.12em] text-slate-400">Nueva contrasena</span>
+              <input className={FORM_INPUT_CLASS} type="password" value={nuevaPassword} onChange={(event) => setNuevaPassword(event.target.value)} />
             </label>
             <label className="space-y-1.5">
-              <span className="text-xs font-black uppercase tracking-[0.12em] text-slate-400">Confirmar</span>
-              <input className="erp-input" type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
+              <span className="text-xs font-medium uppercase tracking-[0.12em] text-slate-400">Confirmar</span>
+              <input className={FORM_INPUT_CLASS} type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
             </label>
           </div>
-          <RolePicker onApply={(role) => aplicarRol(setPermisosTreeEditar, role)} />
           <PermissionTree modulosTree={modulosTree} treeState={permisosTreeEditar} setter={setPermisosTreeEditar} onChange={handleTreeChange} />
         </UserAccessModal>
       )}
@@ -766,11 +743,11 @@ function UsersTable({ users, selectedUserId, onSelect, onEdit }) {
   const stateTone = { Activo: 'green', Pendiente: 'amber', Suspendido: 'red', 'Sin acceso': 'slate', 'Requiere revision': 'amber', Invitado: 'blue' };
 
   return (
-    <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
+    <div className="overflow-hidden rounded-[24px] border border-black/5 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.06),0_1px_2px_rgba(0,0,0,0.04)]">
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-slate-100 bg-slate-50 text-left text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">
+            <tr className="border-b border-slate-100 bg-slate-50 text-left text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">
               <th className="px-5 py-4">Usuario</th>
               <th className="px-5 py-4">Area</th>
               <th className="px-5 py-4">Cargo</th>
@@ -787,11 +764,11 @@ function UsersTable({ users, selectedUserId, onSelect, onEdit }) {
               <tr key={user.id} className={`${selectedUserId === user.id ? 'bg-blue-50/60' : 'hover:bg-slate-50'} transition`}>
                 <td className="px-5 py-4">
                   <button onClick={() => onSelect(user.id)} className="flex items-center gap-3 text-left">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#020873] text-xs font-black text-white">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#020873] text-xs font-medium text-white">
                       {initials(user.nombre || user.email)}
                     </span>
                     <span>
-                      <span className="block font-black text-slate-900">{user.nombre}</span>
+                      <span className="block font-medium text-slate-900">{user.nombre}</span>
                       <span className="block text-xs font-medium text-slate-400">{user.email}</span>
                     </span>
                   </button>
@@ -805,10 +782,10 @@ function UsersTable({ users, selectedUserId, onSelect, onEdit }) {
                 <td className="px-5 py-4"><Badge tone={riskTone[user.governance.risk]}>{user.governance.risk}</Badge></td>
                 <td className="px-5 py-4">
                   <div className="flex justify-end gap-2">
-                    <button onClick={() => onSelect(user.id)} className="rounded-xl border border-slate-200 p-2 text-slate-500 transition hover:border-blue-200 hover:text-blue-700" title="Ver perfil">
+                    <button onClick={() => onSelect(user.id)} className="flex h-11 w-11 items-center justify-center rounded-full border border-black/10 text-slate-500 transition hover:border-[#05C7F2] hover:text-[#020873] active:scale-[0.97]" title="Ver perfil">
                       <Eye size={16} />
                     </button>
-                    <button onClick={() => onEdit(user)} className="rounded-xl border border-slate-200 p-2 text-slate-500 transition hover:border-blue-200 hover:text-blue-700" title="Editar accesos">
+                    <button onClick={() => onEdit(user)} className="flex h-11 w-11 items-center justify-center rounded-full border border-black/10 text-slate-500 transition hover:border-[#05C7F2] hover:text-[#020873] active:scale-[0.97]" title="Editar accesos">
                       <KeyRound size={16} />
                     </button>
                   </div>
@@ -830,7 +807,7 @@ function UsersTable({ users, selectedUserId, onSelect, onEdit }) {
 function UserDetail({ user, onEdit }) {
   if (!user) {
     return (
-      <aside className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+      <aside className="rounded-[24px] border border-black/5 bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.06),0_1px_2px_rgba(0,0,0,0.04)]">
         <p className="text-sm font-semibold text-slate-400">Selecciona un usuario.</p>
       </aside>
     );
@@ -839,16 +816,16 @@ function UserDetail({ user, onEdit }) {
   const permissions = user.governance.permissions.slice(0, 10);
 
   return (
-    <aside className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+    <aside className="rounded-[24px] border border-black/5 bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.06),0_1px_2px_rgba(0,0,0,0.04)]">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#020873] text-sm font-black text-white">{initials(user.nombre)}</div>
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#020873] text-sm font-medium text-white">{initials(user.nombre)}</div>
           <div>
-            <h2 className="text-lg font-black text-slate-950">{user.nombre}</h2>
+            <h2 className="text-lg font-semibold text-slate-950">{user.nombre}</h2>
             <p className="text-xs font-semibold text-slate-400">{user.email}</p>
           </div>
         </div>
-        <button onClick={() => onEdit(user)} className="rounded-xl bg-[#020873] px-3 py-2 text-xs font-black text-white">Editar</button>
+        <button onClick={() => onEdit(user)} className="inline-flex h-10 items-center justify-center rounded-full bg-[#020873] px-4 text-xs font-medium text-white transition hover:bg-[#05C7F2] hover:text-[#020873] active:scale-[0.97]">Editar</button>
       </div>
 
       <div className="mt-5 grid grid-cols-2 gap-3">
@@ -885,17 +862,17 @@ function UserDetail({ user, onEdit }) {
 
 function InfoTile({ label, value }) {
   return (
-    <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
-      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
-      <p className="mt-1 text-sm font-black text-slate-900">{value}</p>
+    <div className="rounded-2xl border border-black/5 bg-slate-50 p-3">
+      <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">{label}</p>
+      <p className="mt-1 text-sm font-medium text-slate-900">{value}</p>
     </div>
   );
 }
 
 function DetailBlock({ title, children }) {
   return (
-    <section className="rounded-2xl border border-slate-100 p-4">
-      <h3 className="mb-3 text-xs font-black uppercase tracking-[0.14em] text-slate-400">{title}</h3>
+    <section className="rounded-2xl border border-black/5 p-4">
+      <h3 className="mb-3 text-xs font-medium uppercase tracking-[0.14em] text-slate-400">{title}</h3>
       {children}
     </section>
   );
@@ -905,11 +882,11 @@ function RolesView({ roles }) {
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
       {roles.map((role) => (
-        <div key={role.id} className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+        <div key={role.id} className="rounded-[24px] border border-black/5 bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.06),0_1px_2px_rgba(0,0,0,0.04)]">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 className="text-lg font-black text-slate-950">{role.title}</h2>
-              <p className="mt-1 text-sm font-bold text-slate-500">{role.area}</p>
+              <h2 className="text-lg font-semibold text-slate-950">{role.title}</h2>
+              <p className="mt-1 text-sm font-normal text-slate-500">{role.area}</p>
             </div>
             <Badge tone="blue">{role.level}</Badge>
           </div>
@@ -926,11 +903,11 @@ function RolesView({ roles }) {
 function AccessMatrix({ modulosTree, roles }) {
   const visibleModules = modulosTree.length ? modulosTree : [{ id: 'fallback-ventas', nombre: 'Ventas', children: [] }];
   return (
-    <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
+    <div className="overflow-hidden rounded-[24px] border border-black/5 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.06),0_1px_2px_rgba(0,0,0,0.04)]">
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-slate-100 bg-slate-50 text-left text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">
+            <tr className="border-b border-slate-100 bg-slate-50 text-left text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">
               <th className="px-5 py-4">Rol</th>
               {visibleModules.map((mod) => <th key={mod.id} className="px-5 py-4 text-center">{formatModuleName(mod.nombre)}</th>)}
             </tr>
@@ -939,7 +916,7 @@ function AccessMatrix({ modulosTree, roles }) {
             {roles.map((role) => (
               <tr key={role.id}>
                 <td className="px-5 py-4">
-                  <p className="font-black text-slate-900">{role.title}</p>
+                  <p className="font-medium text-slate-900">{role.title}</p>
                   <p className="text-xs font-semibold text-slate-400">{role.area} / {role.level}</p>
                 </td>
                 {visibleModules.map((mod) => {
@@ -985,14 +962,14 @@ function ActivityView() {
 
 function SimpleBoard({ title, rows, columns }) {
   return (
-    <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
+    <div className="overflow-hidden rounded-[24px] border border-black/5 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.06),0_1px_2px_rgba(0,0,0,0.04)]">
       <div className="border-b border-slate-100 p-5">
-        <h2 className="text-lg font-black text-slate-950">{title}</h2>
+        <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-slate-100 bg-slate-50 text-left text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">
+            <tr className="border-b border-slate-100 bg-slate-50 text-left text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">
               {columns.map((column) => <th key={column} className="px-5 py-4">{column}</th>)}
             </tr>
           </thead>
@@ -1009,44 +986,23 @@ function SimpleBoard({ title, rows, columns }) {
   );
 }
 
-function RolePicker({ onApply }) {
-  return (
-    <section className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
-      <p className="mb-3 text-xs font-black uppercase tracking-[0.14em] text-blue-700">Rol base</p>
-      <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-        {ACCESS_ROLES.map((role) => (
-          <button
-            key={role.id}
-            type="button"
-            onClick={() => onApply(role)}
-            className="rounded-xl bg-white px-3 py-2 text-left text-xs font-black text-slate-700 ring-1 ring-blue-100 transition hover:text-blue-700"
-          >
-            <span className="block">{role.title}</span>
-            <span className="mt-1 block text-[10px] font-bold text-slate-400">{role.area} / {role.level}</span>
-          </button>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 function PermissionTree({ modulosTree, treeState, setter, onChange }) {
   return (
     <section>
-      <p className="mb-3 text-xs font-black uppercase tracking-[0.14em] text-slate-400">Accesos por modulo</p>
-      <div className="grid max-h-80 grid-cols-1 gap-3 overflow-y-auto rounded-2xl bg-slate-50 p-3 custom-scrollbar">
+      <p className="mb-3 text-xs font-medium uppercase tracking-[0.14em] text-slate-400">Accesos por modulo</p>
+      <div className="grid max-h-80 grid-cols-1 gap-3 overflow-y-auto rounded-[20px] bg-slate-50 p-3 custom-scrollbar">
         {modulosTree.map((mod) => (
-          <div key={mod.id} className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+          <div key={mod.id} className="rounded-[18px] border border-black/5 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.06),0_1px_2px_rgba(0,0,0,0.04)]">
             <label className="flex cursor-pointer items-center gap-3">
               <input
                 type="checkbox"
                 checked={treeState[mod.nombre]?.checked || false}
                 onChange={(event) => onChange(setter, mod.nombre, event.target.checked)}
-                className="h-5 w-5 rounded-lg border-2 border-slate-300 text-[#020873]"
+                className="h-5 w-5 rounded border-slate-300 text-[#020873] focus:ring-[#05C7F2]"
               />
               <ModuleMark name={mod.nombre} active={treeState[mod.nombre]?.checked || false} />
-              <span className="font-black text-slate-800">{formatModuleName(mod.nombre)}</span>
-              <span className="ml-auto text-[11px] font-black uppercase tracking-[0.12em] text-slate-400">{mod.children.length} submodulos</span>
+              <span className="font-medium text-slate-800">{formatModuleName(mod.nombre)}</span>
+              <span className="ml-auto text-[11px] font-medium uppercase tracking-[0.12em] text-slate-400">{mod.children.length} submodulos</span>
             </label>
             {mod.children.length > 0 && (
               <div className="ml-14 mt-3 grid gap-2 border-l-2 border-slate-100 pl-5">
@@ -1054,13 +1010,13 @@ function PermissionTree({ modulosTree, treeState, setter, onChange }) {
                   const parentChecked = treeState[mod.nombre]?.checked;
                   const childChecked = parentChecked ? true : Boolean(treeState[mod.nombre]?.children?.[child.nombre]);
                   return (
-                    <label key={child.id} className="flex cursor-pointer items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">
+                    <label key={child.id} className="flex min-h-10 cursor-pointer items-center gap-2 rounded-full px-3 py-2 text-sm font-normal text-slate-600 hover:bg-slate-50">
                       <input
                         type="checkbox"
                         checked={childChecked}
                         disabled={parentChecked}
                         onChange={(event) => onChange(setter, mod.nombre, event.target.checked, false, child.nombre)}
-                        className="h-4 w-4 rounded border-2 border-slate-300 text-[#020873] disabled:opacity-50"
+                        className="h-4 w-4 rounded border-slate-300 text-[#020873] focus:ring-[#05C7F2] disabled:opacity-50"
                       />
                       {formatModuleName(child.nombre)}
                     </label>
@@ -1078,23 +1034,22 @@ function PermissionTree({ modulosTree, treeState, setter, onChange }) {
 function UserAccessModal({ title, submitLabel, loading, onClose, onSubmit, children }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-[#0a1930]/60 p-4 backdrop-blur-md">
-      <div className="w-full max-w-4xl rounded-[28px] border border-slate-100 bg-white p-6 shadow-2xl">
+      <div className="w-full max-w-4xl rounded-[28px] border border-black/5 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.18),0_8px_20px_rgba(0,0,0,0.08)]">
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-black text-slate-950">{title}</h2>
-            <p className="mt-1 text-sm font-semibold text-slate-400">Rol base, excepciones y permisos por modulo.</p>
+            <h2 className="text-2xl font-semibold text-slate-950">{title}</h2>
           </div>
-          <button onClick={onClose} className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700">
+          <button onClick={onClose} className="flex h-10 w-10 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 active:scale-[0.97]">
             <X size={20} />
           </button>
         </div>
         <div className="space-y-5">{children}</div>
         <div className="mt-6 flex flex-col gap-3 border-t border-slate-100 pt-5 md:flex-row">
-          <button onClick={onSubmit} disabled={loading} className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-[#020873] px-5 py-3 text-sm font-black text-white transition hover:bg-[#05C7F2] hover:text-[#020873] disabled:opacity-60">
+          <button onClick={onSubmit} disabled={loading} className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-full bg-[#020873] px-5 text-sm font-medium text-white transition hover:bg-[#05C7F2] hover:text-[#020873] active:scale-[0.97] disabled:opacity-60">
             {loading ? <RefreshCw className="animate-spin" size={17} /> : <Save size={17} />}
             {submitLabel}
           </button>
-          <button onClick={onClose} disabled={loading} className="flex-1 rounded-2xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-600 transition hover:bg-slate-200">
+          <button onClick={onClose} disabled={loading} className="h-11 flex-1 rounded-full bg-slate-100 px-5 text-sm font-medium text-slate-600 transition hover:bg-slate-200 active:scale-[0.97] disabled:opacity-60">
             Cancelar
           </button>
         </div>
