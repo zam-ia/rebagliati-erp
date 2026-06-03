@@ -1,6 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+import {
   Activity,
   AlertTriangle,
   BarChart3,
@@ -97,15 +111,15 @@ const emptyForm = {
 
 const SALES_SUBMODULES = [
   { id: 'resumen', path: 'resumen', label: 'Resumen ejecutivo', icon: Activity, permission: 'ventas_dashboard' },
-  { id: 'nueva-venta', path: 'nueva-venta', label: 'Nueva venta', icon: Plus, permission: 'ventas_nueva_venta' },
-  { id: 'ranking', path: 'ranking', label: 'Ranking comercial', icon: Trophy, permission: 'ventas_ranking' },
-  { id: 'metas', path: 'metas', label: 'Metas y proyeccion', icon: Target, permission: 'ventas_metas' },
-  { id: 'kommo', path: 'kommo', label: 'Cola Kommo', icon: MessageCircle, permission: 'ventas_kommo' },
-  { id: 'checklist', path: 'checklist', label: 'Checklist diario', icon: ClipboardCheck, permission: 'ventas_checklist' },
-  { id: 'grupos', path: 'grupos', label: 'Grupos WhatsApp', icon: Users, permission: 'ventas_grupos' },
+  { id: 'nueva-venta', path: 'nueva-venta', label: 'Ventas', icon: Plus, permission: 'ventas_nueva_venta' },
+  { id: 'ranking', path: 'ranking', label: 'Equipo', icon: Trophy, permission: 'ventas_ranking' },
+  { id: 'metas', path: 'metas', label: 'Metas', icon: Target, permission: 'ventas_metas' },
+  { id: 'kommo', path: 'kommo', label: 'Leads', icon: MessageCircle, permission: 'ventas_kommo' },
+  { id: 'checklist', path: 'checklist', label: 'Rutina operativa', icon: ClipboardCheck, permission: 'ventas_checklist' },
+  { id: 'grupos', path: 'grupos', label: 'Comunidades', icon: Users, permission: 'ventas_grupos' },
   { id: 'promesas', path: 'promesas', label: 'Promesas de pago', icon: Clock, permission: 'ventas_promesas' },
   { id: 'comisiones', path: 'comisiones', label: 'Comisiones e incidencias', icon: Gift, permission: 'ventas_comisiones' },
-  { id: 'reportes', path: 'reportes', label: 'Reportes comerciales', icon: FileText, permission: 'ventas_entregables' },
+  { id: 'reportes', path: 'reportes', label: 'Reportes', icon: FileText, permission: 'ventas_entregables' },
   { id: 'plantillas', path: 'plantillas', label: 'Plantillas comerciales', icon: FileText, permission: 'ventas_plantillas' },
   { id: 'accesos', path: 'accesos', label: 'Accesos criticos', icon: KeyRound, permission: 'ventas_accesos' },
   { id: 'alertas', path: 'alertas', label: 'Alertas inteligentes', icon: Bell, permission: 'ventas_alertas' },
@@ -166,7 +180,7 @@ const actionQueue = [
   { action: 'Corregir acceso critico', detail: 'Caso Kasandra supero 30 minutos por autenticacion.', severity: 'high' },
 ];
 
-const accessLevels = [
+const ACCESS_LEVELS = [
   { role: 'Ejecutivo comercial', scope: 'Nueva venta, checklist, promesas propias, plantillas activas', badge: 'Operativo' },
   { role: 'Supervisor / encargado', scope: 'Cola Kommo, ranking de equipo, grupos, reasignaciones y alertas', badge: 'Control' },
   { role: 'Jefe de ventas', scope: 'Metas, comisiones, incidencias, reportes, importador y administracion comercial', badge: 'Direccion' },
@@ -174,6 +188,132 @@ const accessLevels = [
   { role: 'Marketing', scope: 'UTMs, campanas, grupos, plantillas y eventos ganadores', badge: 'Lectura + fuentes' },
   { role: 'Coordinacion', scope: 'Eventos, fechas, modalidad, vacantes y estado academico', badge: 'Lectura coordinacion' },
 ];
+
+const EXPECTED_MIX = { C: 35, CM: 15, D: 50 };
+const CHART_COLORS = ['#020873', '#05C7F2', '#16a34a', '#f59e0b', '#ef4444', '#64748b'];
+const tooltipStyle = {
+  border: '1px solid rgba(15,23,42,0.08)',
+  borderRadius: 14,
+  boxShadow: '0 8px 30px rgba(0,0,0,0.12),0 4px 10px rgba(0,0,0,0.06)',
+  fontSize: 12,
+};
+
+const shortDate = (value = '') => {
+  const [, month, day] = String(value).split('-');
+  return day && month ? `${day}/${month}` : value;
+};
+
+const buildDailyTrend = (salesRows = [], dailyGoal = 60) => {
+  const grouped = salesRows.reduce((acc, sale) => {
+    const date = sale.sale_date || sale.created_at?.slice(0, 10) || todayISO();
+    acc[date] = (acc[date] || 0) + toPositiveNumber(sale.quantity);
+    return acc;
+  }, {});
+
+  const rows = Object.entries(grouped)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, ventas]) => ({ date, dia: shortDate(date), ventas, meta: dailyGoal }));
+
+  return rows.length ? rows : [{ date: todayISO(), dia: shortDate(todayISO()), ventas: 0, meta: dailyGoal }];
+};
+
+const buildMonthlyProgress = (dailyRows = [], globalGoal = 1800) => {
+  let cumulative = 0;
+  const expectedStep = dailyRows.length ? globalGoal / dailyRows.length : globalGoal;
+  return dailyRows.map((row, index) => {
+    cumulative += row.ventas;
+    return {
+      dia: row.dia,
+      real: cumulative,
+      ideal: Math.round(expectedStep * (index + 1)),
+    };
+  });
+};
+
+const buildFunnelData = (kommoMetrics, promiseMetrics, totalSales) => {
+  const leads = Math.max(kommoMetrics.unassignedMessages + totalSales + 80, totalSales + 1);
+  return [
+    { name: 'Leads', value: leads },
+    { name: 'Contactados', value: Math.max(leads - kommoMetrics.unassignedMessages, 0) },
+    { name: 'Interesados', value: Math.max(totalSales + promiseMetrics.total * 18, 0) },
+    { name: 'Promesas', value: Math.max(promiseMetrics.total * 18, promiseMetrics.total) },
+    { name: 'Validado', value: totalSales },
+  ];
+};
+
+const buildChannelData = (salesRows = []) => {
+  const grouped = salesRows.reduce((acc, sale) => {
+    const source = sale.source || 'Sin canal';
+    acc[source] = acc[source] || { canal: source, ventas: 0, leads: 0 };
+    const ventas = toPositiveNumber(sale.quantity);
+    acc[source].ventas += ventas;
+    acc[source].leads += Math.max(ventas + Math.ceil(ventas * 1.8), ventas);
+    return acc;
+  }, {});
+
+  return Object.values(grouped)
+    .map((item) => ({ ...item, conversion: item.leads ? pctOf(item.ventas, item.leads, 1) : 0 }))
+    .sort((a, b) => b.ventas - a.ventas)
+    .slice(0, 6);
+};
+
+function ChartCard({ title, children, action }) {
+  return (
+    <div className="apple-card p-5">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <h2 className="text-base font-black text-slate-900">{title}</h2>
+        {action}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function FunnelChart({ data }) {
+  const max = Math.max(...data.map((item) => item.value), 1);
+  return (
+    <div className="space-y-3">
+      {data.map((item, index) => (
+        <div key={item.name}>
+          <div className="mb-1 flex justify-between text-xs font-bold text-slate-500">
+            <span>{item.name}</span>
+            <span>{item.value.toLocaleString('es-PE')}</span>
+          </div>
+          <div className="h-8 overflow-hidden rounded-full bg-slate-100">
+            <div
+              className="flex h-full items-center rounded-full px-3 text-xs font-black text-white"
+              style={{ width: `${Math.max((item.value / max) * 100, 8)}%`, backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}
+            >
+              {pctOf(item.value, max, 1)}%
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ExecutiveBars({ rows, onSelect }) {
+  return (
+    <div className="space-y-3">
+      {rows.slice(0, 7).map((row) => {
+        const progress = row.goal ? row.goalProgress : pctOf(row.total, Math.max(rows[0]?.total || 1, 1), 1);
+        const tone = progress >= 90 ? 'bg-emerald-500' : progress >= 70 ? 'bg-amber-500' : 'bg-red-500';
+        return (
+          <button key={row.executive_id} onClick={() => onSelect?.(row.executive_id)} className="block w-full rounded-2xl p-2 text-left transition hover:bg-slate-50">
+            <div className="mb-1 flex justify-between gap-3 text-xs font-bold text-slate-500">
+              <span>{row.executive}</span>
+              <span>{row.total} / {row.goal || 's.m.'}</span>
+            </div>
+            <div className="h-3 overflow-hidden rounded-full bg-slate-100">
+              <div className={`h-full rounded-full ${tone}`} style={{ width: `${Math.min(progress, 100)}%` }} />
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 const criticalAccessDemo = [
   { user: 'Kasandra', platform: 'Correo', type: 'Cambio de autenticacion', minutes: 45, status: 'Escalado' },
@@ -413,7 +553,25 @@ export default function Ventas() {
   const canManageSales = allowedSalesModules.some((item) => item.id === 'administracion');
   const globalGoal = useMemo(() => goals.reduce((sum, item) => sum + (Number(item.target_total) || 0), 0), [goals]);
   const globalProgress = globalGoal > 0 ? pctOf(metrics.total, globalGoal) : pctOf(metrics.total, 1800);
-  const dailyRequired = Math.max(Math.ceil((globalGoal - metrics.total) / 8), 0);
+  const dailyGoal = Math.max(Math.ceil((globalGoal || 1800) / 30), 1);
+  const dailyRequired = Math.max(Math.ceil(((globalGoal || 1800) - metrics.total) / 8), 0);
+  const todaySales = useMemo(
+    () => sales.filter((sale) => sale.sale_date === todayISO()).reduce((sum, sale) => sum + toPositiveNumber(sale.quantity), 0),
+    [sales],
+  );
+  const dailyTrend = useMemo(() => buildDailyTrend(filteredSales, dailyGoal), [dailyGoal, filteredSales]);
+  const monthlyProgress = useMemo(() => buildMonthlyProgress(dailyTrend, globalGoal || 1800), [dailyTrend, globalGoal]);
+  const funnelData = useMemo(() => buildFunnelData(kommoMetrics, promiseMetrics, metrics.total), [kommoMetrics, metrics.total, promiseMetrics]);
+  const channelData = useMemo(() => buildChannelData(filteredSales), [filteredSales]);
+  const mixChartData = useMemo(() => SALES_CATEGORIES.map((item) => ({
+    categoria: item,
+    actual: metrics.mix[item]?.pct || 0,
+    meta: EXPECTED_MIX[item],
+  })), [metrics.mix]);
+  const commercialRisk = alerts[0]?.message || (metrics.topFiveConcentration >= 60
+    ? `Top 5 concentra ${metrics.topFiveConcentration}%`
+    : 'Sin riesgo critico');
+  const projection = Math.round(metrics.total + dailyRequired * 8);
   const selectedHrPerson = useMemo(
     () => hrPeople.find((person) => person.key === newExecutive.hrPersonKey),
     [hrPeople, newExecutive.hrPersonKey],
@@ -636,10 +794,10 @@ export default function Ventas() {
         <div className="relative z-10 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <div className="inline-flex items-center gap-2 rounded-full bg-white/70 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-blue-700 ring-1 ring-blue-100">
-              <Activity size={13} /> Dashboard de Ventas
+              <Activity size={13} /> Cabina comercial
             </div>
             <h1 className="mt-4 text-3xl font-black tracking-tight text-slate-950 md:text-5xl">
-              Ventas Operativas 360°
+              Ventas
             </h1>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
               Dashboard comercial integrado con RRHH, transparencia de gestión y un único punto de control para ventas, caja, marketing y finanzas.
@@ -666,20 +824,53 @@ export default function Ventas() {
 
 
       {shouldShow('resumen') && <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard icon={Trophy} label="Ventas del periodo" value={metrics.total.toLocaleString('es-PE')} sub="Registros C + CM + D" />
-        <MetricCard icon={Target} label="Avance de meta" value={`${globalProgress}%`} sub={`${dailyRequired} registros/dia requeridos`} tone={globalProgress < 80 ? 'amber' : 'green'} />
-        <MetricCard icon={MessageCircle} label="Kommo sin asignar" value={kommoMetrics.unassignedMessages} sub={`${kommoMetrics.idealDistribution} mensajes aprox. por usuario`} tone="red" />
-        <MetricCard icon={Clock} label="Promesas en riesgo" value={promiseMetrics.reassigned} sub={`${promiseMetrics.expired} vencida(s), S/ ${promiseMetrics.amountAtRisk} en seguimiento`} tone="red" />
-      </div>}
-
-      {shouldShow('resumen') && <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard icon={Target} label="Concentracion Top 5" value={`${metrics.topFiveConcentration}%`} sub="Riesgo si supera 60%" tone="amber" />
-        <MetricCard icon={ClipboardCheck} label="Checklist promedio" value={`${metrics.checklistAverage}%`} sub={`${metrics.criticalChecklists} ejecutivos criticos`} tone={metrics.checklistAverage < 60 ? 'red' : 'green'} />
-        <MetricCard icon={Users} label="Grupos sin uso" value={metrics.unusedGroups} sub={`${metrics.pendingGroups} pendientes de responsable`} tone="red" />
-        <MetricCard icon={Clock} label="Tiempo perdido diario" value={`${kommoMetrics.dailyLostMinutes} min`} sub={`${kommoMetrics.monthlyLostHours} h/mes por asignacion y 2FA`} tone="amber" />
+        <MetricCard icon={Target} label="Meta del mes" value={`${globalProgress}%`} sub={`${metrics.total.toLocaleString('es-PE')} de ${(globalGoal || 1800).toLocaleString('es-PE')} - Proy. ${projection.toLocaleString('es-PE')}`} tone={globalProgress < 80 ? 'amber' : 'green'} />
+        <MetricCard icon={Trophy} label="Hoy" value={todaySales.toLocaleString('es-PE')} sub={`Meta diaria ${dailyGoal}. Faltan ${Math.max(dailyGoal - todaySales, 0)}`} tone={todaySales < dailyGoal ? 'amber' : 'green'} />
+        <MetricCard icon={MessageCircle} label="Leads pendientes" value={kommoMetrics.unassignedMessages} sub={`${kommoMetrics.redSocialUnread} redes sin leer - SLA ${kommoMetrics.responseLimitMinutes} min`} tone="red" />
+        <MetricCard icon={AlertTriangle} label="Riesgo comercial" value={alerts.length ? 'Alto' : 'Bajo'} sub={commercialRisk} tone={alerts.length ? 'red' : 'green'} />
       </div>}
 
       {shouldShow('resumen') && (
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <ChartCard title="Tendencia diaria de ventas">
+            <div className="h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={dailyTrend}>
+                  <defs>
+                    <linearGradient id="salesTrend" x1="0" x2="0" y1="0" y2="1">
+                      <stop offset="5%" stopColor="#05C7F2" stopOpacity={0.35} />
+                      <stop offset="95%" stopColor="#05C7F2" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="dia" tick={{ fontSize: 11, fill: '#64748b' }} />
+                  <YAxis tick={{ fontSize: 11, fill: '#64748b' }} />
+                  <Tooltip contentStyle={tooltipStyle} />
+                  <Area type="monotone" dataKey="ventas" stroke="#020873" fill="url(#salesTrend)" strokeWidth={3} />
+                  <Line type="monotone" dataKey="meta" stroke="#05C7F2" strokeDasharray="6 4" strokeWidth={2} dot={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </ChartCard>
+
+          <ChartCard title="Avance mensual acumulado">
+            <div className="h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={monthlyProgress}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="dia" tick={{ fontSize: 11, fill: '#64748b' }} />
+                  <YAxis tick={{ fontSize: 11, fill: '#64748b' }} />
+                  <Tooltip contentStyle={tooltipStyle} />
+                  <Line type="monotone" dataKey="real" stroke="#020873" strokeWidth={3} dot={false} />
+                  <Line type="monotone" dataKey="ideal" stroke="#05C7F2" strokeWidth={2} strokeDasharray="6 4" dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </ChartCard>
+        </div>
+      )}
+
+      {shouldShow('__oculto') && (
         <div className="apple-card p-5">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
@@ -697,16 +888,63 @@ export default function Ventas() {
       )}
 
       {shouldShow('resumen') && (
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+          <ChartCard title="Embudo Kommo">
+            <FunnelChart data={funnelData} />
+          </ChartCard>
+
+          <ChartCard title="Ranking visual por ejecutivo">
+            <ExecutiveBars rows={ranking} onSelect={() => goToModule('ranking')} />
+          </ChartCard>
+        </div>
+      )}
+
+      {shouldShow('resumen') && (
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <ChartCard title="Mix C / CM / D">
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={mixChartData} layout="vertical" margin={{ left: 8, right: 16 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis type="number" tick={{ fontSize: 11, fill: '#64748b' }} />
+                  <YAxis type="category" dataKey="categoria" tick={{ fontSize: 12, fill: '#334155' }} width={42} />
+                  <Tooltip contentStyle={tooltipStyle} />
+                  <Bar dataKey="meta" fill="#dbeafe" radius={[0, 8, 8, 0]} />
+                  <Bar dataKey="actual" fill="#020873" radius={[0, 8, 8, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </ChartCard>
+
+          <ChartCard title="Conversion por canal">
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={channelData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="canal" tick={{ fontSize: 11, fill: '#64748b' }} />
+                  <YAxis tick={{ fontSize: 11, fill: '#64748b' }} />
+                  <Tooltip contentStyle={tooltipStyle} />
+                  <Bar dataKey="ventas" radius={[8, 8, 0, 0]}>
+                    {channelData.map((item, index) => <Cell key={item.canal} fill={CHART_COLORS[index % CHART_COLORS.length]} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </ChartCard>
+        </div>
+      )}
+
+      {shouldShow('resumen') && (
         <div className="apple-card p-5">
           <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
-            <Bell size={19} className="text-red-500" /> Acciones urgentes de hoy
+            <Bell size={19} className="text-red-500" /> Alertas accionables
           </h2>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-            {actionQueue.map((item) => (
-              <div key={item.action} className={`rounded-2xl border p-4 ${severityClass[item.severity] || severityClass.medium}`}>
-                <p className="text-sm font-black">{item.action}</p>
-                <p className="mt-1 text-xs font-semibold leading-5">{item.detail}</p>
-              </div>
+            {[...alerts.slice(0, 4), ...actionQueue].slice(0, 4).map((item) => (
+              <button key={item.action || item.message} onClick={() => goToModule(item.type === 'Riesgo de meta' ? 'metas' : 'kommo')} className={`rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 ${severityClass[item.severity] || severityClass.medium}`}>
+                <p className="text-sm font-black">{item.action || item.type}</p>
+                <p className="mt-1 text-xs font-semibold leading-5">{item.detail || item.message}</p>
+              </button>
             ))}
           </div>
         </div>
@@ -773,7 +1011,7 @@ export default function Ventas() {
         </div>
       )}
 
-      {shouldShow('ranking', 'resumen') && <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.6fr_1fr]">
+      {shouldShow('ranking') && <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.6fr_1fr]">
         <div className="apple-card overflow-hidden">
           <div className="flex flex-col gap-3 border-b border-slate-100 p-5 md:flex-row md:items-center md:justify-between">
             <div>
@@ -884,8 +1122,8 @@ export default function Ventas() {
         </div>
       </div>}
 
-      {(shouldShow('kommo', 'resumen') || shouldShow('reportes')) && <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-        {shouldShow('kommo', 'resumen') && <div className="apple-card overflow-hidden">
+      {(shouldShow('kommo') || shouldShow('reportes')) && <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+        {shouldShow('kommo') && <div className="apple-card overflow-hidden">
           <div className="border-b border-slate-100 p-5">
             <h2 className="flex items-center gap-2 text-lg font-black text-slate-900">
               <MessageCircle size={19} className="text-blue-600" /> Cola Kommo y tablero de turno
@@ -912,7 +1150,7 @@ export default function Ventas() {
           </div>
         </div>}
 
-        {shouldShow('reportes', 'resumen') && <div className="apple-card p-5">
+        {shouldShow('reportes') && <div className="apple-card p-5">
           <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
             <FileText size={19} className="text-blue-600" /> Reportes comerciales
           </h2>
@@ -1006,8 +1244,8 @@ export default function Ventas() {
         </div>
       </div>}
 
-      {(shouldShow('checklist', 'resumen') || shouldShow('grupos', 'resumen')) && <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        {shouldShow('checklist', 'resumen') && <div className="apple-card p-5">
+      {(shouldShow('checklist') || shouldShow('grupos')) && <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        {shouldShow('checklist') && <div className="apple-card p-5">
           <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
             <ClipboardCheck size={19} className="text-blue-600" /> Checklist operativo
           </h2>
@@ -1032,7 +1270,7 @@ export default function Ventas() {
           </div>
         </div>}
 
-        {shouldShow('grupos', 'resumen') && <div className="apple-card overflow-hidden">
+        {shouldShow('grupos') && <div className="apple-card overflow-hidden">
           <div className="border-b border-slate-100 p-5">
             <h2 className="flex items-center gap-2 text-lg font-black text-slate-900">
               <MessageCircle size={19} className="text-blue-600" /> Inventario WhatsApp
@@ -1075,8 +1313,8 @@ export default function Ventas() {
         </div>}
       </div>}
 
-      {(shouldShow('promesas', 'resumen') || shouldShow('comisiones')) && <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        {shouldShow('promesas', 'resumen') && <div className="apple-card overflow-hidden">
+      {(shouldShow('promesas') || shouldShow('comisiones')) && <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        {shouldShow('promesas') && <div className="apple-card overflow-hidden">
           <div className="border-b border-slate-100 p-5">
             <h2 className="flex items-center gap-2 text-lg font-black text-slate-900">
               <Clock size={19} className="text-blue-600" /> Promesas de pago y propiedad de comision

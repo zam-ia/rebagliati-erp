@@ -1136,7 +1136,7 @@ function PermissionTree({ modulosTree, treeState, setter, onChange }) {
   return (
     <section>
       <p className="mb-3 text-xs font-medium uppercase tracking-[0.14em] text-slate-400">Accesos por modulo</p>
-      <div className="grid max-h-80 grid-cols-1 gap-3 overflow-y-auto rounded-[20px] bg-slate-50 p-3 custom-scrollbar">
+      <div className="grid max-h-[34vh] grid-cols-1 gap-3 overflow-y-auto rounded-[20px] bg-slate-50 p-3 custom-scrollbar">
         {modulosTree.map((mod) => (
           <div key={mod.id} className="rounded-[18px] border border-black/5 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.06),0_1px_2px_rgba(0,0,0,0.04)]">
             <label className="flex cursor-pointer items-center gap-3">
@@ -1179,18 +1179,18 @@ function PermissionTree({ modulosTree, treeState, setter, onChange }) {
 
 function UserAccessModal({ title, submitLabel, loading, onClose, onSubmit, children }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-[#0a1930]/60 p-4 backdrop-blur-md">
-      <div className="w-full max-w-4xl rounded-[28px] border border-black/5 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.18),0_8px_20px_rgba(0,0,0,0.08)]">
-        <div className="mb-5 flex items-start justify-between gap-4">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#0a1930]/60 p-3 pt-4 backdrop-blur-md md:pt-6">
+      <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-[24px] border border-black/5 bg-white shadow-[0_20px_60px_rgba(0,0,0,0.18),0_8px_20px_rgba(0,0,0,0.08)]">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4">
           <div>
-            <h2 className="text-2xl font-semibold text-slate-950">{title}</h2>
+            <h2 className="text-xl font-semibold text-slate-950 md:text-2xl">{title}</h2>
           </div>
           <button onClick={onClose} className="flex h-10 w-10 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 active:scale-[0.97]">
             <X size={20} />
           </button>
         </div>
-        <div className="space-y-5">{children}</div>
-        <div className="mt-6 flex flex-col gap-3 border-t border-slate-100 pt-5 md:flex-row">
+        <div className="space-y-4 overflow-y-auto px-5 py-4 custom-scrollbar">{children}</div>
+        <div className="flex flex-col gap-3 border-t border-slate-100 px-5 py-4 md:flex-row">
           <button onClick={onSubmit} disabled={loading} className={`${PRIMARY_BUTTON_CLASS} flex-1`}>
             {loading ? <RefreshCw className="animate-spin" size={17} /> : <Save size={17} />}
             {submitLabel}
