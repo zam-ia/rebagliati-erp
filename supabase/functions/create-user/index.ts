@@ -64,9 +64,11 @@ serve(async (req) => {
       }
     }
 
-    const { email, password, nombre, permisos } = await req.json();
+    const { email, password, nombre, cargo, rol, perfil_auto, permisos } = await req.json();
     const normalizedEmail = String(email || "").trim().toLowerCase();
     const normalizedName = String(nombre || "").trim();
+    const normalizedCargo = String(cargo || "").trim();
+    const normalizedRol = String(rol || "").trim();
 
     if (!normalizedEmail || !password) {
       return jsonResponse({ error: "Correo y contrasena son obligatorios" }, 400);
@@ -90,6 +92,9 @@ serve(async (req) => {
         id: data.user.id,
         email: normalizedEmail,
         nombre: normalizedName || normalizedEmail.split("@")[0],
+        cargo: normalizedCargo || null,
+        rol: normalizedRol || null,
+        perfil_auto: perfil_auto !== false,
       },
       { onConflict: "id" },
     );

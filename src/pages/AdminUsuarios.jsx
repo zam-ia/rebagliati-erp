@@ -76,6 +76,7 @@ const ACCESS_ROLES = [
   {
     id: 'superadmin_tecnico',
     title: 'Superadministrador tecnico',
+    position: 'Administrador de sistemas',
     area: 'Sistemas',
     level: 'Sistema',
     permissions: ['Dashboard', 'Ventas', 'Caja', 'Finanzas', 'Marketing', 'RRHH', 'Reportes', 'Administrar Usuarios', 'admin usuarios'],
@@ -83,6 +84,7 @@ const ACCESS_ROLES = [
   {
     id: 'administrador_general',
     title: 'Administrador general',
+    position: 'Administrador general',
     area: 'Direccion',
     level: 'Administracion general',
     permissions: ['Dashboard', 'Ventas', 'Caja', 'Finanzas', 'Marketing', 'RRHH', 'Reportes', 'Administrar Usuarios'],
@@ -90,6 +92,7 @@ const ACCESS_ROLES = [
   {
     id: 'direccion',
     title: 'Direccion',
+    position: 'Direccion ejecutiva',
     area: 'Direccion',
     level: 'Direccion',
     permissions: ['Dashboard', 'Ventas', 'ventas_dashboard', 'ventas_ranking', 'ventas_metas', 'Finanzas', 'Reportes'],
@@ -97,6 +100,7 @@ const ACCESS_ROLES = [
   {
     id: 'jefe_ventas',
     title: 'Jefe de ventas',
+    position: 'Jefe de ventas',
     area: 'Ventas',
     level: 'Jefatura',
     permissions: ['Ventas', 'ventas_dashboard', 'ventas_nueva_venta', 'ventas_ranking', 'ventas_metas', 'ventas_kommo', 'ventas_checklist', 'ventas_grupos', 'ventas_promesas', 'ventas_comisiones', 'ventas_plantillas', 'ventas_entregables', 'ventas_accesos', 'ventas_alertas', 'ventas_importador', 'ventas_administracion'],
@@ -104,6 +108,7 @@ const ACCESS_ROLES = [
   {
     id: 'supervisor_comercial',
     title: 'Supervisor comercial',
+    position: 'Supervisor comercial',
     area: 'Ventas',
     level: 'Supervision',
     permissions: ['Ventas', 'ventas_dashboard', 'ventas_ranking', 'ventas_metas', 'ventas_kommo', 'ventas_checklist', 'ventas_grupos', 'ventas_promesas', 'ventas_alertas'],
@@ -111,6 +116,7 @@ const ACCESS_ROLES = [
   {
     id: 'ejecutivo_ventas',
     title: 'Ejecutivo ventas',
+    position: 'Ejecutivo comercial',
     area: 'Ventas',
     level: 'Operativo',
     permissions: ['Ventas', 'ventas_nueva_venta', 'ventas_checklist', 'ventas_promesas', 'ventas_plantillas'],
@@ -118,6 +124,7 @@ const ACCESS_ROLES = [
   {
     id: 'marketing_admin',
     title: 'Marketing administrador',
+    position: 'Responsable de marketing',
     area: 'Marketing',
     level: 'Jefatura',
     permissions: ['Marketing', 'marketing_dashboard', 'marketing_campanas', 'marketing_metricas', 'marketing_planeacion', 'marketing_crm'],
@@ -125,6 +132,7 @@ const ACCESS_ROLES = [
   {
     id: 'marketing_lectura',
     title: 'Marketing lectura',
+    position: 'Analista de marketing',
     area: 'Marketing',
     level: 'Lectura',
     permissions: ['Marketing', 'marketing_dashboard', 'marketing_campanas', 'marketing_metricas'],
@@ -132,6 +140,7 @@ const ACCESS_ROLES = [
   {
     id: 'caja_operativo',
     title: 'Caja operativo',
+    position: 'Asistente de caja',
     area: 'Caja',
     level: 'Operativo',
     permissions: ['Caja', 'Caja y Pagos'],
@@ -139,6 +148,7 @@ const ACCESS_ROLES = [
   {
     id: 'finanzas',
     title: 'Finanzas',
+    position: 'Responsable financiero',
     area: 'Finanzas',
     level: 'Jefatura',
     permissions: ['Finanzas', 'Reportes'],
@@ -146,6 +156,7 @@ const ACCESS_ROLES = [
   {
     id: 'academico',
     title: 'Academico',
+    position: 'Coordinacion academica',
     area: 'Academico',
     level: 'Operativo',
     permissions: ['Gestion Estrategica', 'Reportes'],
@@ -153,6 +164,7 @@ const ACCESS_ROLES = [
   {
     id: 'auditoria_lectura',
     title: 'Auditoria lectura',
+    position: 'Usuario ERP',
     area: 'Direccion',
     level: 'Lectura',
     permissions: ['Dashboard', 'Reportes'],
@@ -204,6 +216,8 @@ const CRITICAL_PERMISSIONS = new Set([
 ]);
 
 const FORM_INPUT_CLASS = 'h-11 w-full rounded-full border border-black/10 bg-white px-4 text-sm font-normal text-slate-800 outline-none transition placeholder:text-slate-300 focus:border-[#05C7F2] focus:ring-4 focus:ring-[#05C7F2]/15';
+const PRIMARY_BUTTON_CLASS = 'inline-flex h-11 items-center justify-center gap-2 rounded-full bg-[#020873] px-5 text-sm font-medium text-white shadow-[0_4px_16px_rgba(0,0,0,0.08),0_2px_6px_rgba(0,0,0,0.04)] transition hover:bg-[#03115f] active:scale-[0.97] disabled:opacity-60';
+const SECONDARY_BUTTON_CLASS = 'inline-flex h-11 items-center justify-center gap-2 rounded-full border border-black/10 bg-white px-4 text-sm font-medium text-slate-700 transition hover:border-[#05C7F2] hover:text-[#020873] active:scale-[0.97]';
 
 const formatModuleName = (name = '') =>
   MODULE_LABELS[name] || name
@@ -225,6 +239,15 @@ const initials = (value = '') =>
 const roleMatchScore = (userPermissions, role) =>
   role.permissions.reduce((score, permission) => score + (userPermissions.includes(permission) ? 1 : 0), 0);
 
+const inferProfileFromPermissions = (permissions = []) => {
+  const rankedRoles = ACCESS_ROLES
+    .map((role) => ({ ...role, score: roleMatchScore(permissions, role) }))
+    .sort((a, b) => b.score - a.score);
+  return rankedRoles[0]?.score > 0
+    ? rankedRoles[0]
+    : ACCESS_ROLES.find((item) => item.id === 'auditoria_lectura');
+};
+
 const inferArea = (permissions = []) => {
   if (permissions.some((item) => item === 'Finanzas')) return 'Finanzas';
   if (permissions.some((item) => item === 'Caja' || item === 'Caja y Pagos')) return 'Caja';
@@ -240,26 +263,31 @@ const deriveUserGovernance = (user) => {
   const permissions = Object.entries(user.permisos || {})
     .filter(([, value]) => value)
     .map(([permission]) => permission);
-  const rankedRoles = ACCESS_ROLES
-    .map((role) => ({ ...role, score: roleMatchScore(permissions, role) }))
-    .sort((a, b) => b.score - a.score);
-  const role = rankedRoles[0]?.score > 0 ? rankedRoles[0] : ACCESS_ROLES.find((item) => item.id === 'auditoria_lectura');
+  const role = inferProfileFromPermissions(permissions);
   const criticalCount = permissions.filter((permission) => CRITICAL_PERMISSIONS.has(permission)).length;
   const risk = criticalCount >= 4 ? 'Alto' : criticalCount > 0 || permissions.length > 12 ? 'Medio' : 'Bajo';
   const state = permissions.length ? 'Activo' : 'Sin acceso';
   const area = inferArea(permissions);
+  const autoProfile = user.raw?.perfil_auto !== false;
+  const storedCargo = String(user.raw?.cargo || '').trim();
+  const storedRol = String(user.raw?.rol || '').trim();
+  const inferredRole = role?.title || 'Sin rol';
+  const inferredPosition = role?.position || inferredRole || 'Usuario ERP';
 
   return {
     permissions,
     permissionCount: permissions.length,
     criticalCount,
-    role: role?.title || 'Sin rol',
+    role: autoProfile ? inferredRole : storedRol || inferredRole,
     area,
     level: role?.level || 'Lectura',
     state,
     risk,
     lastAccess: 'Sin registro',
-    position: role?.title || 'Usuario ERP',
+    position: autoProfile ? inferredPosition : storedCargo || inferredPosition,
+    autoProfile,
+    inferredRole,
+    inferredPosition,
   };
 };
 
@@ -324,13 +352,24 @@ export default function AdminUsuarios() {
 
   const [modalNuevo, setModalNuevo] = useState(false);
   const [creando, setCreando] = useState(false);
-  const [nuevoUsuario, setNuevoUsuario] = useState({ email: '', password: '', confirmPassword: '', nombre: '' });
+  const [nuevoUsuario, setNuevoUsuario] = useState({
+    email: '',
+    password: '',
+    confirmPassword: '',
+    nombre: '',
+    cargo: '',
+    rol: '',
+    perfilAuto: true,
+  });
   const [permisosTreeCrear, setPermisosTreeCrear] = useState({});
 
   const [modalEditar, setModalEditar] = useState(false);
   const [editando, setEditando] = useState(false);
   const [usuarioEditando, setUsuarioEditando] = useState(null);
   const [nombreEditando, setNombreEditando] = useState('');
+  const [cargoEditando, setCargoEditando] = useState('');
+  const [rolEditando, setRolEditando] = useState('');
+  const [perfilAutoEditando, setPerfilAutoEditando] = useState(true);
   const [permisosTreeEditar, setPermisosTreeEditar] = useState({});
   const [nuevaPassword, setNuevaPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -398,7 +437,7 @@ export default function AdminUsuarios() {
   const filteredUsers = useMemo(() => {
     const term = busqueda.trim().toLowerCase();
     return enrichedUsers.filter((user) => {
-      const matchesTerm = !term || `${user.nombre} ${user.email} ${user.governance.role}`.toLowerCase().includes(term);
+      const matchesTerm = !term || `${user.nombre} ${user.email} ${user.governance.position} ${user.governance.role}`.toLowerCase().includes(term);
       const matchesArea = filters.area === 'Todas' || user.governance.area === filters.area;
       const matchesState = filters.estado === 'Todos' || user.governance.state === filters.estado;
       const matchesLevel = filters.nivel === 'Todos' || user.governance.level === filters.nivel;
@@ -421,6 +460,30 @@ export default function AdminUsuarios() {
     };
   }, [enrichedUsers]);
 
+  const perfilCrearPreview = useMemo(
+    () => deriveUserGovernance({
+      raw: {
+        cargo: nuevoUsuario.cargo,
+        rol: nuevoUsuario.rol,
+        perfil_auto: nuevoUsuario.perfilAuto,
+      },
+      permisos: treePermisosToFlat(permisosTreeCrear),
+    }),
+    [nuevoUsuario.cargo, nuevoUsuario.perfilAuto, nuevoUsuario.rol, permisosTreeCrear],
+  );
+
+  const perfilEditarPreview = useMemo(
+    () => deriveUserGovernance({
+      raw: {
+        cargo: cargoEditando,
+        rol: rolEditando,
+        perfil_auto: perfilAutoEditando,
+      },
+      permisos: treePermisosToFlat(permisosTreeEditar),
+    }),
+    [cargoEditando, perfilAutoEditando, permisosTreeEditar, rolEditando],
+  );
+
   const abrirModalNuevo = () => {
     const initialTree = {};
     modulosTree.forEach((mod) => {
@@ -428,6 +491,7 @@ export default function AdminUsuarios() {
       mod.children?.forEach((child) => { children[child.nombre] = false; });
       initialTree[mod.nombre] = { checked: false, children };
     });
+    setNuevoUsuario((current) => ({ ...current, cargo: '', rol: '', perfilAuto: true }));
     setPermisosTreeCrear(initialTree);
     setModalNuevo(true);
   };
@@ -435,6 +499,9 @@ export default function AdminUsuarios() {
   const abrirEditar = (usuario) => {
     setUsuarioEditando(usuario);
     setNombreEditando(usuario.nombre || '');
+    setCargoEditando(usuario.raw?.cargo || '');
+    setRolEditando(usuario.raw?.rol || '');
+    setPerfilAutoEditando(usuario.raw?.perfil_auto !== false);
     setPermisosTreeEditar(flatPermisosToTree(modulosTree, usuario.permisos));
     setNuevaPassword('');
     setConfirmPassword('');
@@ -445,6 +512,9 @@ export default function AdminUsuarios() {
     setModalEditar(false);
     setUsuarioEditando(null);
     setNombreEditando('');
+    setCargoEditando('');
+    setRolEditando('');
+    setPerfilAutoEditando(true);
     setNuevaPassword('');
     setConfirmPassword('');
     setPermisosTreeEditar({});
@@ -484,12 +554,17 @@ export default function AdminUsuarios() {
     setCreando(true);
     try {
       const permisosFlat = treePermisosToFlat(permisosTreeCrear);
+      const cargoFinal = nuevoUsuario.perfilAuto ? perfilCrearPreview.inferredPosition : nuevoUsuario.cargo.trim() || perfilCrearPreview.inferredPosition;
+      const rolFinal = nuevoUsuario.perfilAuto ? perfilCrearPreview.inferredRole : nuevoUsuario.rol.trim() || perfilCrearPreview.inferredRole;
       const { data, error } = await supabase.functions.invoke('create-user', {
         method: 'POST',
         body: {
           email: nuevoUsuario.email,
           password: nuevoUsuario.password,
           nombre: nuevoUsuario.nombre,
+          cargo: cargoFinal,
+          rol: rolFinal,
+          perfil_auto: nuevoUsuario.perfilAuto,
           permisos: Object.keys(permisosFlat),
         },
       });
@@ -497,7 +572,7 @@ export default function AdminUsuarios() {
       if (!data.user?.id) throw new Error('La funcion no devolvio el ID del usuario creado');
 
       setModalNuevo(false);
-      setNuevoUsuario({ email: '', password: '', confirmPassword: '', nombre: '' });
+      setNuevoUsuario({ email: '', password: '', confirmPassword: '', nombre: '', cargo: '', rol: '', perfilAuto: true });
       setPermisosTreeCrear({});
       cargarDatos();
     } catch (err) {
@@ -516,13 +591,20 @@ export default function AdminUsuarios() {
 
     setEditando(true);
     try {
+      const permisosFlat = treePermisosToFlat(permisosTreeEditar);
+      const cargoFinal = perfilAutoEditando ? perfilEditarPreview.inferredPosition : cargoEditando.trim() || perfilEditarPreview.inferredPosition;
+      const rolFinal = perfilAutoEditando ? perfilEditarPreview.inferredRole : rolEditando.trim() || perfilEditarPreview.inferredRole;
       const { error: errorPerfil } = await supabase
         .from('perfiles_usuarios')
-        .update({ nombre: nombreEditando })
+        .update({
+          nombre: nombreEditando,
+          cargo: cargoFinal,
+          rol: rolFinal,
+          perfil_auto: perfilAutoEditando,
+        })
         .eq('id', usuarioEditando.id);
       if (errorPerfil) throw new Error(`Error al guardar nombre: ${errorPerfil.message}`);
 
-      const permisosFlat = treePermisosToFlat(permisosTreeEditar);
       const { error: errorDelete } = await supabase
         .from('permisos_usuarios')
         .delete()
@@ -564,6 +646,7 @@ export default function AdminUsuarios() {
       usuario: user.nombre,
       email: user.email,
       area: user.governance.area,
+      cargo: user.governance.position,
       rol: user.governance.role,
       nivel: user.governance.level,
       estado: user.governance.state,
@@ -571,7 +654,7 @@ export default function AdminUsuarios() {
       permisos: user.governance.permissionCount,
     }));
     const csv = [
-      Object.keys(rows[0] || { usuario: '', email: '', area: '', rol: '', nivel: '', estado: '', riesgo: '', permisos: '' }).join(','),
+      Object.keys(rows[0] || { usuario: '', email: '', area: '', cargo: '', rol: '', nivel: '', estado: '', riesgo: '', permisos: '' }).join(','),
       ...rows.map((row) => Object.values(row).map((value) => `"${String(value).replaceAll('"', '""')}"`).join(',')),
     ].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
@@ -592,7 +675,7 @@ export default function AdminUsuarios() {
   }
 
   return (
-    <div className="min-h-screen space-y-6 bg-[#F2F2F2] p-4 md:p-8">
+    <div className="min-h-screen space-y-5 bg-[#F2F2F2] p-3 md:p-5 xl:p-6">
       <section className="rounded-[24px] border border-black/5 bg-white/90 p-5 shadow-[0_1px_3px_rgba(0,0,0,0.06),0_1px_2px_rgba(0,0,0,0.04)] backdrop-blur">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
           <div>
@@ -616,10 +699,10 @@ export default function AdminUsuarios() {
                 placeholder="Buscar usuario, correo o rol"
               />
             </label>
-            <button onClick={exportarUsuarios} className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-black/10 bg-white px-4 text-sm font-medium text-slate-700 transition hover:border-[#05C7F2] hover:text-[#020873] active:scale-[0.97]">
+            <button onClick={exportarUsuarios} className={SECONDARY_BUTTON_CLASS}>
               <Download size={16} /> Exportar
             </button>
-            <button onClick={abrirModalNuevo} className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-[#020873] px-5 text-sm font-medium text-white shadow-[0_4px_16px_rgba(0,0,0,0.08),0_2px_6px_rgba(0,0,0,0.04)] transition hover:bg-[#05C7F2] hover:text-[#020873] active:scale-[0.97]">
+            <button onClick={abrirModalNuevo} className={PRIMARY_BUTTON_CLASS}>
               <UserPlus size={16} /> Nuevo usuario
             </button>
           </div>
@@ -667,7 +750,7 @@ export default function AdminUsuarios() {
       </div>
 
       {activeTab === 'usuarios' && (
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_380px]">
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
           <UsersTable users={filteredUsers} selectedUserId={selectedUser?.id} onSelect={setSelectedUserId} onEdit={abrirEditar} />
           <UserDetail user={selectedUser} onEdit={abrirEditar} />
         </div>
@@ -705,6 +788,15 @@ export default function AdminUsuarios() {
               <input className={FORM_INPUT_CLASS} type="password" value={nuevoUsuario.confirmPassword} onChange={(event) => setNuevoUsuario({ ...nuevoUsuario, confirmPassword: event.target.value })} />
             </label>
           </div>
+          <ProfileFields
+            auto={nuevoUsuario.perfilAuto}
+            setAuto={(value) => setNuevoUsuario({ ...nuevoUsuario, perfilAuto: value })}
+            cargo={nuevoUsuario.cargo}
+            setCargo={(value) => setNuevoUsuario({ ...nuevoUsuario, cargo: value })}
+            rol={nuevoUsuario.rol}
+            setRol={(value) => setNuevoUsuario({ ...nuevoUsuario, rol: value })}
+            preview={perfilCrearPreview}
+          />
           <PermissionTree modulosTree={modulosTree} treeState={permisosTreeCrear} setter={setPermisosTreeCrear} onChange={handleTreeChange} />
         </UserAccessModal>
       )}
@@ -731,6 +823,15 @@ export default function AdminUsuarios() {
               <input className={FORM_INPUT_CLASS} type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
             </label>
           </div>
+          <ProfileFields
+            auto={perfilAutoEditando}
+            setAuto={setPerfilAutoEditando}
+            cargo={cargoEditando}
+            setCargo={setCargoEditando}
+            rol={rolEditando}
+            setRol={setRolEditando}
+            preview={perfilEditarPreview}
+          />
           <PermissionTree modulosTree={modulosTree} treeState={permisosTreeEditar} setter={setPermisosTreeEditar} onChange={handleTreeChange} />
         </UserAccessModal>
       )}
@@ -748,21 +849,21 @@ function UsersTable({ users, selectedUserId, onSelect, onEdit }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-100 bg-slate-50 text-left text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">
-              <th className="px-5 py-4">Usuario</th>
-              <th className="px-5 py-4">Area</th>
-              <th className="px-5 py-4">Cargo</th>
-              <th className="px-5 py-4">Rol</th>
-              <th className="px-5 py-4">Nivel</th>
-              <th className="px-5 py-4">Estado</th>
-              <th className="px-5 py-4">Ultimo acceso</th>
-              <th className="px-5 py-4">Riesgo</th>
-              <th className="px-5 py-4 text-right">Acciones</th>
+              <th className="px-4 py-3">Usuario</th>
+              <th className="px-4 py-3">Area</th>
+              <th className="px-4 py-3">Cargo</th>
+              <th className="px-4 py-3">Rol</th>
+              <th className="px-4 py-3">Nivel</th>
+              <th className="px-4 py-3">Estado</th>
+              <th className="px-4 py-3">Ultimo acceso</th>
+              <th className="px-4 py-3">Riesgo</th>
+              <th className="px-4 py-3 text-right">Acciones</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
             {users.map((user) => (
               <tr key={user.id} className={`${selectedUserId === user.id ? 'bg-blue-50/60' : 'hover:bg-slate-50'} transition`}>
-                <td className="px-5 py-4">
+                <td className="px-4 py-3">
                   <button onClick={() => onSelect(user.id)} className="flex items-center gap-3 text-left">
                     <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#020873] text-xs font-medium text-white">
                       {initials(user.nombre || user.email)}
@@ -773,19 +874,19 @@ function UsersTable({ users, selectedUserId, onSelect, onEdit }) {
                     </span>
                   </button>
                 </td>
-                <td className="px-5 py-4 font-semibold text-slate-600">{user.governance.area}</td>
-                <td className="px-5 py-4 font-semibold text-slate-600">{user.governance.position}</td>
-                <td className="px-5 py-4"><Badge tone="blue">{user.governance.role}</Badge></td>
-                <td className="px-5 py-4 font-semibold text-slate-600">{user.governance.level}</td>
-                <td className="px-5 py-4"><Badge tone={stateTone[user.governance.state]}>{user.governance.state}</Badge></td>
-                <td className="px-5 py-4 text-xs font-semibold text-slate-400">{user.governance.lastAccess}</td>
-                <td className="px-5 py-4"><Badge tone={riskTone[user.governance.risk]}>{user.governance.risk}</Badge></td>
-                <td className="px-5 py-4">
+                <td className="px-4 py-3 font-medium text-slate-600">{user.governance.area}</td>
+                <td className="px-4 py-3 font-medium text-slate-600">{user.governance.position}</td>
+                <td className="px-4 py-3"><Badge tone="blue">{user.governance.role}</Badge></td>
+                <td className="px-4 py-3 font-medium text-slate-600">{user.governance.level}</td>
+                <td className="px-4 py-3"><Badge tone={stateTone[user.governance.state]}>{user.governance.state}</Badge></td>
+                <td className="px-4 py-3 text-xs font-medium text-slate-400">{user.governance.lastAccess}</td>
+                <td className="px-4 py-3"><Badge tone={riskTone[user.governance.risk]}>{user.governance.risk}</Badge></td>
+                <td className="px-4 py-3">
                   <div className="flex justify-end gap-2">
-                    <button onClick={() => onSelect(user.id)} className="flex h-11 w-11 items-center justify-center rounded-full border border-black/10 text-slate-500 transition hover:border-[#05C7F2] hover:text-[#020873] active:scale-[0.97]" title="Ver perfil">
+                    <button onClick={() => onSelect(user.id)} className="flex h-10 w-10 items-center justify-center rounded-full border border-black/10 text-slate-500 transition hover:border-[#05C7F2] hover:bg-slate-50 hover:text-[#020873] active:scale-[0.97]" title="Ver perfil">
                       <Eye size={16} />
                     </button>
-                    <button onClick={() => onEdit(user)} className="flex h-11 w-11 items-center justify-center rounded-full border border-black/10 text-slate-500 transition hover:border-[#05C7F2] hover:text-[#020873] active:scale-[0.97]" title="Editar accesos">
+                    <button onClick={() => onEdit(user)} className="flex h-10 w-10 items-center justify-center rounded-full border border-black/10 text-slate-500 transition hover:border-[#05C7F2] hover:bg-slate-50 hover:text-[#020873] active:scale-[0.97]" title="Editar accesos">
                       <KeyRound size={16} />
                     </button>
                   </div>
@@ -794,7 +895,7 @@ function UsersTable({ users, selectedUserId, onSelect, onEdit }) {
             ))}
             {users.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-5 py-12 text-center text-sm font-semibold text-slate-400">No hay usuarios para los filtros actuales.</td>
+                <td colSpan={9} className="px-4 py-10 text-center text-sm font-medium text-slate-400">No hay usuarios para los filtros actuales.</td>
               </tr>
             )}
           </tbody>
@@ -825,14 +926,15 @@ function UserDetail({ user, onEdit }) {
             <p className="text-xs font-semibold text-slate-400">{user.email}</p>
           </div>
         </div>
-        <button onClick={() => onEdit(user)} className="inline-flex h-10 items-center justify-center rounded-full bg-[#020873] px-4 text-xs font-medium text-white transition hover:bg-[#05C7F2] hover:text-[#020873] active:scale-[0.97]">Editar</button>
+        <button onClick={() => onEdit(user)} className="inline-flex h-10 items-center justify-center rounded-full bg-[#020873] px-4 text-xs font-medium text-white transition hover:bg-[#03115f] active:scale-[0.97]">Editar</button>
       </div>
 
       <div className="mt-5 grid grid-cols-2 gap-3">
         <InfoTile label="Area" value={user.governance.area} />
+        <InfoTile label="Cargo" value={user.governance.position} />
         <InfoTile label="Rol" value={user.governance.role} />
         <InfoTile label="Nivel" value={user.governance.level} />
-        <InfoTile label="Estado" value={user.governance.state} />
+        <InfoTile label="Modo" value={user.governance.autoProfile ? 'Auto' : 'Manual'} />
       </div>
 
       <div className="mt-5 space-y-4">
@@ -986,6 +1088,50 @@ function SimpleBoard({ title, rows, columns }) {
   );
 }
 
+function ProfileFields({ auto, setAuto, cargo, setCargo, rol, setRol, preview }) {
+  return (
+    <section className="rounded-[20px] border border-black/5 bg-slate-50 p-4">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-400">Cargo y rol</p>
+          <p className="mt-1 text-sm font-medium text-slate-900">
+            {auto ? `${preview.inferredPosition} / ${preview.inferredRole}` : `${cargo || preview.inferredPosition} / ${rol || preview.inferredRole}`}
+          </p>
+        </div>
+        <label className="inline-flex h-10 items-center gap-2 rounded-full bg-white px-3 text-sm font-medium text-slate-700 ring-1 ring-black/10">
+          <input
+            type="checkbox"
+            checked={auto}
+            onChange={(event) => setAuto(event.target.checked)}
+            className="h-4 w-4 rounded border-slate-300 text-[#020873] focus:ring-[#05C7F2]"
+          />
+          Auto
+        </label>
+      </div>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <label className="space-y-1.5">
+          <span className="text-xs font-medium uppercase tracking-[0.12em] text-slate-400">Cargo</span>
+          <input
+            className={`${FORM_INPUT_CLASS} ${auto ? 'bg-slate-100 text-slate-400' : ''}`}
+            value={auto ? preview.inferredPosition : cargo}
+            onChange={(event) => setCargo(event.target.value)}
+            disabled={auto}
+          />
+        </label>
+        <label className="space-y-1.5">
+          <span className="text-xs font-medium uppercase tracking-[0.12em] text-slate-400">Rol</span>
+          <input
+            className={`${FORM_INPUT_CLASS} ${auto ? 'bg-slate-100 text-slate-400' : ''}`}
+            value={auto ? preview.inferredRole : rol}
+            onChange={(event) => setRol(event.target.value)}
+            disabled={auto}
+          />
+        </label>
+      </div>
+    </section>
+  );
+}
+
 function PermissionTree({ modulosTree, treeState, setter, onChange }) {
   return (
     <section>
@@ -1045,7 +1191,7 @@ function UserAccessModal({ title, submitLabel, loading, onClose, onSubmit, child
         </div>
         <div className="space-y-5">{children}</div>
         <div className="mt-6 flex flex-col gap-3 border-t border-slate-100 pt-5 md:flex-row">
-          <button onClick={onSubmit} disabled={loading} className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-full bg-[#020873] px-5 text-sm font-medium text-white transition hover:bg-[#05C7F2] hover:text-[#020873] active:scale-[0.97] disabled:opacity-60">
+          <button onClick={onSubmit} disabled={loading} className={`${PRIMARY_BUTTON_CLASS} flex-1`}>
             {loading ? <RefreshCw className="animate-spin" size={17} /> : <Save size={17} />}
             {submitLabel}
           </button>
