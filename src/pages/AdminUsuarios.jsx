@@ -72,6 +72,18 @@ const treePermisosToFlat = (treeState = {}) => {
   return flat;
 };
 
+const getFunctionErrorMessage = async (error) => {
+  if (!error) return '';
+  try {
+    const payload = await error.context?.json?.();
+    if (payload?.error) return payload.error;
+    if (payload?.message) return payload.message;
+  } catch {
+    // Supabase Functions sometimes exposes only the generic FunctionsHttpError.
+  }
+  return error.message || 'Error desconocido de Edge Function';
+};
+
 const ACCESS_ROLES = [
   {
     id: 'superadmin_tecnico',
@@ -568,7 +580,7 @@ export default function AdminUsuarios() {
           permisos: Object.keys(permisosFlat),
         },
       });
-      if (error) throw error;
+      if (error) throw new Error(await getFunctionErrorMessage(error));
       if (!data.user?.id) throw new Error('La funcion no devolvio el ID del usuario creado');
 
       setModalNuevo(false);

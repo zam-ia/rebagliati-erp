@@ -7,8 +7,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const ADMIN_EMAIL = "admin@rebagliati.com";
-const ADMIN_PERMISSIONS = ["admin usuarios", "Administrar Usuarios"];
+const ADMIN_EMAILS = ["admin@rebagliati.com", "recursoshumanosrebagliati@gmail.com"];
+const ADMIN_PERMISSIONS = ["admin usuarios", "Administrar Usuarios", "Administrar usuarios", "Admin Usuarios", "admin_usuarios"];
 
 const jsonResponse = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -50,7 +50,7 @@ serve(async (req) => {
     });
 
     const requester = authData.user;
-    if (requester.email !== ADMIN_EMAIL) {
+    if (!ADMIN_EMAILS.includes(String(requester.email || "").toLowerCase())) {
       const { data: permisoAdmin } = await supabaseAdmin
         .from("permisos_usuarios")
         .select("modulo")
@@ -78,26 +78,56 @@ serve(async (req) => {
       return jsonResponse({ error: "La contrasena debe tener al menos 6 caracteres" }, 400);
     }
 
-    const { data, error } = await supabaseAdmin.auth.admin.createUser({
+    let { data, error } = await supabaseAdmin.auth.admin.createUser({
       email: normalizedEmail,
       password: String(password),
       email_confirm: true,
       user_metadata: normalizedName ? { nombre: normalizedName } : undefined,
     });
 
-    if (error) throw error;
+    if (error && /already|registered|exists|User already/i.test(error.message || "")) {
+      const { data: usersData, error: usersError } = await supabaseAdmin.auth.admin.listUsers({
+        page: 1,
+        perPage: 1000,
+      });
+      if (usersError) throw usersError;
+      const existingUser = usersData.users.find((user) => user.email?.toLowerCase() === normalizedEmail);
+      if (!existingUser) throw error;
+      data = { user: existingUser };
+    } else if (error) {
+      throw error;
+    }
 
-    await supabaseAdmin.from("perfiles_usuarios").upsert(
-      {
-        id: data.user.id,
-        email: normalizedEmail,
-        nombre: normalizedName || normalizedEmail.split("@")[0],
-        cargo: normalizedCargo || null,
-        rol: normalizedRol || null,
-        perfil_auto: perfil_auto !== false,
-      },
-      { onConflict: "id" },
-    );
+    const profilePayload = {
+      id: data.user.id,
+      email: normalizedEmail,
+      nombre: normalizedName || normalizedEmail.split("@")[0],
+      cargo: normalizedCargo || null,
+      rol: normalizedRol || null,
+      perfil_auto: perfil_auto !== false,
+    };
+
+    let profileResponse = await supabaseAdmin
+      .from("perfiles_usuarios")
+      .upsert(profilePayload, { onConflict: "id" });
+
+    if (
+      profileResponse.error &&
+      /cargo|rol|perfil_auto|schema cache|column/i.test(profileResponse.error.message || "")
+    ) {
+      profileResponse = await supabaseAdmin
+        .from("perfiles_usuarios")
+        .upsert(
+          {
+            id: profilePayload.id,
+            email: profilePayload.email,
+            nombre: profilePayload.nombre,
+          },
+          { onConflict: "id" },
+        );
+    }
+
+    if (profileResponse.error) throw profileResponse.error;
 
     const permisosActivos = Array.isArray(permisos)
       ? permisos
@@ -106,13 +136,14 @@ serve(async (req) => {
       : [];
 
     if (permisosActivos.length > 0) {
-      const { error: permisosError } = await supabaseAdmin.from("permisos_usuarios").upsert(
+      await supabaseAdmin.from("permisos_usuarios").delete().eq("user_id", data.user.id);
+
+      const { error: permisosError } = await supabaseAdmin.from("permisos_usuarios").insert(
         permisosActivos.map((modulo) => ({
           user_id: data.user.id,
           modulo,
           puede_ver: true,
         })),
-        { onConflict: "user_id,modulo" },
       );
       if (permisosError) throw permisosError;
     }
