@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Area,
@@ -115,6 +115,7 @@ const SALES_SUBMODULES = [
   { id: 'ranking', path: 'ranking', label: 'Equipo', icon: Trophy, permission: 'ventas_ranking' },
   { id: 'metas', path: 'metas', label: 'Metas', icon: Target, permission: 'ventas_metas' },
   { id: 'kommo', path: 'kommo', label: 'Leads', icon: MessageCircle, permission: 'ventas_kommo' },
+  { id: 'eventos', path: 'eventos', label: 'Eventos', icon: Database, permission: 'ventas_dashboard' },
   { id: 'checklist', path: 'checklist', label: 'Rutina operativa', icon: ClipboardCheck, permission: 'ventas_checklist' },
   { id: 'grupos', path: 'grupos', label: 'Comunidades', icon: Users, permission: 'ventas_grupos' },
   { id: 'promesas', path: 'promesas', label: 'Promesas de pago', icon: Clock, permission: 'ventas_promesas' },
@@ -141,12 +142,24 @@ const emptyLeadSourceForm = {
   form_url: '',
   sheet_url: '',
   sheet_gid: '',
-  canal_default: 'Google Forms',
+  canal_default: 'Google Sheets',
   origen_default: 'FORMULARIO',
-  asignacion_modo: 'manual',
+asignacion_modo: 'manual',
 };
 
-const LEAD_PHASES = ['LEAD NUEVO', '1° CONTACTO', '2° CONTACTO', '3° CONTACTO', '4° CONTACTO', 'PROMESA DE PAGO'];
+const emptyKommoForm = {
+nombre: 'Kommo principal',
+base_url: '',
+account_subdomain: '',
+integration_id: '',
+client_id: '',
+secret_ref: '',
+webhook_secret_ref: '',
+observacion: '',
+estado: 'pendiente',
+};
+
+const LEAD_PHASES = ['LEAD NUEVO', '1Â° CONTACTO', '2Â° CONTACTO', '3Â° CONTACTO', '4Â° CONTACTO', 'PROMESA DE PAGO'];
 const LEAD_CLOSURES = ['ACTIVO', 'GANADO', 'PERDIDO'];
 
 const createWebhookSecret = () => {
@@ -398,11 +411,16 @@ export default function Ventas() {
   const [currentUserIsAdmin, setCurrentUserIsAdmin] = useState(false);
   const [auditLogs, setAuditLogs] = useState([]);
   const [leadSources, setLeadSources] = useState([]);
-  const [leadRows, setLeadRows] = useState([]);
-  const [savingLeadSource, setSavingLeadSource] = useState(false);
-  const [leadSourceForm, setLeadSourceForm] = useState(emptyLeadSourceForm);
-  const [newExecutive, setNewExecutive] = useState(newExecutiveInitial);
-  const formWebhookUrl = `${import.meta.env.VITE_SUPABASE_URL || ''}/functions/v1/google-form-leads`;
+const [leadRows, setLeadRows] = useState([]);
+const [eventHistory, setEventHistory] = useState([]);
+const [kommoConfigs, setKommoConfigs] = useState([]);
+const [savingLeadSource, setSavingLeadSource] = useState(false);
+const [savingKommoConfig, setSavingKommoConfig] = useState(false);
+const [leadSourceForm, setLeadSourceForm] = useState(emptyLeadSourceForm);
+const [kommoForm, setKommoForm] = useState(emptyKommoForm);
+const [newExecutive, setNewExecutive] = useState(newExecutiveInitial);
+const formWebhookUrl = `${import.meta.env.VITE_SUPABASE_URL || ''}/functions/v1/google-form-leads`;
+const kommoWebhookUrl = `${import.meta.env.VITE_SUPABASE_URL || ''}/functions/v1/kommo-webhook`;
 
   const goToModule = useCallback((moduleId) => {
     const target = SALES_SUBMODULES.find((item) => item.id === moduleId);
@@ -421,9 +439,11 @@ export default function Ventas() {
     setIncidents(DEMO_INCIDENTS);
     setMonthlyDeliverables(DEMO_MONTHLY_DELIVERABLES);
     setCommissionModel(COMMISSION_MODEL);
-    setLeadSources([]);
-    setLeadRows([]);
-  }, []);
+  setLeadSources([]);
+  setLeadRows([]);
+  setEventHistory([]);
+  setKommoConfigs([]);
+}, []);
 
   const loadSales = useCallback(async () => {
     setLoading(true);
@@ -445,9 +465,11 @@ export default function Ventas() {
         employeesResponse,
         contractorsResponse,
         auditResponse,
-        leadSourcesResponse,
-        leadsResponse,
-      ] = await Promise.all([
+      leadSourcesResponse,
+      leadsResponse,
+      eventHistoryResponse,
+      kommoConfigResponse,
+    ] = await Promise.all([
         supabase.from('ventas_ejecutivos').select('*').eq('status', 'active').order('short_name'),
         supabase.from('ventas_periodos').select('*').eq('year', new Date().getFullYear()).eq('month', new Date().getMonth() + 1).maybeSingle(),
         supabase.from('ventas_registros').select('*').gte('sale_date', start).lt('sale_date', end),
@@ -462,14 +484,32 @@ export default function Ventas() {
         supabase.from('empleados').select('id,nombre,apellido,cargo,area,telefono,correo,estado').order('apellido'),
         supabase.from('locadores').select('id,nombre,apellido,modalidad,area,telefono,correo,estado').eq('estado', 'activo').order('apellido'),
         supabase.from('ventas_auditoria').select('*').order('created_at', { ascending: false }).limit(25),
-        supabase.from('ventas_formularios_google').select('*').order('created_at', { ascending: false }),
-        supabase.from('ventas_leads').select('*, ventas_ejecutivos(short_name, full_name)').order('created_at', { ascending: false }).limit(80),
-      ]);
+      supabase.from('ventas_formularios_google').select('*').order('created_at', { ascending: false }),
+      supabase.from('ventas_leads').select('*, ventas_ejecutivos(short_name, full_name)').order('created_at', { ascending: false }).limit(80),
+      supabase.from('ventas_eventos_historico').select('*').order('periodo', { ascending: false }).limit(240),
+      supabase.from('kommo_configuracion').select('*').order('created_at', { ascending: false }),
+    ]);
 
       setHrPeople(normalizeHrPeople(employeesResponse.data || [], contractorsResponse.data || []));
       setAuditLogs(auditResponse.error ? [] : (auditResponse.data || []));
       setLeadSources(leadSourcesResponse.error ? [] : (leadSourcesResponse.data || []));
-      setLeadRows(leadsResponse.error ? [] : (leadsResponse.data || []));
+    setLeadRows(leadsResponse.error ? [] : (leadsResponse.data || []));
+    setEventHistory(eventHistoryResponse.error ? [] : (eventHistoryResponse.data || []));
+    setKommoConfigs(kommoConfigResponse.error ? [] : (kommoConfigResponse.data || []));
+    if (!kommoConfigResponse.error && kommoConfigResponse.data?.[0]) {
+      const config = kommoConfigResponse.data[0];
+      setKommoForm({
+        nombre: config.nombre || 'Kommo principal',
+        base_url: config.base_url || '',
+        account_subdomain: config.account_subdomain || '',
+        integration_id: config.integration_id || '',
+        client_id: config.client_id || '',
+        secret_ref: config.secret_ref || '',
+        webhook_secret_ref: config.webhook_secret_ref || '',
+        observacion: config.observacion || '',
+        estado: config.estado || 'pendiente',
+      });
+    }
 
       if (salesResponse.error || executivesResponse.error) {
         loadDemo();
@@ -616,6 +656,85 @@ export default function Ventas() {
     lost: leadRows.filter((lead) => lead.cierre === 'PERDIDO').length,
     pendingContact: leadRows.filter((lead) => !lead.fecha_contacto).length,
   }), [leadRows]);
+  const eventAnalytics = useMemo(() => {
+    const grouped = new Map();
+
+    leadSources.forEach((source) => {
+      const key = source.evento_codigo || source.nombre;
+      grouped.set(key, {
+        key,
+        codigo: source.evento_codigo || 'Sin codigo',
+        nombre: source.evento_nombre || source.nombre,
+        source,
+        leads: 0,
+        contactados: 0,
+        ganados: 0,
+        perdidos: 0,
+        historicoLeads: 0,
+        historicoGanados: 0,
+      });
+    });
+
+    leadRows.forEach((lead) => {
+      const key = lead.evento_codigo || lead.evento_nombre || 'Sin evento';
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          key,
+          codigo: lead.evento_codigo || 'Sin codigo',
+          nombre: lead.evento_nombre || 'Sin evento',
+          source: null,
+          leads: 0,
+          contactados: 0,
+          ganados: 0,
+          perdidos: 0,
+          historicoLeads: 0,
+          historicoGanados: 0,
+        });
+      }
+      const item = grouped.get(key);
+      item.leads += 1;
+      if (lead.fecha_contacto || lead.fase !== 'LEAD NUEVO') item.contactados += 1;
+      if (lead.cierre === 'GANADO') item.ganados += 1;
+      if (lead.cierre === 'PERDIDO') item.perdidos += 1;
+    });
+
+    eventHistory.forEach((row) => {
+      const key = row.evento_codigo || row.evento_nombre;
+      if (!key) return;
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          key,
+          codigo: row.evento_codigo || 'Historico',
+          nombre: row.evento_nombre || row.evento_codigo,
+          source: null,
+          leads: 0,
+          contactados: 0,
+          ganados: 0,
+          perdidos: 0,
+          historicoLeads: 0,
+          historicoGanados: 0,
+        });
+      }
+      const item = grouped.get(key);
+      item.historicoLeads += Number(row.leads || 0);
+      item.historicoGanados += Number(row.ganados || row.inscritos || 0);
+    });
+
+    return Array.from(grouped.values()).map((item) => {
+      const conversion = item.leads ? pctOf(item.ganados, item.leads, 1) : 0;
+      const historicalConversion = item.historicoLeads ? pctOf(item.historicoGanados, item.historicoLeads, 1) : 0;
+      return {
+        ...item,
+        conversion,
+        historicalConversion,
+        recommendation: historicalConversion && conversion < historicalConversion
+          ? 'Por debajo del historico: reforzar remarketing y asignacion de leads.'
+          : conversion > 0
+            ? 'Avance saludable: sostener seguimiento y cierre.'
+            : 'Sin cierre aun: priorizar primer contacto y segmentacion.',
+      };
+    }).sort((a, b) => b.leads - a.leads);
+  }, [eventHistory, leadRows, leadSources]);
   const selectedHrPerson = useMemo(
     () => hrPeople.find((person) => person.key === newExecutive.hrPersonKey),
     [hrPeople, newExecutive.hrPersonKey],
@@ -790,7 +909,7 @@ export default function Ventas() {
       form_url: leadSourceForm.form_url.trim() || null,
       sheet_url: leadSourceForm.sheet_url.trim() || null,
       sheet_gid: leadSourceForm.sheet_gid.trim() || null,
-      canal_default: leadSourceForm.canal_default.trim() || 'Google Forms',
+      canal_default: leadSourceForm.canal_default.trim() || 'Google Sheets',
       origen_default: leadSourceForm.origen_default.trim() || 'FORMULARIO',
       webhook_secret: createWebhookSecret(),
       estado: 'activo',
@@ -811,7 +930,7 @@ export default function Ventas() {
       action: 'crear_fuente_formulario',
       entityType: 'ventas_formularios_google',
       entityId: data.id,
-      detail: `Fuente Google Forms creada: ${data.nombre}`,
+      detail: `Fuente Drive/Sheets creada: ${data.nombre}`,
       afterData: data,
     });
   };
@@ -831,7 +950,71 @@ export default function Ventas() {
     }
   };
 
-  const handleSave = async () => {
+const handleSyncLeadSource = async (source) => {
+    if (!source.sheet_url) {
+      alert('Esta fuente necesita un enlace de Google Sheets.');
+      return;
+    }
+
+    if (!source.webhook_secret) {
+      alert('Esta fuente no tiene API key. Crea nuevamente la fuente o asigna un secreto.');
+      return;
+    }
+
+    const { data, error } = await supabase.functions.invoke('google-form-leads', {
+      body: {
+        action: 'sync_sheet',
+        source_id: source.id,
+        api_key: source.webhook_secret,
+      },
+    });
+
+    if (error || data?.error) {
+      alert(`No se pudo sincronizar la hoja: ${error?.message || data?.error}`);
+      return;
+    }
+
+    alert(`Sincronizacion lista: ${data?.inserted || 0} lead(s) procesados.`);
+  loadSales();
+};
+
+const handleSaveKommoConfig = async () => {
+  const payload = {
+    nombre: kommoForm.nombre.trim() || 'Kommo principal',
+    base_url: kommoForm.base_url.trim() || null,
+    account_subdomain: kommoForm.account_subdomain.trim() || null,
+    integration_id: kommoForm.integration_id.trim() || null,
+    client_id: kommoForm.client_id.trim() || null,
+    secret_ref: kommoForm.secret_ref.trim() || null,
+    webhook_secret_ref: kommoForm.webhook_secret_ref.trim() || null,
+    observacion: kommoForm.observacion.trim() || null,
+    estado: kommoForm.estado || 'pendiente',
+    updated_at: new Date().toISOString(),
+  };
+
+  setSavingKommoConfig(true);
+  const current = kommoConfigs[0];
+  const response = current?.id
+    ? await supabase.from('kommo_configuracion').update(payload).eq('id', current.id).select('*').single()
+    : await supabase.from('kommo_configuracion').insert(payload).select('*').single();
+  setSavingKommoConfig(false);
+
+  if (response.error) {
+    alert(`No se pudo guardar KOMMO: ${response.error.message}`);
+    return;
+  }
+
+  setKommoConfigs([response.data, ...kommoConfigs.filter((item) => item.id !== response.data.id)]);
+  await logSalesAction({
+    action: 'configurar_kommo',
+    entityType: 'kommo_configuracion',
+    entityId: response.data.id,
+    detail: `Configuracion KOMMO ${response.data.estado}: ${response.data.nombre}`,
+    afterData: response.data,
+  });
+};
+
+const handleSave = async () => {
     const quantity = toPositiveNumber(form.quantity);
     if (!form.executive_id || !Number.isFinite(quantity)) {
       alert('Selecciona ejecutivo y registra una cantidad mayor a 0.');
@@ -905,7 +1088,7 @@ export default function Ventas() {
               Ventas
             </h1>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
-              Dashboard comercial integrado con RRHH, transparencia de gestión y un único punto de control para ventas, caja, marketing y finanzas.
+              Dashboard comercial integrado con RRHH, transparencia de gestiÃ³n y un Ãºnico punto de control para ventas, caja, marketing y finanzas.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -979,7 +1162,7 @@ export default function Ventas() {
         <div className="apple-card p-5">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">Conexión RRHH</p>
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">ConexiÃ³n RRHH</p>
               <h3 className="mt-3 text-2xl font-black text-slate-900">{hrPeople.length} perfiles comerciales detectados</h3>
               <p className="mt-2 text-sm text-slate-500">
                 Los ejecutivos de Ventas pueden vincularse con el directorio corporativo de RR.HH. para registrar roles y turnos reales.
@@ -1283,10 +1466,10 @@ export default function Ventas() {
           <div className="flex flex-col gap-3 border-b border-slate-100 p-5 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h2 className="flex items-center gap-2 text-lg font-black text-slate-900">
-                <Database size={19} className="text-blue-600" /> Leads desde formularios
+              <Database size={19} className="text-blue-600" /> Leads desde Drive/Sheets
               </h2>
               <p className="mt-1 text-xs font-medium text-slate-500">
-                Bandeja alimentada por Google Forms, campañas WSP y cargas manuales por evento.
+                Bandeja alimentada por hojas Google Sheets, formularios vinculados, campaÃ±as WSP y cargas manuales por evento.
               </p>
             </div>
             <div className="grid grid-cols-2 gap-2 text-right sm:grid-cols-4">
@@ -1379,6 +1562,114 @@ export default function Ventas() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {shouldShow('eventos') && (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+          <div className="apple-card overflow-hidden">
+            <div className="flex flex-col gap-3 border-b border-slate-100 p-5 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h2 className="flex items-center gap-2 text-lg font-black text-slate-900">
+                  <Database size={19} className="text-blue-600" /> Curso y eventos
+                </h2>
+                <p className="mt-1 text-xs font-medium text-slate-500">
+                  Controla cada taller, curso o diplomado desde su hoja Drive y compara contra el historico.
+                </p>
+              </div>
+              <span className="badge badge-blue">{eventAnalytics.length} eventos</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="erp-table min-w-[980px]">
+                <thead>
+                  <tr>
+                    <th>Evento</th>
+                    <th>Leads</th>
+                    <th>Contactados</th>
+                    <th>Ganados</th>
+                    <th>Conversion</th>
+                    <th>Historico</th>
+                    <th>Recomendacion</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {eventAnalytics.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-8 text-center text-sm font-medium text-slate-400">
+                        Registra una fuente Drive/Sheets por evento para iniciar el tablero.
+                      </td>
+                    </tr>
+                  ) : eventAnalytics.map((event) => (
+                    <tr key={event.key}>
+                      <td>
+                        <p className="font-bold text-slate-900">{event.nombre}</p>
+                        <p className="text-[11px] font-medium text-slate-400">{event.codigo}</p>
+                      </td>
+                      <td className="font-black text-slate-900">{event.leads}</td>
+                      <td>{event.contactados}</td>
+                      <td><span className="badge badge-green">{event.ganados}</span></td>
+                      <td>
+                        <div className="min-w-[120px]">
+                          <div className="mb-1 flex justify-between text-[11px] font-bold text-slate-500">
+                            <span>{event.conversion}%</span>
+                            <span>{event.perdidos} perdidos</span>
+                          </div>
+                          <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                            <div className="h-full rounded-full bg-[#020873]" style={{ width: `${Math.min(event.conversion, 100)}%` }} />
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        {event.historicoLeads ? (
+                          <span className="badge badge-blue">{event.historicalConversion}% hist.</span>
+                        ) : (
+                          <span className="badge badge-gray">Sin historico</span>
+                        )}
+                      </td>
+                      <td className="max-w-sm text-xs font-medium leading-5 text-slate-500">{event.recommendation}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            <ChartCard title="Conversion por evento">
+              <div className="h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={eventAnalytics.slice(0, 8)}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="codigo" tick={{ fontSize: 10, fill: '#64748b' }} />
+                    <YAxis tick={{ fontSize: 11, fill: '#64748b' }} />
+                    <Tooltip contentStyle={tooltipStyle} />
+                    <Bar dataKey="conversion" radius={[8, 8, 0, 0]}>
+                      {eventAnalytics.slice(0, 8).map((item, index) => <Cell key={item.key} fill={CHART_COLORS[index % CHART_COLORS.length]} />)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </ChartCard>
+
+            <div className="apple-card p-5">
+              <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
+                <Upload size={19} className="text-blue-600" /> Datos historicos
+              </h2>
+              <p className="text-sm font-medium leading-6 text-slate-500">
+                La base de 3 anos conviene cargarla a Supabase como historico consolidado. Drive queda como fuente, pero el analisis y recomendaciones deben correr sobre datos propios del ERP.
+              </p>
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <div className="rounded-2xl bg-slate-50 p-4">
+                  <p className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-400">Registros hist.</p>
+                  <p className="mt-1 text-2xl font-black text-slate-900">{eventHistory.length}</p>
+                </div>
+                <div className="rounded-2xl bg-slate-50 p-4">
+                  <p className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-400">Fuentes Drive</p>
+                  <p className="mt-1 text-2xl font-black text-slate-900">{leadSources.length}</p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -1606,7 +1897,7 @@ export default function Ventas() {
         </div>}
       </div>}
 
-      {/* Sección 'Plan de mejora del area' removida según solicitud */}
+      {/* SecciÃ³n 'Plan de mejora del area' removida segÃºn solicitud */}
 
       {shouldShow('importador', 'administracion') && <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         {shouldShow('importador') && <div className="apple-card p-5">
@@ -1628,7 +1919,7 @@ export default function Ventas() {
           </div>
         </div>}
 
-        {/* Reglas Caja removidas del módulo según solicitud */}
+        {/* Reglas Caja removidas del mÃ³dulo segÃºn solicitud */}
       </div>}
 
       {shouldShow('metas') && (
@@ -1791,7 +2082,7 @@ export default function Ventas() {
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
           <div className="apple-card p-5">
             <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
-              <Database size={19} className="text-blue-600" /> Fuentes Google Forms
+              <Database size={19} className="text-blue-600" /> Fuentes Drive/Sheets
             </h2>
             <div className="mb-5 rounded-2xl border border-blue-100 bg-blue-50 p-4">
               <p className="text-sm font-black text-blue-950">Webhook Supabase</p>
@@ -1814,7 +2105,7 @@ export default function Ventas() {
                 <input className="erp-input" value={leadSourceForm.evento_nombre} onChange={(event) => setLeadSourceForm({ ...leadSourceForm, evento_nombre: event.target.value })} placeholder="Taller intensivo colocacion de sondas" />
               </label>
               <label className="space-y-1.5 md:col-span-2">
-                <span className="erp-label">Enlace Google Form</span>
+                <span className="erp-label">Enlace Google Form opcional</span>
                 <input className="erp-input" value={leadSourceForm.form_url} onChange={(event) => setLeadSourceForm({ ...leadSourceForm, form_url: event.target.value })} placeholder="https://docs.google.com/forms/..." />
               </label>
               <label className="space-y-1.5 md:col-span-2">
@@ -1854,7 +2145,7 @@ export default function Ventas() {
               </div>
               <div className="max-h-64 overflow-y-auto custom-scrollbar">
                 {leadSources.length === 0 ? (
-                  <p className="p-4 text-sm font-medium text-slate-500">Aun no hay fuentes Google Forms registradas.</p>
+                  <p className="p-4 text-sm font-medium text-slate-500">Aun no hay fuentes Drive/Sheets registradas.</p>
                 ) : leadSources.map((source) => (
                   <div key={source.id} className="border-b border-slate-50 px-4 py-3 last:border-b-0">
                     <div className="flex items-start justify-between gap-3">
@@ -1867,9 +2158,96 @@ export default function Ventas() {
                     <p className="mt-2 break-all rounded-xl bg-slate-50 px-3 py-2 font-mono text-[11px] font-semibold text-slate-500">
                       source_id: {source.id} | api_key: {source.webhook_secret || 'sin secreto'}
                     </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button type="button" onClick={() => handleSyncLeadSource(source)} className="btn-apple-secondary">
+                        <RefreshCw size={14} /> Sincronizar hoja
+                      </button>
+                      {source.sheet_url && (
+                        <a href={source.sheet_url} target="_blank" rel="noreferrer" className="btn-apple-secondary">
+                          <FileText size={14} /> Abrir Sheet
+                        </a>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
+            </div>
+          </div>
+
+          <div className="apple-card p-5">
+            <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
+              <MessageCircle size={19} className="text-blue-600" /> Integracion KOMMO
+            </h2>
+            <div className="mb-5 rounded-2xl border border-blue-100 bg-blue-50 p-4">
+              <p className="text-sm font-black text-blue-950">Webhook para KOMMO</p>
+              <p className="mt-2 break-all rounded-xl bg-white px-3 py-2 font-mono text-[11px] font-semibold text-blue-900">
+                {kommoWebhookUrl || 'Configura VITE_SUPABASE_URL para generar el endpoint'}
+              </p>
+              <p className="mt-2 text-xs font-medium leading-5 text-blue-800">
+                Guarda tokens reales como secretos de Supabase. El ERP solo almacena referencias, subdominio, pipeline y estado operativo.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <label className="space-y-1.5">
+                <span className="erp-label">Nombre</span>
+                <input className="erp-input" value={kommoForm.nombre} onChange={(event) => setKommoForm({ ...kommoForm, nombre: event.target.value })} />
+              </label>
+              <label className="space-y-1.5">
+                <span className="erp-label">Estado</span>
+                <select className="erp-input" value={kommoForm.estado} onChange={(event) => setKommoForm({ ...kommoForm, estado: event.target.value })}>
+                  <option value="pendiente">Pendiente</option>
+                  <option value="conectado">Conectado</option>
+                  <option value="error">Error</option>
+                  <option value="archivado">Archivado</option>
+                </select>
+              </label>
+              <label className="space-y-1.5">
+                <span className="erp-label">Subdominio KOMMO</span>
+                <input className="erp-input" value={kommoForm.account_subdomain} onChange={(event) => setKommoForm({ ...kommoForm, account_subdomain: event.target.value })} placeholder="miempresa" />
+              </label>
+              <label className="space-y-1.5">
+                <span className="erp-label">Base URL</span>
+                <input className="erp-input" value={kommoForm.base_url} onChange={(event) => setKommoForm({ ...kommoForm, base_url: event.target.value })} placeholder="https://miempresa.kommo.com" />
+              </label>
+              <label className="space-y-1.5">
+                <span className="erp-label">Integration ID</span>
+                <input className="erp-input" value={kommoForm.integration_id} onChange={(event) => setKommoForm({ ...kommoForm, integration_id: event.target.value })} />
+              </label>
+              <label className="space-y-1.5">
+                <span className="erp-label">Client ID</span>
+                <input className="erp-input" value={kommoForm.client_id} onChange={(event) => setKommoForm({ ...kommoForm, client_id: event.target.value })} />
+              </label>
+              <label className="space-y-1.5">
+                <span className="erp-label">Secret ref</span>
+                <input className="erp-input" value={kommoForm.secret_ref} onChange={(event) => setKommoForm({ ...kommoForm, secret_ref: event.target.value })} placeholder="KOMMO_CLIENT_SECRET" />
+              </label>
+              <label className="space-y-1.5">
+                <span className="erp-label">Webhook secret ref</span>
+                <input className="erp-input" value={kommoForm.webhook_secret_ref} onChange={(event) => setKommoForm({ ...kommoForm, webhook_secret_ref: event.target.value })} placeholder="KOMMO_WEBHOOK_SECRET" />
+              </label>
+              <label className="space-y-1.5 md:col-span-2">
+                <span className="erp-label">Observacion tecnica</span>
+                <input className="erp-input" value={kommoForm.observacion} onChange={(event) => setKommoForm({ ...kommoForm, observacion: event.target.value })} placeholder="Pipeline, responsables, campos personalizados o pendientes OAuth" />
+              </label>
+              <div className="md:col-span-2">
+                <button onClick={handleSaveKommoConfig} disabled={savingKommoConfig} className="btn-apple-primary w-full justify-center">
+                  <Save size={16} /> {savingKommoConfig ? 'Guardando...' : 'Guardar preparacion KOMMO'}
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+              {[
+                ['Webhook', kommoConfigs[0]?.webhook_secret_ref ? 'Listo' : 'Pendiente'],
+                ['OAuth/API', kommoConfigs[0]?.secret_ref ? 'Referenciado' : 'Pendiente'],
+                ['Estado', kommoConfigs[0]?.estado || 'pendiente'],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-2xl bg-slate-50 p-4">
+                  <p className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-400">{label}</p>
+                  <p className="mt-1 text-sm font-black text-slate-900">{value}</p>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -1980,7 +2358,7 @@ export default function Ventas() {
               ))}
             </div>
           </div>
-          {/* Niveles de acceso removidos del módulo según solicitud */}
+          {/* Niveles de acceso removidos del mÃ³dulo segÃºn solicitud */}
         </div>
       )}
 
@@ -2032,7 +2410,7 @@ export default function Ventas() {
         </div>
       )}
 
-      {/* Enlaces entre modulos removidos del módulo según solicitud */}
+      {/* Enlaces entre modulos removidos del mÃ³dulo segÃºn solicitud */}
     </div>
   );
 }

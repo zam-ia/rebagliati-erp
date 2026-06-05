@@ -14,7 +14,7 @@ import {
   Target, Megaphone, CalendarDays, Palette,
   FolderOpen, Bot, BarChart3, Building2, MessageSquare,
   Trophy, Activity, Plus, MessageCircle, Gift, KeyRound,
-  Upload, Settings, ClipboardCheck, Bell
+  Upload, Settings, ClipboardCheck, Bell, Database
 } from 'lucide-react';
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -347,6 +347,7 @@ const NAV_GRUPOS = [
           { path: '/ventas/resumen',        nombre: 'Inicio', icon: Activity, permiso: 'ventas_dashboard' },
           { path: '/ventas/ranking',        nombre: 'Equipo', icon: Trophy, permiso: 'ventas_ranking' },
           { path: '/ventas/kommo',          nombre: 'Leads', icon: MessageCircle, permiso: 'ventas_kommo' },
+          { path: '/ventas/eventos',        nombre: 'Eventos', icon: Database, permiso: 'ventas_dashboard' },
           { path: '/ventas/nueva-venta',    nombre: 'Ventas', icon: Plus, permiso: 'ventas_nueva_venta' },
           { path: '/ventas/metas',          nombre: 'Metas', icon: Target, permiso: 'ventas_metas' },
           { path: '/ventas/reportes',       nombre: 'Reportes', icon: FileText, permiso: 'ventas_entregables' },
