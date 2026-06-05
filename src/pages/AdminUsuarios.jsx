@@ -227,8 +227,8 @@ const CRITICAL_PERMISSIONS = new Set([
   'ventas_entregables',
 ]);
 
-const FORM_INPUT_CLASS = 'h-11 w-full rounded-full border border-black/10 bg-white px-4 text-sm font-normal text-slate-800 outline-none transition placeholder:text-slate-300 focus:border-[#05C7F2] focus:ring-4 focus:ring-[#05C7F2]/15';
-const PRIMARY_BUTTON_CLASS = 'inline-flex h-11 items-center justify-center gap-2 rounded-full bg-[#020873] px-5 text-sm font-medium text-white shadow-[0_4px_16px_rgba(0,0,0,0.08),0_2px_6px_rgba(0,0,0,0.04)] transition hover:bg-[#03115f] active:scale-[0.97] disabled:opacity-60';
+const FORM_INPUT_CLASS = 'h-10 w-full rounded-full border border-black/10 bg-white px-4 text-sm font-normal text-slate-800 outline-none transition placeholder:text-slate-300 focus:border-[#05C7F2] focus:ring-4 focus:ring-[#05C7F2]/15';
+const PRIMARY_BUTTON_CLASS = 'inline-flex h-10 items-center justify-center gap-2 rounded-full bg-[#020873] px-5 text-sm font-medium text-white shadow-[0_4px_16px_rgba(0,0,0,0.08),0_2px_6px_rgba(0,0,0,0.04)] transition hover:bg-[#03115f] active:scale-[0.97] disabled:opacity-60';
 const SECONDARY_BUTTON_CLASS = 'inline-flex h-11 items-center justify-center gap-2 rounded-full border border-black/10 bg-white px-4 text-sm font-medium text-slate-700 transition hover:border-[#05C7F2] hover:text-[#020873] active:scale-[0.97]';
 
 const formatModuleName = (name = '') =>
@@ -606,7 +606,7 @@ export default function AdminUsuarios() {
       const permisosFlat = treePermisosToFlat(permisosTreeEditar);
       const cargoFinal = perfilAutoEditando ? perfilEditarPreview.inferredPosition : cargoEditando.trim() || perfilEditarPreview.inferredPosition;
       const rolFinal = perfilAutoEditando ? perfilEditarPreview.inferredRole : rolEditando.trim() || perfilEditarPreview.inferredRole;
-      const { error: errorPerfil } = await supabase
+      let { error: errorPerfil } = await supabase
         .from('perfiles_usuarios')
         .update({
           nombre: nombreEditando,
@@ -615,6 +615,15 @@ export default function AdminUsuarios() {
           perfil_auto: perfilAutoEditando,
         })
         .eq('id', usuarioEditando.id);
+
+      if (errorPerfil && /cargo|rol|perfil_auto|schema cache|column/i.test(errorPerfil.message || '')) {
+        const fallback = await supabase
+          .from('perfiles_usuarios')
+          .update({ nombre: nombreEditando })
+          .eq('id', usuarioEditando.id);
+        errorPerfil = fallback.error;
+      }
+
       if (errorPerfil) throw new Error(`Error al guardar nombre: ${errorPerfil.message}`);
 
       const { error: errorDelete } = await supabase
@@ -782,7 +791,7 @@ export default function AdminUsuarios() {
           onClose={() => setModalNuevo(false)}
           onSubmit={crearNuevoUsuario}
         >
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <label className="space-y-1.5 md:col-span-2">
               <span className="text-xs font-medium uppercase tracking-[0.12em] text-slate-400">Nombre</span>
               <input className={FORM_INPUT_CLASS} value={nuevoUsuario.nombre} onChange={(event) => setNuevoUsuario({ ...nuevoUsuario, nombre: event.target.value })} placeholder="Nombre visible" />
@@ -821,7 +830,7 @@ export default function AdminUsuarios() {
           onClose={cerrarEditar}
           onSubmit={guardarCambios}
         >
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <label className="space-y-1.5 md:col-span-2">
               <span className="text-xs font-medium uppercase tracking-[0.12em] text-slate-400">Nombre visible</span>
               <input className={FORM_INPUT_CLASS} value={nombreEditando} onChange={(event) => setNombreEditando(event.target.value)} />
@@ -1102,15 +1111,15 @@ function SimpleBoard({ title, rows, columns }) {
 
 function ProfileFields({ auto, setAuto, cargo, setCargo, rol, setRol, preview }) {
   return (
-    <section className="rounded-[20px] border border-black/5 bg-slate-50 p-4">
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <section className="rounded-[18px] border border-black/5 bg-slate-50 p-3">
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-400">Cargo y rol</p>
-          <p className="mt-1 text-sm font-medium text-slate-900">
+          <p className="mt-1 text-sm font-semibold leading-5 text-slate-900">
             {auto ? `${preview.inferredPosition} / ${preview.inferredRole}` : `${cargo || preview.inferredPosition} / ${rol || preview.inferredRole}`}
           </p>
         </div>
-        <label className="inline-flex h-10 items-center gap-2 rounded-full bg-white px-3 text-sm font-medium text-slate-700 ring-1 ring-black/10">
+        <label className="inline-flex h-9 items-center gap-2 rounded-full bg-white px-3 text-sm font-medium text-slate-700 ring-1 ring-black/10">
           <input
             type="checkbox"
             checked={auto}
@@ -1147,10 +1156,10 @@ function ProfileFields({ auto, setAuto, cargo, setCargo, rol, setRol, preview })
 function PermissionTree({ modulosTree, treeState, setter, onChange }) {
   return (
     <section>
-      <p className="mb-3 text-xs font-medium uppercase tracking-[0.14em] text-slate-400">Accesos por modulo</p>
-      <div className="grid max-h-[34vh] grid-cols-1 gap-3 overflow-y-auto rounded-[20px] bg-slate-50 p-3 custom-scrollbar">
+      <p className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-slate-400">Accesos por modulo</p>
+      <div className="grid max-h-[28vh] grid-cols-1 gap-2 overflow-y-auto rounded-[18px] bg-slate-50 p-2 custom-scrollbar">
         {modulosTree.map((mod) => (
-          <div key={mod.id} className="rounded-[18px] border border-black/5 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.06),0_1px_2px_rgba(0,0,0,0.04)]">
+          <div key={mod.id} className="rounded-[16px] border border-black/5 bg-white p-3 shadow-[0_1px_3px_rgba(0,0,0,0.06),0_1px_2px_rgba(0,0,0,0.04)]">
             <label className="flex cursor-pointer items-center gap-3">
               <input
                 type="checkbox"
@@ -1159,16 +1168,16 @@ function PermissionTree({ modulosTree, treeState, setter, onChange }) {
                 className="h-5 w-5 rounded border-slate-300 text-[#020873] focus:ring-[#05C7F2]"
               />
               <ModuleMark name={mod.nombre} active={treeState[mod.nombre]?.checked || false} />
-              <span className="font-medium text-slate-800">{formatModuleName(mod.nombre)}</span>
+              <span className="text-sm font-medium text-slate-800">{formatModuleName(mod.nombre)}</span>
               <span className="ml-auto text-[11px] font-medium uppercase tracking-[0.12em] text-slate-400">{mod.children.length} submodulos</span>
             </label>
             {mod.children.length > 0 && (
-              <div className="ml-14 mt-3 grid gap-2 border-l-2 border-slate-100 pl-5">
+              <div className="ml-10 mt-2 grid gap-1.5 border-l-2 border-slate-100 pl-4">
                 {mod.children.map((child) => {
                   const parentChecked = treeState[mod.nombre]?.checked;
                   const childChecked = parentChecked ? true : Boolean(treeState[mod.nombre]?.children?.[child.nombre]);
                   return (
-                    <label key={child.id} className="flex min-h-10 cursor-pointer items-center gap-2 rounded-full px-3 py-2 text-sm font-normal text-slate-600 hover:bg-slate-50">
+                    <label key={child.id} className="flex min-h-8 cursor-pointer items-center gap-2 rounded-full px-3 py-1.5 text-sm font-normal text-slate-600 hover:bg-slate-50">
                       <input
                         type="checkbox"
                         checked={childChecked}
@@ -1191,23 +1200,23 @@ function PermissionTree({ modulosTree, treeState, setter, onChange }) {
 
 function UserAccessModal({ title, submitLabel, loading, onClose, onSubmit, children }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#0a1930]/60 p-3 pt-4 backdrop-blur-md md:pt-6">
-      <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-[24px] border border-black/5 bg-white shadow-[0_20px_60px_rgba(0,0,0,0.18),0_8px_20px_rgba(0,0,0,0.08)]">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-hidden bg-[#0a1930]/60 p-2 pt-3 backdrop-blur-md md:pt-4">
+      <div className="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-[20px] border border-black/5 bg-white shadow-[0_20px_60px_rgba(0,0,0,0.18),0_8px_20px_rgba(0,0,0,0.08)]">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-4 py-3">
           <div>
-            <h2 className="text-xl font-semibold text-slate-950 md:text-2xl">{title}</h2>
+            <h2 className="text-lg font-semibold leading-6 text-slate-950 md:text-xl">{title}</h2>
           </div>
-          <button onClick={onClose} className="flex h-10 w-10 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 active:scale-[0.97]">
-            <X size={20} />
+          <button onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 active:scale-[0.97]">
+            <X size={18} />
           </button>
         </div>
-        <div className="space-y-4 overflow-y-auto px-5 py-4 custom-scrollbar">{children}</div>
-        <div className="flex flex-col gap-3 border-t border-slate-100 px-5 py-4 md:flex-row">
+        <div className="space-y-3 overflow-y-auto px-4 py-3 custom-scrollbar">{children}</div>
+        <div className="flex flex-col gap-2 border-t border-slate-100 px-4 py-3 md:flex-row">
           <button onClick={onSubmit} disabled={loading} className={`${PRIMARY_BUTTON_CLASS} flex-1`}>
             {loading ? <RefreshCw className="animate-spin" size={17} /> : <Save size={17} />}
             {submitLabel}
           </button>
-          <button onClick={onClose} disabled={loading} className="h-11 flex-1 rounded-full bg-slate-100 px-5 text-sm font-medium text-slate-600 transition hover:bg-slate-200 active:scale-[0.97] disabled:opacity-60">
+          <button onClick={onClose} disabled={loading} className="h-10 flex-1 rounded-full bg-slate-100 px-5 text-sm font-medium text-slate-600 transition hover:bg-slate-200 active:scale-[0.97] disabled:opacity-60">
             Cancelar
           </button>
         </div>
