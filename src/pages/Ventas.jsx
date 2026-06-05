@@ -1135,7 +1135,7 @@ const handleSave = async () => {
               Ventas
             </h1>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
-              Dashboard comercial integrado con RRHH, transparencia de gestiÃ³n y un Ãºnico punto de control para ventas, caja, marketing y finanzas.
+              Dashboard comercial, para el control de las ventas, caja, marketing y finanzas.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
