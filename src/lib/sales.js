@@ -95,6 +95,38 @@ export const DEMO_MONTHLY_DELIVERABLES = [
   { name: 'Plantillas informativas', owner: 'Ventas', window: 'Dia 1 al 4', status: 'Versionar y aprobar' },
 ];
 
+export const DEMO_FOLLOW_UPS = [
+  { id: 1, lead: 'Rosa Garcia', executive: 'Maria F.', event: 'Sondas 0626', phase: '2 contacto', nextAction: 'Enviar brochure y audio corto', sla: 'En ritmo', risk: 'medio' },
+  { id: 2, lead: 'Carlos Mendoza', executive: 'Andrea P.', event: 'Enfermeria Intensiva', phase: 'Promesa de pago', nextAction: 'Confirmar voucher antes de las 18:00', sla: 'Critico', risk: 'alto' },
+  { id: 3, lead: 'Milagros Torres', executive: 'Luis G.', event: 'Podologia Clinica', phase: 'Lead nuevo', nextAction: 'Primer contacto por WhatsApp', sla: 'Vencido', risk: 'alto' },
+  { id: 4, lead: 'Jorge Huaman', executive: 'Rosa M.', event: 'Administracion Hospitalaria', phase: '3 contacto', nextAction: 'Resolver objecion de precio', sla: 'En ritmo', risk: 'medio' },
+];
+
+export const DEMO_UTM_CAMPAIGNS = [
+  { id: 1, campaign: 'Meta Sondas Junio', source: 'Meta Ads', event: 'Sondas 0626', leads: 128, sales: 18, spend: 620, status: 'Rentable' },
+  { id: 2, campaign: 'WSP Enfermeria Intensiva', source: 'WhatsApp', event: 'Enfermeria Intensiva', leads: 96, sales: 22, spend: 140, status: 'Escalar' },
+  { id: 3, campaign: 'Remarketing Podologia', source: 'Remarketing', event: 'Podologia Clinica', leads: 64, sales: 7, spend: 280, status: 'Observar' },
+];
+
+export const DEMO_LIBRARY_ITEMS = [
+  { id: 1, name: 'Brochure general diplomados', type: 'Brochure', owner: 'Marketing', status: 'Aprobado', usage: 'Enviar en primer contacto' },
+  { id: 2, name: 'Guion de promesa de pago', type: 'Guion', owner: 'Ventas', status: 'Activo', usage: 'Usar cuando el cliente pide separar vacante' },
+  { id: 3, name: 'Mensaje Kommo primer contacto', type: 'Plantilla', owner: 'Ventas', status: 'Activo', usage: 'Respuesta rapida para leads nuevos' },
+  { id: 4, name: 'Objecion por precio', type: 'Plantilla', owner: 'Jefe de ventas', status: 'Revision', usage: 'Actualizar con politica de descuentos' },
+];
+
+export const DEMO_SALES_SHOWS = [
+  { id: 1, event: 'Sondas 0626', moderator: 'Renato', date: '2026-06-08', target: 80, attendees: 54, hotLeads: 21, closed: 8, status: 'Programado' },
+  { id: 2, event: 'Enfermeria Intensiva', moderator: 'Maria F.', date: '2026-06-10', target: 120, attendees: 96, hotLeads: 38, closed: 15, status: 'En seguimiento' },
+  { id: 3, event: 'Podologia Clinica', moderator: 'Carlos R.', date: '2026-06-12', target: 60, attendees: 0, hotLeads: 0, closed: 0, status: 'Pendiente guion' },
+];
+
+export const DEMO_COORDINATION_SLA = [
+  { id: 1, event: 'Sondas 0626', request: 'Confirmar docente y horario', owner: 'Coordinacion', priority: 'Alta', slaHours: 4, status: 'Pendiente' },
+  { id: 2, event: 'Enfermeria Intensiva', request: 'Validar certificacion y vacantes', owner: 'Academico', priority: 'Media', slaHours: 12, status: 'En proceso' },
+  { id: 3, event: 'Podologia Clinica', request: 'Actualizar temario para brochure', owner: 'Marketing', priority: 'Media', slaHours: 8, status: 'Resuelto' },
+];
+
 export const IMPROVEMENT_ROADMAP = [
   {
     phase: '0-7 dias',

@@ -107,7 +107,7 @@ const ACCESS_ROLES = [
     position: 'Direccion ejecutiva',
     area: 'Direccion',
     level: 'Direccion',
-    permissions: ['Dashboard', 'Ventas', 'ventas_dashboard', 'ventas_ranking', 'ventas_metas', 'Finanzas', 'Reportes'],
+    permissions: ['Dashboard', 'Ventas', 'ventas_dashboard', 'ventas_ranking', 'ventas_metas', 'ventas_eventos', 'ventas_marketing', 'ventas_comisiones', 'ventas_entregables', 'ventas_alertas', 'Finanzas', 'Reportes'],
   },
   {
     id: 'jefe_ventas',
@@ -115,7 +115,7 @@ const ACCESS_ROLES = [
     position: 'Jefe de ventas',
     area: 'Ventas',
     level: 'Jefatura',
-    permissions: ['Ventas', 'ventas_dashboard', 'ventas_nueva_venta', 'ventas_ranking', 'ventas_metas', 'ventas_kommo', 'ventas_checklist', 'ventas_grupos', 'ventas_promesas', 'ventas_comisiones', 'ventas_plantillas', 'ventas_entregables', 'ventas_accesos', 'ventas_alertas', 'ventas_importador', 'ventas_administracion'],
+    permissions: ['Ventas', 'ventas_dashboard', 'ventas_seguimiento', 'ventas_nueva_venta', 'ventas_ranking', 'ventas_metas', 'ventas_kommo', 'ventas_eventos', 'ventas_marketing', 'ventas_checklist', 'ventas_grupos', 'ventas_promesas', 'ventas_comisiones', 'ventas_biblioteca', 'ventas_show', 'ventas_coordinacion', 'ventas_plantillas', 'ventas_entregables', 'ventas_accesos', 'ventas_alertas', 'ventas_importador', 'ventas_administracion'],
   },
   {
     id: 'supervisor_comercial',
@@ -123,7 +123,7 @@ const ACCESS_ROLES = [
     position: 'Supervisor comercial',
     area: 'Ventas',
     level: 'Supervision',
-    permissions: ['Ventas', 'ventas_dashboard', 'ventas_ranking', 'ventas_metas', 'ventas_kommo', 'ventas_checklist', 'ventas_grupos', 'ventas_promesas', 'ventas_alertas'],
+    permissions: ['Ventas', 'ventas_dashboard', 'ventas_seguimiento', 'ventas_ranking', 'ventas_metas', 'ventas_kommo', 'ventas_eventos', 'ventas_checklist', 'ventas_grupos', 'ventas_promesas', 'ventas_show', 'ventas_alertas'],
   },
   {
     id: 'ejecutivo_ventas',
@@ -131,7 +131,7 @@ const ACCESS_ROLES = [
     position: 'Ejecutivo comercial',
     area: 'Ventas',
     level: 'Operativo',
-    permissions: ['Ventas', 'ventas_nueva_venta', 'ventas_checklist', 'ventas_promesas', 'ventas_plantillas'],
+    permissions: ['Ventas', 'ventas_seguimiento', 'ventas_nueva_venta', 'ventas_kommo', 'ventas_promesas', 'ventas_biblioteca', 'ventas_plantillas'],
   },
   {
     id: 'marketing_admin',
@@ -139,7 +139,7 @@ const ACCESS_ROLES = [
     position: 'Responsable de marketing',
     area: 'Marketing',
     level: 'Jefatura',
-    permissions: ['Marketing', 'marketing_dashboard', 'marketing_campanas', 'marketing_metricas', 'marketing_planeacion', 'marketing_crm'],
+    permissions: ['Marketing', 'marketing_dashboard', 'marketing_campanas', 'marketing_metricas', 'marketing_planeacion', 'marketing_crm', 'Ventas', 'ventas_marketing', 'ventas_eventos', 'ventas_biblioteca', 'ventas_grupos'],
   },
   {
     id: 'marketing_lectura',
@@ -147,7 +147,7 @@ const ACCESS_ROLES = [
     position: 'Analista de marketing',
     area: 'Marketing',
     level: 'Lectura',
-    permissions: ['Marketing', 'marketing_dashboard', 'marketing_campanas', 'marketing_metricas'],
+    permissions: ['Marketing', 'marketing_dashboard', 'marketing_campanas', 'marketing_metricas', 'Ventas', 'ventas_marketing', 'ventas_eventos', 'ventas_biblioteca'],
   },
   {
     id: 'caja_operativo',
@@ -171,7 +171,7 @@ const ACCESS_ROLES = [
     position: 'Coordinacion academica',
     area: 'Academico',
     level: 'Operativo',
-    permissions: ['Gestion Estrategica', 'Reportes'],
+    permissions: ['Gestion Estrategica', 'Ventas', 'ventas_eventos', 'ventas_coordinacion', 'ventas_biblioteca', 'ventas_entregables', 'Reportes'],
   },
   {
     id: 'auditoria_lectura',
@@ -184,15 +184,21 @@ const ACCESS_ROLES = [
 ];
 
 const MODULE_LABELS = {
-  ventas_dashboard: 'Resumen ventas',
-  ventas_nueva_venta: 'Nueva venta',
-  ventas_ranking: 'Ranking',
+  ventas_dashboard: 'Panel diario',
+  ventas_seguimiento: 'Seguimiento comercial',
+  ventas_nueva_venta: 'Ventas e inscripciones',
+  ventas_ranking: 'Ranking y productividad',
   ventas_metas: 'Metas',
-  ventas_kommo: 'Kommo',
-  ventas_checklist: 'Checklist',
-  ventas_grupos: 'Grupos WSP',
+  ventas_kommo: 'Leads y KOMMO',
+  ventas_eventos: 'Eventos 360',
+  ventas_marketing: 'Campanas y UTMs',
+  ventas_checklist: 'Rutina operativa',
+  ventas_grupos: 'Comunidades y remarketing',
   ventas_promesas: 'Promesas',
   ventas_comisiones: 'Comisiones',
+  ventas_biblioteca: 'Biblioteca comercial',
+  ventas_show: 'Show de ventas',
+  ventas_coordinacion: 'Coordinacion academica',
   ventas_plantillas: 'Plantillas',
   ventas_entregables: 'Reportes comerciales',
   ventas_accesos: 'Accesos',
@@ -222,6 +228,7 @@ const CRITICAL_PERMISSIONS = new Set([
   'Finanzas',
   'Reportes',
   'ventas_comisiones',
+  'ventas_coordinacion',
   'ventas_importador',
   'ventas_administracion',
   'ventas_entregables',

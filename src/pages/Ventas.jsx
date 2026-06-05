@@ -65,9 +65,14 @@ import {
   DEMO_GROUPS,
   DEMO_INCIDENTS,
   DEMO_KOMMO_QUEUE,
+  DEMO_COORDINATION_SLA,
+  DEMO_FOLLOW_UPS,
+  DEMO_LIBRARY_ITEMS,
   DEMO_MONTHLY_DELIVERABLES,
   DEMO_PAYMENT_PROMISES,
   DEMO_SALES,
+  DEMO_SALES_SHOWS,
+  DEMO_UTM_CAMPAIGNS,
   IMPROVEMENT_ROADMAP,
   SALES_CATEGORIES,
   buildIncidentMetrics,
@@ -110,20 +115,25 @@ const emptyForm = {
 };
 
 const SALES_SUBMODULES = [
-  { id: 'resumen', path: 'resumen', label: 'Resumen ejecutivo', icon: Activity, permission: 'ventas_dashboard' },
-  { id: 'nueva-venta', path: 'nueva-venta', label: 'Ventas', icon: Plus, permission: 'ventas_nueva_venta' },
-  { id: 'ranking', path: 'ranking', label: 'Equipo', icon: Trophy, permission: 'ventas_ranking' },
-  { id: 'metas', path: 'metas', label: 'Metas', icon: Target, permission: 'ventas_metas' },
-  { id: 'kommo', path: 'kommo', label: 'Leads', icon: MessageCircle, permission: 'ventas_kommo' },
-  { id: 'eventos', path: 'eventos', label: 'Eventos', icon: Database, permission: 'ventas_dashboard' },
-  { id: 'checklist', path: 'checklist', label: 'Rutina operativa', icon: ClipboardCheck, permission: 'ventas_checklist' },
-  { id: 'grupos', path: 'grupos', label: 'Comunidades', icon: Users, permission: 'ventas_grupos' },
+  { id: 'resumen', path: 'resumen', label: 'Panel diario', icon: Activity, permission: 'ventas_dashboard' },
+  { id: 'kommo', path: 'kommo', label: 'Leads y KOMMO', icon: MessageCircle, permission: 'ventas_kommo' },
+  { id: 'seguimiento', path: 'seguimiento', label: 'Seguimiento comercial', icon: ClipboardList, permission: 'ventas_seguimiento' },
   { id: 'promesas', path: 'promesas', label: 'Promesas de pago', icon: Clock, permission: 'ventas_promesas' },
+  { id: 'nueva-venta', path: 'nueva-venta', label: 'Ventas e inscripciones', icon: Plus, permission: 'ventas_nueva_venta' },
+  { id: 'eventos', path: 'eventos', label: 'Eventos 360', icon: Database, permission: 'ventas_eventos' },
+  { id: 'marketing', path: 'marketing', label: 'Campanas, UTMs y marketing', icon: BarChart3, permission: 'ventas_marketing' },
+  { id: 'biblioteca', path: 'biblioteca', label: 'Biblioteca comercial', icon: FileText, permission: 'ventas_biblioteca' },
+  { id: 'show', path: 'show', label: 'Show de ventas', icon: Trophy, permission: 'ventas_show' },
+  { id: 'ranking', path: 'ranking', label: 'Ranking y productividad', icon: Trophy, permission: 'ventas_ranking' },
+  { id: 'metas', path: 'metas', label: 'Metas', icon: Target, permission: 'ventas_metas' },
+  { id: 'checklist', path: 'checklist', label: 'Rutina operativa', icon: ClipboardCheck, permission: 'ventas_checklist' },
   { id: 'comisiones', path: 'comisiones', label: 'Comisiones e incidencias', icon: Gift, permission: 'ventas_comisiones' },
-  { id: 'reportes', path: 'reportes', label: 'Reportes', icon: FileText, permission: 'ventas_entregables' },
+  { id: 'coordinacion', path: 'coordinacion', label: 'Coordinacion academica', icon: ClipboardCheck, permission: 'ventas_coordinacion' },
+  { id: 'grupos', path: 'grupos', label: 'Comunidades y remarketing', icon: Users, permission: 'ventas_grupos' },
   { id: 'plantillas', path: 'plantillas', label: 'Plantillas comerciales', icon: FileText, permission: 'ventas_plantillas' },
   { id: 'accesos', path: 'accesos', label: 'Accesos criticos', icon: KeyRound, permission: 'ventas_accesos' },
   { id: 'alertas', path: 'alertas', label: 'Alertas inteligentes', icon: Bell, permission: 'ventas_alertas' },
+  { id: 'reportes', path: 'reportes', label: 'Reportes gerenciales', icon: FileText, permission: 'ventas_entregables' },
   { id: 'importador', path: 'importador', label: 'Importador', icon: Upload, permission: 'ventas_importador' },
   { id: 'administracion', path: 'administracion', label: 'Administracion', icon: Settings, permission: 'ventas_administracion' },
 ];
@@ -735,6 +745,43 @@ const kommoWebhookUrl = `${import.meta.env.VITE_SUPABASE_URL || ''}/functions/v1
       };
     }).sort((a, b) => b.leads - a.leads);
   }, [eventHistory, leadRows, leadSources]);
+
+  const followUpRows = useMemo(() => {
+    if (!leadRows.length) return DEMO_FOLLOW_UPS;
+    return leadRows.slice(0, 12).map((lead) => ({
+      id: lead.id,
+      lead: lead.nombre || 'Sin nombre',
+      executive: lead.ventas_ejecutivos?.short_name || lead.ventas_ejecutivos?.full_name || 'Sin asignar',
+      event: lead.evento_codigo || lead.evento_nombre || 'Sin evento',
+      phase: lead.fase || 'LEAD NUEVO',
+      nextAction: lead.observacion || (lead.fecha_contacto ? 'Continuar seguimiento' : 'Primer contacto pendiente'),
+      sla: lead.fecha_contacto ? 'En ritmo' : 'Pendiente',
+      risk: !lead.fecha_contacto ? 'alto' : lead.cierre === 'GANADO' ? 'bajo' : 'medio',
+    }));
+  }, [leadRows]);
+
+  const campaignRows = useMemo(() => {
+    if (!leadSources.length && !leadRows.length) return DEMO_UTM_CAMPAIGNS;
+    const grouped = new Map();
+    leadRows.forEach((lead) => {
+      const key = lead.origen || lead.canal || 'Sin canal';
+      if (!grouped.has(key)) {
+        grouped.set(key, { id: key, campaign: key, source: lead.canal || 'Google Sheets', event: 'Multiples eventos', leads: 0, sales: 0, spend: 0, status: 'Medir' });
+      }
+      const row = grouped.get(key);
+      row.leads += 1;
+      if (lead.cierre === 'GANADO') row.sales += 1;
+    });
+    return Array.from(grouped.values()).map((row) => ({
+      ...row,
+      status: row.sales > 0 ? 'Rentable' : 'Observar',
+    }));
+  }, [leadRows, leadSources]);
+
+  const libraryRows = useMemo(() => DEMO_LIBRARY_ITEMS, []);
+  const salesShowRows = useMemo(() => DEMO_SALES_SHOWS, []);
+  const coordinationRows = useMemo(() => DEMO_COORDINATION_SLA, []);
+
   const selectedHrPerson = useMemo(
     () => hrPeople.find((person) => person.key === newExecutive.hrPersonKey),
     [hrPeople, newExecutive.hrPersonKey],
@@ -1566,6 +1613,63 @@ const handleSave = async () => {
         </div>
       )}
 
+      {shouldShow('seguimiento') && (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.35fr_0.65fr]">
+          <div className="apple-card overflow-hidden">
+            <div className="flex flex-col gap-3 border-b border-slate-100 p-5 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h2 className="flex items-center gap-2 text-lg font-black text-slate-900">
+                  <ClipboardList size={19} className="text-blue-600" /> Seguimiento comercial
+                </h2>
+                <p className="mt-1 text-xs font-medium text-slate-500">
+                  Prioriza proximas acciones por lead, ejecutivo, evento y SLA sin abrir hojas externas.
+                </p>
+              </div>
+              <span className="badge badge-blue">{followUpRows.length} acciones visibles</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="erp-table min-w-[980px]">
+                <thead>
+                  <tr>
+                    <th>Lead</th>
+                    <th>Ejecutivo</th>
+                    <th>Evento</th>
+                    <th>Fase</th>
+                    <th>Proxima accion</th>
+                    <th>SLA</th>
+                    <th>Riesgo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {followUpRows.map((row) => (
+                    <tr key={row.id}>
+                      <td className="font-bold text-slate-900">{row.lead}</td>
+                      <td>{row.executive}</td>
+                      <td>{row.event}</td>
+                      <td><span className="badge badge-blue">{row.phase}</span></td>
+                      <td className="max-w-sm text-xs font-medium leading-5 text-slate-500">{row.nextAction}</td>
+                      <td><span className={`badge ${row.sla === 'Vencido' || row.sla === 'Critico' ? 'badge-red' : row.sla === 'Pendiente' ? 'badge-amber' : 'badge-green'}`}>{row.sla}</span></td>
+                      <td><span className={`badge ${row.risk === 'alto' ? 'badge-red' : row.risk === 'medio' ? 'badge-amber' : 'badge-green'}`}>{row.risk}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            <MetricCard icon={Clock} label="Pendientes SLA" value={followUpRows.filter((row) => row.sla !== 'En ritmo').length} sub="Primer contacto, promesas y tareas abiertas" tone="amber" />
+            <MetricCard icon={AlertTriangle} label="Riesgo alto" value={followUpRows.filter((row) => row.risk === 'alto').length} sub="Requiere supervisor o reasignacion" tone="red" />
+            <div className="apple-card p-5">
+              <h2 className="mb-4 text-sm font-black uppercase tracking-[0.12em] text-slate-700">Reglas operativas</h2>
+              {['Ningun lead sin duenio al cierre de turno.', 'Promesa vencida pasa a revision de supervisor.', 'Observacion obligatoria antes de marcar perdido.', 'Primer contacto dentro del SLA configurado.'].map((item) => (
+                <div key={item} className="mb-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm font-semibold text-slate-600 last:mb-0">{item}</div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {shouldShow('eventos') && (
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr_0.9fr]">
           <div className="apple-card overflow-hidden">
@@ -1669,6 +1773,82 @@ const handleSave = async () => {
                   <p className="mt-1 text-2xl font-black text-slate-900">{leadSources.length}</p>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {shouldShow('marketing') && (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.25fr_0.75fr]">
+          <div className="apple-card overflow-hidden">
+            <div className="flex flex-col gap-3 border-b border-slate-100 p-5 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h2 className="flex items-center gap-2 text-lg font-black text-slate-900">
+                  <BarChart3 size={19} className="text-blue-600" /> Campanas, UTMs y marketing
+                </h2>
+                <p className="mt-1 text-xs font-medium text-slate-500">
+                  Conecta campana, lead, venta, descuento y resultado para decidir donde invertir.
+                </p>
+              </div>
+              <span className="badge badge-blue">{campaignRows.length} fuentes</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="erp-table min-w-[880px]">
+                <thead>
+                  <tr>
+                    <th>Campana</th>
+                    <th>Fuente</th>
+                    <th>Evento</th>
+                    <th>Leads</th>
+                    <th>Ventas</th>
+                    <th>Conversion</th>
+                    <th>CPL</th>
+                    <th>Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {campaignRows.map((row) => {
+                    const conversion = row.leads ? pctOf(row.sales, row.leads, 1) : 0;
+                    const cpl = row.spend && row.leads ? row.spend / row.leads : 0;
+                    return (
+                      <tr key={row.id || row.campaign}>
+                        <td className="font-bold text-slate-900">{row.campaign}</td>
+                        <td>{row.source}</td>
+                        <td>{row.event}</td>
+                        <td>{row.leads}</td>
+                        <td className="font-black text-blue-700">{row.sales}</td>
+                        <td>{conversion}%</td>
+                        <td>{cpl ? `S/ ${cpl.toFixed(2)}` : '-'}</td>
+                        <td><span className={`badge ${row.status === 'Rentable' || row.status === 'Escalar' ? 'badge-green' : row.status === 'Medir' ? 'badge-blue' : 'badge-amber'}`}>{row.status}</span></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            <ChartCard title="Ventas por fuente">
+              <div className="h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={campaignRows}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="source" tick={{ fontSize: 10, fill: '#64748b' }} />
+                    <YAxis tick={{ fontSize: 11, fill: '#64748b' }} />
+                    <Tooltip contentStyle={tooltipStyle} />
+                    <Bar dataKey="sales" radius={[8, 8, 0, 0]}>
+                      {campaignRows.map((item, index) => <Cell key={item.id || item.campaign} fill={CHART_COLORS[index % CHART_COLORS.length]} />)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </ChartCard>
+            <div className="apple-card p-5">
+              <h2 className="mb-4 text-sm font-black uppercase tracking-[0.12em] text-slate-700">Decision comercial</h2>
+              <p className="text-sm font-medium leading-6 text-slate-500">
+                Las campanas con conversion saludable deben alimentar show de ventas y remarketing. Las campanas sin cierre quedan en observacion para revisar mensaje, publico y descuento.
+              </p>
             </div>
           </div>
         </div>
@@ -1972,6 +2152,163 @@ const handleSave = async () => {
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {shouldShow('biblioteca') && (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+          <div className="apple-card overflow-hidden">
+            <div className="border-b border-slate-100 p-5">
+              <h2 className="flex items-center gap-2 text-lg font-black text-slate-900">
+                <FileText size={19} className="text-blue-600" /> Biblioteca comercial
+              </h2>
+              <p className="mt-1 text-xs font-medium text-slate-500">Brochures, guiones y plantillas aprobadas para no vender con informacion desactualizada.</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="erp-table">
+                <thead>
+                  <tr>
+                    <th>Activo</th>
+                    <th>Tipo</th>
+                    <th>Responsable</th>
+                    <th>Uso</th>
+                    <th>Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {libraryRows.map((item) => (
+                    <tr key={item.id}>
+                      <td className="font-bold text-slate-900">{item.name}</td>
+                      <td>{item.type}</td>
+                      <td>{item.owner}</td>
+                      <td className="max-w-sm text-xs font-medium leading-5 text-slate-500">{item.usage}</td>
+                      <td><span className={`badge ${item.status === 'Aprobado' || item.status === 'Activo' ? 'badge-green' : 'badge-amber'}`}>{item.status}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div className="apple-card p-5">
+            <h2 className="mb-4 text-sm font-black uppercase tracking-[0.12em] text-slate-700">Gobierno de contenido</h2>
+            {['Cada plantilla debe tener responsable y version.', 'Marketing actualiza brochure; ventas valida utilidad.', 'KOMMO usa solo mensajes aprobados.', 'Reportar error crea solicitud de actualizacion.'].map((item) => (
+              <div key={item} className="mb-3 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm font-semibold text-blue-900 last:mb-0">{item}</div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {shouldShow('show') && (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+          <div className="apple-card overflow-hidden">
+            <div className="flex flex-col gap-3 border-b border-slate-100 p-5 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h2 className="flex items-center gap-2 text-lg font-black text-slate-900">
+                  <Trophy size={19} className="text-blue-600" /> Show de ventas y clientes potenciales
+                </h2>
+                <p className="mt-1 text-xs font-medium text-slate-500">Mide reuniones comerciales, moderadores, leads calientes y cierres generados.</p>
+              </div>
+              <span className="badge badge-blue">{salesShowRows.length} reuniones</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="erp-table min-w-[900px]">
+                <thead>
+                  <tr>
+                    <th>Evento</th>
+                    <th>Fecha</th>
+                    <th>Moderador</th>
+                    <th>Meta</th>
+                    <th>Asistentes</th>
+                    <th>Calientes</th>
+                    <th>Cierres</th>
+                    <th>Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {salesShowRows.map((item) => (
+                    <tr key={item.id}>
+                      <td className="font-bold text-slate-900">{item.event}</td>
+                      <td>{item.date}</td>
+                      <td>{item.moderator}</td>
+                      <td>{item.target}</td>
+                      <td>{item.attendees}</td>
+                      <td className="font-black text-amber-600">{item.hotLeads}</td>
+                      <td className="font-black text-blue-700">{item.closed}</td>
+                      <td><span className={`badge ${item.status === 'En seguimiento' ? 'badge-green' : item.status === 'Programado' ? 'badge-blue' : 'badge-amber'}`}>{item.status}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <ChartCard title="Cierres por show">
+            <div className="h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={salesShowRows}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="event" tick={{ fontSize: 10, fill: '#64748b' }} />
+                  <YAxis tick={{ fontSize: 11, fill: '#64748b' }} />
+                  <Tooltip contentStyle={tooltipStyle} />
+                  <Bar dataKey="closed" fill="#020873" radius={[8, 8, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </ChartCard>
+        </div>
+      )}
+
+      {shouldShow('coordinacion') && (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+          <div className="apple-card overflow-hidden">
+            <div className="border-b border-slate-100 p-5">
+              <h2 className="flex items-center gap-2 text-lg font-black text-slate-900">
+                <ClipboardCheck size={19} className="text-blue-600" /> Coordinacion academica
+              </h2>
+              <p className="mt-1 text-xs font-medium text-slate-500">Consultas internas con SLA para fechas, docentes, certificaciones, temarios y vacantes.</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="erp-table">
+                <thead>
+                  <tr>
+                    <th>Evento</th>
+                    <th>Solicitud</th>
+                    <th>Responsable</th>
+                    <th>Prioridad</th>
+                    <th>SLA</th>
+                    <th>Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {coordinationRows.map((item) => (
+                    <tr key={item.id}>
+                      <td className="font-bold text-slate-900">{item.event}</td>
+                      <td className="max-w-sm text-xs font-medium leading-5 text-slate-500">{item.request}</td>
+                      <td>{item.owner}</td>
+                      <td><span className={`badge ${item.priority === 'Alta' ? 'badge-red' : 'badge-amber'}`}>{item.priority}</span></td>
+                      <td>{item.slaHours} h</td>
+                      <td><span className={`badge ${item.status === 'Resuelto' ? 'badge-green' : item.status === 'En proceso' ? 'badge-blue' : 'badge-amber'}`}>{item.status}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div className="apple-card p-5">
+            <h2 className="mb-4 text-sm font-black uppercase tracking-[0.12em] text-slate-700">Impacto en ventas</h2>
+            <p className="text-sm font-medium leading-6 text-slate-500">
+              Si coordinacion demora, ventas pierde cierres por falta de fecha, docente o certificacion clara. Este tablero convierte consultas academicas en tareas trazables.
+            </p>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.12em] text-amber-700">Abiertas</p>
+                <p className="mt-2 text-2xl font-black text-amber-800">{coordinationRows.filter((item) => item.status !== 'Resuelto').length}</p>
+              </div>
+              <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.12em] text-emerald-700">Resueltas</p>
+                <p className="mt-2 text-2xl font-black text-emerald-800">{coordinationRows.filter((item) => item.status === 'Resuelto').length}</p>
+              </div>
             </div>
           </div>
         </div>
