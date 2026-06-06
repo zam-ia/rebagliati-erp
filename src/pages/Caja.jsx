@@ -208,7 +208,6 @@ export default function Caja() {
   const [rendiciones, setRendiciones] = useState([]);
   const [conciliaciones, setConciliaciones] = useState([]);
   const [auditoria, setAuditoria] = useState([]);
-  const [dataIssues, setDataIssues] = useState([]);
   const [reportScope, setReportScope] = useState('7d');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -274,18 +273,6 @@ export default function Caja() {
       supabase.from('caja_auditoria').select('*').order('created_at', { ascending: false }).limit(30),
     ]);
 
-    const issueList = [
-      ['pagos', pagosResponse.error],
-      ['egresos', egresosResponse.error],
-      ['inscripciones', inscripcionesResponse.error],
-      ['caja_turnos', turnosResponse.error],
-      ['caja_movimientos', movimientosResponse.error],
-      ['caja_arqueos', arqueosResponse.error],
-      ['caja_rendiciones', rendicionesResponse.error],
-      ['caja_conciliaciones', conciliacionesResponse.error],
-      ['caja_auditoria', auditoriaResponse.error],
-    ].filter(([, error]) => error).map(([table, error]) => `${table}: ${error.message}`);
-
     const historicalLegacy = [
       ...((pagosHistoricosResponse.error ? [] : pagosHistoricosResponse.data) || []).map((pago) => ({
         id: `pago-${pago.id}`,
@@ -329,7 +316,6 @@ export default function Caja() {
     setRendiciones(rendicionesResponse.error ? [] : (rendicionesResponse.data || []));
     setConciliaciones(conciliacionesResponse.error ? [] : (conciliacionesResponse.data || []));
     setAuditoria(auditoriaResponse.error ? [] : (auditoriaResponse.data || []));
-    setDataIssues(issueList);
     setLoading(false);
   }, []);
 
@@ -375,8 +361,6 @@ export default function Caja() {
   ], [egresos, pagos]);
 
   const allMovements = movimientos.length ? movimientos : legacyMovements;
-  const usingLegacy = !movimientos.length && legacyMovements.length > 0;
-  const hasMixedSources = movimientos.length > 0 && legacyMovements.length > 0;
   const reportMovements = historicalMovements.length ? historicalMovements : allMovements;
   const filteredMovements = allMovements.filter((item) => {
     const term = search.trim().toLowerCase();
@@ -418,10 +402,8 @@ export default function Caja() {
     if (Math.abs(totals.diferencia) > 1) warnings.push({ id: 'arqueo', message: `Diferencia de arqueo: ${formatPEN(totals.diferencia)}.`, tab: 'arqueo' });
     const digitalSinOperacion = allMovements.filter((item) => DIGITAL_METHODS.has(item.metodo_pago) && !item.numero_operacion).length;
     if (digitalSinOperacion) warnings.push({ id: 'digital', message: `${digitalSinOperacion} pagos digitales sin numero de operacion.`, tab: 'conciliacion' });
-    if (usingLegacy) warnings.push({ id: 'legacy', message: 'Mostrando datos legacy porque caja_movimientos aun no tiene registros.', tab: 'parametros' });
-    if (dataIssues.length) warnings.push({ id: 'data', message: `${dataIssues.length} consultas requieren revision tecnica.`, tab: 'parametros' });
     return warnings;
-  }, [allMovements, dataIssues.length, totals, turnos.length, usingLegacy]);
+  }, [allMovements, totals, turnos.length]);
 
   const recentMovements = useMemo(() => (
     [...allMovements]
@@ -799,14 +781,6 @@ export default function Caja() {
           </div>
         </div>
       </section>
-
-      {(usingLegacy || hasMixedSources || dataIssues.length > 0) && (
-        <div className="rounded-3xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-semibold leading-6 text-amber-900">
-          {usingLegacy && 'Caja esta mostrando datos legacy de pagos/egresos porque caja_movimientos aun no tiene registros. '}
-          {hasMixedSources && 'Hay registros en tablas legacy y operativas; el tablero usa caja_movimientos para evitar duplicados. '}
-          {dataIssues.length > 0 && `Revision tecnica pendiente: ${dataIssues.slice(0, 2).join(' | ')}`}
-        </div>
-      )}
 
       <div className="apple-card overflow-x-auto p-2">
         <div className="flex min-w-max gap-1">
