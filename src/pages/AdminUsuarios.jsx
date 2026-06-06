@@ -155,7 +155,7 @@ const ACCESS_ROLES = [
     position: 'Asistente de caja',
     area: 'Caja',
     level: 'Operativo',
-    permissions: ['Caja', 'Caja y Pagos'],
+    permissions: ['Caja', 'Caja y Pagos', 'caja_dashboard', 'caja_turnos', 'caja_ingresos', 'caja_egresos', 'caja_arqueo', 'caja_historico'],
   },
   {
     id: 'finanzas',
@@ -205,6 +205,16 @@ const MODULE_LABELS = {
   ventas_alertas: 'Alertas',
   ventas_importador: 'Importador',
   ventas_administracion: 'Admin ventas',
+  caja_dashboard: 'Dashboard caja',
+  caja_turnos: 'Apertura y cierre',
+  caja_ingresos: 'Ingresos',
+  caja_egresos: 'Egresos',
+  caja_arqueo: 'Arqueo',
+  caja_rendicion: 'Rendicion',
+  caja_conciliacion: 'Conciliacion',
+  caja_historico: 'Historico caja',
+  caja_reportes: 'Reportes caja',
+  caja_parametros: 'Parametros caja',
 };
 
 const ADMIN_TABS = [
@@ -225,6 +235,9 @@ const CRITICAL_PERMISSIONS = new Set([
   'admin usuarios',
   'Caja',
   'Caja y Pagos',
+  'caja_rendicion',
+  'caja_conciliacion',
+  'caja_parametros',
   'Finanzas',
   'Reportes',
   'ventas_comisiones',

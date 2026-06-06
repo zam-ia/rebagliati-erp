@@ -25,11 +25,26 @@ export const SALES_PERMISSIONS = [
   'ventas_administracion',
 ];
 
+export const CASH_PERMISSIONS = [
+  'Caja',
+  'Caja y Pagos',
+  'caja_dashboard',
+  'caja_turnos',
+  'caja_ingresos',
+  'caja_egresos',
+  'caja_arqueo',
+  'caja_rendicion',
+  'caja_conciliacion',
+  'caja_historico',
+  'caja_reportes',
+  'caja_parametros',
+];
+
 export const ROUTE_PERMISSIONS = [
   { route: '/dashboard', permissions: [] },
   { route: '/inscripciones', permissions: ['Inscripciones'] },
   { route: '/ventas', permissions: SALES_PERMISSIONS },
-  { route: '/caja', permissions: ['Caja', 'Caja y Pagos'] },
+  { route: '/caja', permissions: CASH_PERMISSIONS },
   { route: '/marketing', permissions: ['Marketing', 'marketing_dashboard'] },
   { route: '/marketing/dashboard', permissions: ['Marketing', 'marketing_dashboard'] },
   { route: '/marketing/planeacion', permissions: ['Marketing', 'marketing_planeacion'] },

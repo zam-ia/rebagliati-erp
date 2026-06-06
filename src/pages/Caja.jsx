@@ -1,477 +1,897 @@
-import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
-import { addDaysISO, formatPEN, sumBy, toNumber, toPositiveNumber, todayISO } from '../lib/finance';
-import { PAYMENT_CONTROL_RULES } from '../lib/driveInsights';
-import { 
-  Wallet, Plus, DollarSign, CreditCard, Banknote, 
-  CalendarClock, User, TrendingDown, TrendingUp, RefreshCw,
-  FileText, AlertTriangle, X, Save, CheckCircle2
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import {
+  AlertTriangle,
+  Archive,
+  Banknote,
+  BarChart3,
+  CalendarClock,
+  CheckCircle2,
+  ClipboardCheck,
+  CreditCard,
+  Database,
+  Download,
+  FileText,
+  KeyRound,
+  Landmark,
+  Plus,
+  RefreshCw,
+  Save,
+  Search,
+  Settings,
+  ShieldCheck,
+  TrendingDown,
+  TrendingUp,
+  Wallet,
+  X,
 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { addDaysISO, formatPEN, pctOf, sumBy, toNumber, toPositiveNumber, todayISO } from '../lib/finance';
+import { PAYMENT_CONTROL_RULES } from '../lib/driveInsights';
 
-function Caja() {
-  const [pagos, setPagos] = useState([]);
-  const [inscripciones, setInscripciones] = useState([]);
-  const [totalDia, setTotalDia] = useState(0);
-  const [totalEgresos, setTotalEgresos] = useState(0);
-  const [mostrarForm, setMostrarForm] = useState(false);
-  const [cargando, setCargando] = useState(false);
-  
-  const [formData, setFormData] = useState({
-    inscripcion_id: '',
-    monto: '',
-    tipo_comprobante: 'boleta',
-    numero_comprobante: '',
-    metodo_pago: 'efectivo',
-    turno: 'mañana',
-    cajera: ''
-  });
+const CAJA_TABS = [
+  { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
+  { id: 'turnos', label: 'Turnos', icon: CalendarClock },
+  { id: 'ingresos', label: 'Ingresos', icon: TrendingUp },
+  { id: 'egresos', label: 'Egresos', icon: TrendingDown },
+  { id: 'arqueo', label: 'Arqueo', icon: ClipboardCheck },
+  { id: 'rendicion', label: 'Rendicion', icon: Landmark },
+  { id: 'conciliacion', label: 'Conciliacion', icon: CreditCard },
+  { id: 'historico', label: 'Historico', icon: Database },
+  { id: 'reportes', label: 'Reportes', icon: FileText },
+  { id: 'parametros', label: 'Parametros', icon: Settings },
+];
 
-  const saldoReal = totalDia - totalEgresos;
-  const montoPago = toNumber(formData.monto);
-  const requiereDeposito = montoPago > 700 && formData.metodo_pago === 'efectivo';
-  const totalEfectivo = sumBy(pagos.filter((p) => p.metodo_pago === 'efectivo'), (p) => p.monto);
-  const totalDigital = sumBy(pagos.filter((p) => ['tarjeta', 'transferencia', 'yape', 'plin'].includes(p.metodo_pago)), (p) => p.monto);
-  const cantidadPagos = pagos.length;
+const TURNOS = [
+  { id: 'manana', label: 'Turno manana', short: 'Manana' },
+  { id: 'noche', label: 'Turno noche', short: 'Noche' },
+];
 
-  useEffect(() => {
-    cargarDatos();
-    cargarEgresosPagados();
-  }, []);
+const PAYMENT_METHODS = [
+  { id: 'efectivo', label: 'Efectivo', type: 'cash' },
+  { id: 'pos', label: 'P.O.S.', type: 'digital' },
+  { id: 'tarjeta', label: 'Tarjeta', type: 'digital' },
+  { id: 'transferencia', label: 'Transferencia', type: 'digital' },
+  { id: 'yape', label: 'Yape', type: 'digital' },
+  { id: 'plin', label: 'Plin', type: 'digital' },
+];
 
-  const cargarEgresosPagados = async () => {
-    const hoy = todayISO();
-    const manana = addDaysISO(hoy, 1);
-    const { data, error } = await supabase
-      .from('egresos')
-      .select('monto')
-      .eq('estado', 'Pagado')
-      .gte('fecha', hoy)
-      .lt('fecha', manana);
-    
-    if (!error && data) {
-      const total = sumBy(data, (e) => e.monto);
-      setTotalEgresos(total);
-      return;
-    }
+const DENOMINATIONS = [200, 100, 50, 20, 10, 5, 2, 1, 0.5, 0.2, 0.1];
+const DIGITAL_METHODS = new Set(PAYMENT_METHODS.filter((item) => item.type === 'digital').map((item) => item.id));
 
-    const { data: dataPorCreacion, error: errorPorCreacion } = await supabase
-      .from('egresos')
-      .select('monto')
-      .eq('estado', 'Pagado')
-      .gte('created_at', hoy)
-      .lt('created_at', manana);
+const emptyMovementForm = {
+  tipo: 'ingreso',
+  inscripcion_id: '',
+  concepto: '',
+  area: 'Caja',
+  categoria: 'Matricula',
+  monto: '',
+  metodo_pago: 'efectivo',
+  canal_pos: '',
+  numero_operacion: '',
+  tipo_documento: '01',
+  documento_cliente: '',
+  tipo_comprobante: 'boleta',
+  numero_comprobante: '',
+  turno: 'manana',
+  responsable: '',
+  comprobante_url: '',
+  observacion: '',
+};
 
-    if (!errorPorCreacion && dataPorCreacion) {
-      setTotalEgresos(sumBy(dataPorCreacion, (e) => e.monto));
-    }
-  };
+const emptyShiftForm = {
+  turno: 'manana',
+  fecha: todayISO(),
+  responsable: '',
+  dni_responsable: '',
+  saldo_inicial: '0',
+  caja_nombre: 'Caja principal',
+};
 
-  const cargarDatos = async () => {
-    setCargando(true);
-    
-    const hoy = todayISO();
-    const manana = addDaysISO(hoy, 1);
-    const { data: pagosData } = await supabase
-      .from('pagos')
-      .select('*, inscripciones(programa, participante_id)')
-      .gte('created_at', hoy)
-      .lt('created_at', manana)
-      .order('created_at', { ascending: false });
-    setPagos(pagosData || []);
-    
-    const total = sumBy(pagosData, (p) => p.monto);
-    setTotalDia(total);
-    
-    const { data: inscData } = await supabase
-      .from('inscripciones')
-      .select('id, programa')
-      .in('estado', ['pendiente', 'parcial'])
-      .limit(50);
-    setInscripciones(inscData || []);
-    
-    setCargando(false);
-  };
+const emptyRendicionForm = {
+  monto: '',
+  responsable_entrega: '',
+  responsable_recibe: '',
+  medio: 'efectivo',
+  observacion: '',
+};
 
-  const registrarPago = async () => {
-    if (!formData.inscripcion_id || !formData.monto) {
-      alert('Completa los campos obligatorios');
-      return;
-    }
+const normalizeTurno = (value = '') => {
+  const normalized = String(value).toLowerCase();
+  if (normalized.includes('noche')) return 'noche';
+  if (normalized.includes('tarde')) return 'noche';
+  return 'manana';
+};
 
-    const monto = toPositiveNumber(formData.monto);
-    if (!Number.isFinite(monto)) {
-      alert('El monto debe ser mayor a 0');
-      return;
-    }
-    
-    const { error } = await supabase.from('pagos').insert([{
-      inscripcion_id: parseInt(formData.inscripcion_id),
-      monto,
-      tipo_comprobante: formData.tipo_comprobante,
-      numero_comprobante: formData.numero_comprobante,
-      metodo_pago: formData.metodo_pago,
-      turno: formData.turno,
-      cajera: formData.cajera || 'Ejecutiva'
-    }]);
-    
-    if (!error) {
-      alert('Pago registrado con éxito');
-      setMostrarForm(false);
-      setFormData({ 
-        inscripcion_id: '', monto: '', tipo_comprobante: 'boleta', 
-        numero_comprobante: '', metodo_pago: 'efectivo', turno: 'mañana', cajera: '' 
-      });
-      cargarDatos();
-    } else {
-      alert('Error: ' + error.message);
-    }
-  };
+const badgeByStatus = (status = '') => {
+  const value = status.toLowerCase();
+  if (['cerrado', 'cuadrado', 'validado', 'pagado', 'conciliado'].includes(value)) return 'badge-green';
+  if (['observado', 'pendiente', 'en_revision', 'abierto'].includes(value)) return 'badge-amber';
+  if (['critico', 'anulado', 'diferencia'].includes(value)) return 'badge-red';
+  return 'badge-blue';
+};
+
+function Kpi({ icon: Icon, label, value, detail, tone = 'blue' }) {
+  const toneClass = {
+    blue: 'bg-blue-50 text-blue-700',
+    green: 'bg-emerald-50 text-emerald-700',
+    amber: 'bg-amber-50 text-amber-700',
+    red: 'bg-red-50 text-red-700',
+    slate: 'bg-slate-100 text-slate-700',
+  }[tone];
 
   return (
-    <div className="p-6 lg:p-8 min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50/30">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
-        <div>
-          <div className="flex items-center gap-3 mb-1">
-            <div className="p-2 bg-blue-50 rounded-xl shadow-sm">
-              <Wallet className="w-6 h-6 text-[#185FA5]" />
-            </div>
-            <h1 className="text-3xl font-black text-[#0B1527] tracking-tight">Caja y Pagos</h1>
-          </div>
-          <p className="text-gray-500 text-sm font-medium ml-12">Gestión de ingresos diarios y cuadre de turno</p>
+    <div className="apple-card p-5">
+      <div className="flex items-center gap-3">
+        <div className={`rounded-2xl p-2.5 ${toneClass}`}>
+          <Icon size={19} />
         </div>
-        <button
-          onClick={() => setMostrarForm(true)}
-          className="bg-gradient-to-r from-[#185FA5] to-[#144b82] hover:from-[#1a6ab8] hover:to-[#15569c] text-white px-5 py-3 rounded-2xl flex items-center gap-2 font-medium shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 active:scale-[0.98] transition-all"
-        >
-          <Plus size={20} /> Registrar Pago
-        </button>
-      </div>
-
-      {/* Tarjeta de cuadre */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-        {/* Total recaudado */}
-        <div className="bg-white/80 backdrop-blur-sm rounded-3xl p-6 border border-blue-50 shadow-xl shadow-blue-100/20 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl opacity-70" />
-          <div className="relative z-10">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="p-2.5 bg-blue-50 rounded-2xl">
-                <DollarSign className="w-5 h-5 text-[#185FA5]" />
-              </div>
-              <h3 className="text-sm font-bold text-gray-500 uppercase tracking-widest">Total Recaudado Hoy</h3>
-            </div>
-            <div className="text-4xl font-black text-[#0B1527]">
-              {formatPEN(totalDia)}
-            </div>
-            <p className="text-xs text-gray-400 mt-2 font-medium">Ingresos del turno actual</p>
-          </div>
-        </div>
-
-        {/* Egresos pagados */}
-        <div className="bg-white/80 backdrop-blur-sm rounded-3xl p-6 border border-blue-50 shadow-xl shadow-blue-100/20 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-red-50 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl opacity-50" />
-          <div className="relative z-10">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="p-2.5 bg-red-50 rounded-2xl">
-                <TrendingDown className="w-5 h-5 text-red-500" />
-              </div>
-              <h3 className="text-sm font-bold text-gray-500 uppercase tracking-widest">Egresos Pagados</h3>
-            </div>
-            <div className="text-4xl font-black text-[#0B1527]">
-              {formatPEN(totalEgresos)}
-            </div>
-            <p className="text-xs text-gray-400 mt-2 font-medium">Compras, servicios, planillas</p>
-          </div>
-        </div>
-
-        {/* Saldo Real */}
-        <div className={`bg-white/80 backdrop-blur-sm rounded-3xl p-6 border shadow-xl relative overflow-hidden ${
-          saldoReal >= 0 ? 'border-emerald-100 shadow-emerald-100/20' : 'border-red-100 shadow-red-100/20'
-        }`}>
-          <div className={`absolute top-0 right-0 w-32 h-32 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl opacity-50 ${
-            saldoReal >= 0 ? 'bg-emerald-50' : 'bg-red-50'
-          }`} />
-          <div className="relative z-10">
-            <div className="flex items-center gap-3 mb-4">
-              <div className={`p-2.5 rounded-2xl ${saldoReal >= 0 ? 'bg-emerald-50' : 'bg-red-50'}`}>
-                {saldoReal >= 0 ? (
-                  <TrendingUp className="w-5 h-5 text-emerald-600" />
-                ) : (
-                  <AlertTriangle className="w-5 h-5 text-red-500" />
-                )}
-              </div>
-              <h3 className="text-sm font-bold text-gray-500 uppercase tracking-widest">Saldo Real en Caja</h3>
-            </div>
-            <div className={`text-4xl font-black ${saldoReal >= 0 ? 'text-[#0B1527]' : 'text-red-600'}`}>
-              {formatPEN(saldoReal)}
-            </div>
-            <p className={`text-xs mt-2 font-medium ${saldoReal >= 0 ? 'text-gray-400' : 'text-red-500'}`}>
-              {saldoReal >= 0 ? 'Disponible para operar' : 'Atención: saldo negativo'}
-            </p>
-          </div>
+        <div className="min-w-0">
+          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">{label}</p>
+          <p className="mt-1 text-2xl font-black tracking-tight text-slate-900">{value}</p>
         </div>
       </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        {[
-          { label: 'Transacciones', value: cantidadPagos, detail: 'Pagos registrados hoy', icon: CreditCard },
-          { label: 'Efectivo', value: formatPEN(totalEfectivo), detail: 'Debe cuadrar con caja fisica', icon: Banknote },
-          { label: 'Canales digitales', value: formatPEN(totalDigital), detail: 'Tarjeta, transferencia, Yape y Plin', icon: Wallet },
-        ].map(({ label, value, detail, icon: Icon }) => (
-          <div key={label} className="apple-card p-4 flex items-center gap-3">
-            <div className="rounded-2xl bg-slate-100 p-2.5 text-slate-700">
-              <Icon size={18} />
-            </div>
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
-              <p className="text-lg font-black text-slate-900">{value}</p>
-              <p className="text-[11px] font-medium text-slate-500">{detail}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="apple-card p-5 mb-8">
-        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h2 className="text-lg font-black text-slate-900 flex items-center gap-2">
-              <FileText size={19} className="text-[#185FA5]" /> Controles segun plantillas informativas
-            </h2>
-            <p className="text-xs font-medium text-slate-500 mt-1">
-              Reglas tomadas de los archivos descargados para reducir pagos observados y comisiones mal liquidadas.
-            </p>
-          </div>
-          <span className="badge badge-blue">Drive auditado</span>
-        </div>
-        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-          {PAYMENT_CONTROL_RULES.map((rule) => (
-            <div key={rule} className="flex gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm font-semibold leading-5 text-blue-900">
-              <CheckCircle2 size={17} className="mt-0.5 shrink-0 text-blue-600" />
-              {rule}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Formulario de nuevo pago */}
-      {mostrarForm && (
-        <div className="bg-white/80 backdrop-blur-sm rounded-3xl p-6 lg:p-8 mb-8 border border-blue-50 shadow-xl shadow-blue-100/20 animate-in fade-in slide-in-from-top-4 duration-300">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-50 rounded-xl">
-                <FileText className="w-5 h-5 text-[#185FA5]" />
-              </div>
-              <h2 className="text-xl font-black text-[#0B1527]">Nuevo Pago</h2>
-            </div>
-            <button 
-              onClick={() => setMostrarForm(false)} 
-              className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
-            >
-              <X size={20} className="text-gray-400" />
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            <div className="space-y-1.5">
-              <label className="block text-sm font-semibold text-gray-700">Inscripción *</label>
-              <select
-                value={formData.inscripcion_id}
-                onChange={(e) => setFormData({...formData, inscripcion_id: e.target.value})}
-                className="w-full border-2 border-gray-100 rounded-xl p-3 bg-gray-50 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 transition-all outline-none text-gray-700"
-              >
-                <option value="">Seleccionar inscripción</option>
-                {inscripciones.map(ins => (
-                  <option key={ins.id} value={ins.id}>{ins.programa} (ID: {ins.id})</option>
-                ))}
-              </select>
-            </div>
-            
-            <div className="space-y-1.5">
-              <label className="block text-sm font-semibold text-gray-700">Monto (S/) *</label>
-              <input
-                type="number"
-                step="0.01"
-                value={formData.monto}
-                onChange={(e) => {
-                  setFormData({...formData, monto: e.target.value});
-                }}
-                className="w-full border-2 border-gray-100 rounded-xl p-3 bg-gray-50 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 transition-all outline-none"
-                placeholder="0.00"
-              />
-              {requiereDeposito && (
-                <p className="text-xs text-amber-600 font-semibold mt-1">
-                  Monto mayor a S/ 700 en efectivo: recomienda deposito bancario.
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="block text-sm font-semibold text-gray-700">Tipo Comprobante</label>
-              <select
-                value={formData.tipo_comprobante}
-                onChange={(e) => setFormData({...formData, tipo_comprobante: e.target.value})}
-                className="w-full border-2 border-gray-100 rounded-xl p-3 bg-gray-50 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 transition-all outline-none"
-              >
-                <option value="boleta">Boleta</option>
-                <option value="factura">Factura</option>
-              </select>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="block text-sm font-semibold text-gray-700">N° Comprobante</label>
-              <input
-                type="text"
-                value={formData.numero_comprobante}
-                onChange={(e) => setFormData({...formData, numero_comprobante: e.target.value})}
-                className="w-full border-2 border-gray-100 rounded-xl p-3 bg-gray-50 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 transition-all outline-none"
-                placeholder="001-000123"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="block text-sm font-semibold text-gray-700">Método de Pago</label>
-              <select
-                value={formData.metodo_pago}
-                onChange={(e) => setFormData({...formData, metodo_pago: e.target.value})}
-                className="w-full border-2 border-gray-100 rounded-xl p-3 bg-gray-50 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 transition-all outline-none capitalize"
-              >
-                <option value="efectivo">Efectivo</option>
-                <option value="tarjeta">Tarjeta</option>
-                <option value="transferencia">Transferencia</option>
-                <option value="yape">Yape</option>
-                <option value="plin">Plin</option>
-              </select>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="block text-sm font-semibold text-gray-700">Turno</label>
-              <select
-                value={formData.turno}
-                onChange={(e) => setFormData({...formData, turno: e.target.value})}
-                className="w-full border-2 border-gray-100 rounded-xl p-3 bg-gray-50 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 transition-all outline-none capitalize"
-              >
-                <option value="mañana">Mañana</option>
-                <option value="tarde">Tarde</option>
-                <option value="noche">Noche</option>
-              </select>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="block text-sm font-semibold text-gray-700">Cajera</label>
-              <input
-                type="text"
-                value={formData.cajera}
-                onChange={(e) => setFormData({...formData, cajera: e.target.value})}
-                className="w-full border-2 border-gray-100 rounded-xl p-3 bg-gray-50 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 transition-all outline-none"
-                placeholder="Nombre de cajera"
-              />
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-3 mt-8 pt-6 border-t border-gray-100">
-            <button 
-              onClick={() => setMostrarForm(false)} 
-              className="px-5 py-3 border border-gray-200 rounded-xl text-gray-600 hover:bg-gray-50 transition font-medium"
-            >
-              Cancelar
-            </button>
-            <button 
-              onClick={registrarPago} 
-              className="bg-gradient-to-r from-[#185FA5] to-[#144b82] text-white px-6 py-3 rounded-xl font-medium shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 active:scale-[0.98] transition-all flex items-center gap-2"
-            >
-              <Save size={18} /> Guardar Pago
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Tabla de pagos */}
-      <div className="bg-white/80 backdrop-blur-sm rounded-3xl border border-blue-50 shadow-xl shadow-blue-100/20 overflow-hidden">
-        <div className="p-5 border-b border-gray-100 flex items-center justify-between">
-          <h3 className="font-bold text-[#0B1527] text-lg">Historial de Pagos</h3>
-          <button 
-            onClick={cargarDatos} 
-            className="p-2 hover:bg-gray-100 rounded-xl transition-colors text-gray-400 hover:text-gray-600"
-            title="Actualizar"
-          >
-            <RefreshCw size={18} className={cargando ? 'animate-spin' : ''} />
-          </button>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-100">
-                <th className="p-4 text-left text-[11px] font-bold text-gray-400 uppercase tracking-wider">Programa</th>
-                <th className="p-4 text-left text-[11px] font-bold text-gray-400 uppercase tracking-wider">Monto</th>
-                <th className="p-4 text-left text-[11px] font-bold text-gray-400 uppercase tracking-wider">Método</th>
-                <th className="p-4 text-left text-[11px] font-bold text-gray-400 uppercase tracking-wider">Comprobante</th>
-                <th className="p-4 text-left text-[11px] font-bold text-gray-400 uppercase tracking-wider">Turno</th>
-                <th className="p-4 text-left text-[11px] font-bold text-gray-400 uppercase tracking-wider">Cajera</th>
-                <th className="p-4 text-left text-[11px] font-bold text-gray-400 uppercase tracking-wider">Fecha</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {cargando ? (
-                <tr>
-                  <td colSpan="7" className="p-8 text-center text-gray-400">
-                    <RefreshCw size={20} className="animate-spin inline mr-2" />
-                    Cargando transacciones...
-                  </td>
-                </tr>
-              ) : pagos.length === 0 ? (
-                <tr>
-                  <td colSpan="7" className="p-12 text-center text-gray-400">
-                    <Wallet size={32} className="mx-auto mb-3 opacity-30" />
-                    <p className="font-medium">Sin pagos registrados en el día</p>
-                  </td>
-                </tr>
-              ) : (
-                pagos.map(pago => (
-                  <tr key={pago.id} className="hover:bg-blue-50/30 transition-colors group">
-                    <td className="p-4">
-                      <div>
-                        <p className="font-semibold text-gray-800 text-sm">{pago.inscripciones?.programa || '—'}</p>
-                        <p className="text-xs text-gray-400">ID: {pago.inscripcion_id}</p>
-                      </div>
-                    </td>
-                    <td className="p-4">
-                      <span className="font-bold text-[#185FA5]">{formatPEN(pago.monto)}</span>
-                    </td>
-                    <td className="p-4">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-gray-100 rounded-lg text-xs font-medium capitalize text-gray-700">
-                        {pago.metodo_pago === 'efectivo' && <Banknote size={12} className="text-green-600" />}
-                        {pago.metodo_pago === 'tarjeta' && <CreditCard size={12} className="text-purple-600" />}
-                        {pago.metodo_pago}
-                      </span>
-                    </td>
-                    <td className="p-4 text-sm text-gray-700 font-medium">
-                      {pago.tipo_comprobante} {pago.numero_comprobante && `#${pago.numero_comprobante}`}
-                    </td>
-                    <td className="p-4">
-                      <span className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded-lg font-medium capitalize">
-                        <CalendarClock size={12} className="inline mr-1" />
-                        {pago.turno}
-                      </span>
-                    </td>
-                    <td className="p-4 text-sm text-gray-700 font-medium flex items-center gap-1.5">
-                      <User size={14} className="text-gray-400" />
-                      {pago.cajera || '—'}
-                    </td>
-                    <td className="p-4 text-sm text-gray-500">
-                      {new Date(pago.created_at).toLocaleString('es-PE', { 
-                        day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' 
-                      })}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      {detail && <p className="mt-3 text-xs font-medium leading-5 text-slate-500">{detail}</p>}
     </div>
   );
 }
 
-export default Caja;
+function Field({ label, children, wide = false }) {
+  return (
+    <label className={`space-y-1.5 ${wide ? 'md:col-span-2' : ''}`}>
+      <span className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-400">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+export default function Caja() {
+  const navigate = useNavigate();
+  const params = useParams();
+  const routePath = params['*'] || '';
+  const activeTab = CAJA_TABS.some((tab) => tab.id === routePath) ? routePath : 'dashboard';
+
+  const [pagos, setPagos] = useState([]);
+  const [egresos, setEgresos] = useState([]);
+  const [inscripciones, setInscripciones] = useState([]);
+  const [turnos, setTurnos] = useState([]);
+  const [movimientos, setMovimientos] = useState([]);
+  const [arqueos, setArqueos] = useState([]);
+  const [rendiciones, setRendiciones] = useState([]);
+  const [conciliaciones, setConciliaciones] = useState([]);
+  const [auditoria, setAuditoria] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [modal, setModal] = useState(null);
+  const [toast, setToast] = useState(null);
+  const [search, setSearch] = useState('');
+  const [movementForm, setMovementForm] = useState(emptyMovementForm);
+  const [shiftForm, setShiftForm] = useState(emptyShiftForm);
+  const [rendicionForm, setRendicionForm] = useState(emptyRendicionForm);
+  const [arqueoCounts, setArqueoCounts] = useState(() => Object.fromEntries(DENOMINATIONS.map((value) => [String(value), ''])));
+
+  const showToast = useCallback((message, tone = 'green') => {
+    setToast({ message, tone });
+    window.setTimeout(() => setToast(null), 3600);
+  }, []);
+
+  const logAudit = useCallback(async (action, detail, afterData = null) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    const row = {
+      action,
+      detail,
+      actor_email: user?.email || 'sistema',
+      actor_id: user?.id || null,
+      after_data: afterData,
+    };
+    const { error } = await supabase.from('caja_auditoria').insert(row);
+    if (error) {
+      setAuditoria((current) => [{ id: `local-${Date.now()}`, created_at: new Date().toISOString(), ...row }, ...current].slice(0, 30));
+    }
+  }, []);
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    const hoy = todayISO();
+    const manana = addDaysISO(hoy, 1);
+
+    const [
+      pagosResponse,
+      egresosResponse,
+      inscripcionesResponse,
+      turnosResponse,
+      movimientosResponse,
+      arqueosResponse,
+      rendicionesResponse,
+      conciliacionesResponse,
+      auditoriaResponse,
+    ] = await Promise.all([
+      supabase.from('pagos').select('*, inscripciones(programa, participante_id)').gte('created_at', hoy).lt('created_at', manana).order('created_at', { ascending: false }),
+      supabase.from('egresos').select('*').eq('estado', 'Pagado').gte('fecha', hoy).lt('fecha', manana).order('fecha', { ascending: false }),
+      supabase.from('inscripciones').select('id, programa, monto_total, monto_pagado, estado').in('estado', ['pendiente', 'parcial']).limit(80),
+      supabase.from('caja_turnos').select('*').eq('fecha', hoy).order('turno'),
+      supabase.from('caja_movimientos').select('*').gte('fecha_movimiento', hoy).lt('fecha_movimiento', manana).order('created_at', { ascending: false }),
+      supabase.from('caja_arqueos').select('*').gte('created_at', hoy).lt('created_at', manana).order('created_at', { ascending: false }),
+      supabase.from('caja_rendiciones').select('*').gte('created_at', hoy).lt('created_at', manana).order('created_at', { ascending: false }),
+      supabase.from('caja_conciliaciones').select('*').gte('fecha_operacion', hoy).lt('fecha_operacion', manana).order('fecha_operacion', { ascending: false }),
+      supabase.from('caja_auditoria').select('*').order('created_at', { ascending: false }).limit(30),
+    ]);
+
+    setPagos(pagosResponse.error ? [] : (pagosResponse.data || []));
+    setEgresos(egresosResponse.error ? [] : (egresosResponse.data || []));
+    setInscripciones(inscripcionesResponse.error ? [] : (inscripcionesResponse.data || []));
+    setTurnos(turnosResponse.error ? [] : (turnosResponse.data || []));
+    setMovimientos(movimientosResponse.error ? [] : (movimientosResponse.data || []));
+    setArqueos(arqueosResponse.error ? [] : (arqueosResponse.data || []));
+    setRendiciones(rendicionesResponse.error ? [] : (rendicionesResponse.data || []));
+    setConciliaciones(conciliacionesResponse.error ? [] : (conciliacionesResponse.data || []));
+    setAuditoria(auditoriaResponse.error ? [] : (auditoriaResponse.data || []));
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  useEffect(() => {
+    if (!routePath) navigate('/caja/dashboard', { replace: true });
+  }, [navigate, routePath]);
+
+  const legacyMovements = useMemo(() => [
+    ...pagos.map((pago) => ({
+      id: `pago-${pago.id}`,
+      tipo: 'ingreso',
+      concepto: pago.inscripciones?.programa || 'Pago de inscripcion',
+      monto: toNumber(pago.monto),
+      metodo_pago: pago.metodo_pago,
+      turno: normalizeTurno(pago.turno),
+      responsable: pago.cajera || 'Caja',
+      tipo_comprobante: pago.tipo_comprobante,
+      numero_comprobante: pago.numero_comprobante,
+      numero_operacion: pago.numero_operacion || '',
+      created_at: pago.created_at,
+      estado: 'validado',
+      source: 'pagos',
+    })),
+    ...egresos.map((egreso) => ({
+      id: `egreso-${egreso.id}`,
+      tipo: 'egreso',
+      concepto: egreso.concepto,
+      monto: toNumber(egreso.monto),
+      metodo_pago: egreso.metodo_pago || 'efectivo',
+      turno: normalizeTurno(egreso.turno),
+      responsable: egreso.proveedor || egreso.area || 'Caja',
+      tipo_comprobante: egreso.categoria,
+      numero_comprobante: '',
+      numero_operacion: '',
+      created_at: egreso.created_at || egreso.fecha,
+      estado: egreso.estado || 'Pagado',
+      source: 'egresos',
+    })),
+  ], [egresos, pagos]);
+
+  const allMovements = movimientos.length ? movimientos : legacyMovements;
+  const filteredMovements = allMovements.filter((item) => {
+    const term = search.trim().toLowerCase();
+    if (!term) return true;
+    return `${item.concepto || ''} ${item.responsable || ''} ${item.numero_comprobante || ''} ${item.numero_operacion || ''}`.toLowerCase().includes(term);
+  });
+
+  const totals = useMemo(() => {
+    const ingresos = sumBy(allMovements.filter((item) => item.tipo === 'ingreso'), (item) => item.monto);
+    const egresosTotal = sumBy(allMovements.filter((item) => item.tipo === 'egreso'), (item) => item.monto);
+    const efectivoIngresos = sumBy(allMovements.filter((item) => item.tipo === 'ingreso' && item.metodo_pago === 'efectivo'), (item) => item.monto);
+    const efectivoEgresos = sumBy(allMovements.filter((item) => item.tipo === 'egreso' && item.metodo_pago === 'efectivo'), (item) => item.monto);
+    const digital = sumBy(allMovements.filter((item) => DIGITAL_METHODS.has(item.metodo_pago)), (item) => item.monto);
+    const rendido = sumBy(rendiciones, (item) => item.monto);
+    const saldoInicial = sumBy(turnos.filter((turno) => turno.estado !== 'anulado'), (turno) => turno.saldo_inicial);
+    const saldoEsperado = saldoInicial + efectivoIngresos - efectivoEgresos - rendido;
+    const ultimoArqueo = arqueos[0];
+    const arqueoFisico = toNumber(ultimoArqueo?.monto_fisico);
+    return {
+      ingresos,
+      egresos: egresosTotal,
+      saldo: ingresos - egresosTotal,
+      efectivoIngresos,
+      efectivoEgresos,
+      digital,
+      rendido,
+      saldoInicial,
+      saldoEsperado,
+      arqueoFisico,
+      diferencia: ultimoArqueo ? arqueoFisico - saldoEsperado : 0,
+      transacciones: allMovements.length,
+    };
+  }, [allMovements, arqueos, rendiciones, turnos]);
+
+  const activeWarnings = useMemo(() => {
+    const warnings = [];
+    if (!turnos.length) warnings.push('No hay turno abierto registrado para hoy.');
+    if (totals.efectivoIngresos > 700 && totals.rendido === 0) warnings.push('Efectivo alto sin rendicion a gerencia.');
+    if (Math.abs(totals.diferencia) > 1) warnings.push(`Diferencia de arqueo: ${formatPEN(totals.diferencia)}.`);
+    const digitalSinOperacion = allMovements.filter((item) => DIGITAL_METHODS.has(item.metodo_pago) && !item.numero_operacion).length;
+    if (digitalSinOperacion) warnings.push(`${digitalSinOperacion} pagos digitales sin numero de operacion.`);
+    return warnings;
+  }, [allMovements, totals, turnos.length]);
+
+  const arqueoFisico = useMemo(() => DENOMINATIONS.reduce((sum, value) => {
+    const count = toNumber(arqueoCounts[String(value)]);
+    return sum + value * count;
+  }, 0), [arqueoCounts]);
+
+  const duplicateVoucher = useMemo(() => {
+    const number = movementForm.numero_comprobante.trim();
+    if (!number) return false;
+    return pagos.some((pago) => String(pago.numero_comprobante || '').trim() === number);
+  }, [movementForm.numero_comprobante, pagos]);
+
+  const registrarMovimiento = async () => {
+    const monto = toPositiveNumber(movementForm.monto);
+    if (!Number.isFinite(monto)) {
+      showToast('El monto debe ser mayor a cero.', 'red');
+      return;
+    }
+    if (movementForm.tipo === 'ingreso' && !movementForm.inscripcion_id) {
+      showToast('Selecciona una inscripcion para validar el ingreso.', 'red');
+      return;
+    }
+    if (DIGITAL_METHODS.has(movementForm.metodo_pago) && !movementForm.numero_operacion.trim()) {
+      showToast('Todo pago digital exige numero de operacion.', 'red');
+      return;
+    }
+    if (duplicateVoucher) {
+      showToast('Ese numero de comprobante ya existe en pagos de hoy.', 'red');
+      return;
+    }
+
+    setSaving(true);
+    const now = new Date().toISOString();
+    const movementPayload = {
+      tipo: movementForm.tipo,
+      fecha_movimiento: now,
+      turno: movementForm.turno,
+      concepto: movementForm.concepto || (movementForm.tipo === 'ingreso' ? 'Pago de inscripcion' : 'Egreso de caja'),
+      area: movementForm.area,
+      categoria: movementForm.categoria,
+      monto,
+      metodo_pago: movementForm.metodo_pago,
+      canal_pos: movementForm.canal_pos || null,
+      numero_operacion: movementForm.numero_operacion || null,
+      tipo_documento: movementForm.tipo_documento,
+      documento_cliente: movementForm.documento_cliente || null,
+      tipo_comprobante: movementForm.tipo_comprobante,
+      numero_comprobante: movementForm.numero_comprobante || null,
+      responsable: movementForm.responsable || 'Caja',
+      comprobante_url: movementForm.comprobante_url || null,
+      observacion: movementForm.observacion || null,
+      estado: movementForm.tipo === 'ingreso' ? 'validado' : 'pagado',
+    };
+
+    const { error: movementError } = await supabase.from('caja_movimientos').insert(movementPayload);
+
+    if (movementForm.tipo === 'ingreso') {
+      const { error: pagoError } = await supabase.from('pagos').insert([{
+        inscripcion_id: Number(movementForm.inscripcion_id),
+        monto,
+        tipo_comprobante: movementForm.tipo_comprobante,
+        numero_comprobante: movementForm.numero_comprobante,
+        metodo_pago: movementForm.metodo_pago,
+        turno: movementForm.turno,
+        cajera: movementForm.responsable || 'Caja',
+      }]);
+      if (pagoError) {
+        setSaving(false);
+        showToast(`No se pudo registrar el pago: ${pagoError.message}`, 'red');
+        return;
+      }
+    } else {
+      await supabase.from('egresos').insert({
+        fecha: todayISO(),
+        concepto: movementPayload.concepto,
+        area: movementForm.area || 'Caja',
+        categoria: movementForm.categoria || 'Caja',
+        proveedor: movementForm.responsable || 'Caja',
+        monto,
+        estado: 'Pagado',
+        origen: 'caja_operativa',
+      });
+    }
+
+    await logAudit(
+      movementForm.tipo === 'ingreso' ? 'registrar_ingreso' : 'registrar_egreso',
+      `${movementPayload.concepto}: ${formatPEN(monto)}`,
+      movementPayload,
+    );
+
+    setSaving(false);
+    setModal(null);
+    setMovementForm(emptyMovementForm);
+    showToast(movementError ? 'Movimiento guardado en tablas legacy; aplica la migracion para caja_operativa.' : 'Movimiento registrado y auditado.');
+    loadData();
+  };
+
+  const abrirTurno = async () => {
+    const saldo = toNumber(shiftForm.saldo_inicial);
+    if (!shiftForm.responsable.trim()) {
+      showToast('Indica responsable del turno.', 'red');
+      return;
+    }
+    const payload = {
+      fecha: shiftForm.fecha,
+      turno: shiftForm.turno,
+      responsable: shiftForm.responsable,
+      dni_responsable: shiftForm.dni_responsable || null,
+      saldo_inicial: saldo,
+      caja_nombre: shiftForm.caja_nombre || 'Caja principal',
+      estado: 'abierto',
+    };
+    const { error } = await supabase.from('caja_turnos').insert(payload);
+    if (error) {
+      showToast(`No se pudo abrir turno: ${error.message}`, 'red');
+      return;
+    }
+    await logAudit('abrir_turno', `${payload.turno} con saldo inicial ${formatPEN(saldo)}`, payload);
+    setShiftForm(emptyShiftForm);
+    showToast('Turno abierto correctamente.');
+    loadData();
+  };
+
+  const registrarArqueo = async () => {
+    const diferencia = arqueoFisico - totals.saldoEsperado;
+    const payload = {
+      fecha: todayISO(),
+      turno: shiftForm.turno,
+      denominaciones: arqueoCounts,
+      monto_fisico: arqueoFisico,
+      saldo_esperado: totals.saldoEsperado,
+      diferencia,
+      estado: Math.abs(diferencia) <= 1 ? 'cuadrado' : 'diferencia',
+    };
+    const { error } = await supabase.from('caja_arqueos').insert(payload);
+    if (error) {
+      showToast(`No se pudo guardar arqueo: ${error.message}`, 'red');
+      return;
+    }
+    await logAudit('registrar_arqueo', `Arqueo ${payload.estado}: ${formatPEN(diferencia)}`, payload);
+    showToast('Arqueo registrado.');
+    loadData();
+  };
+
+  const registrarRendicion = async () => {
+    const monto = toPositiveNumber(rendicionForm.monto);
+    if (!Number.isFinite(monto)) {
+      showToast('La rendicion debe tener monto mayor a cero.', 'red');
+      return;
+    }
+    const payload = {
+      fecha: todayISO(),
+      turno: shiftForm.turno,
+      monto,
+      responsable_entrega: rendicionForm.responsable_entrega || 'Caja',
+      responsable_recibe: rendicionForm.responsable_recibe || 'Gerencia',
+      medio: rendicionForm.medio,
+      observacion: rendicionForm.observacion || null,
+      estado: 'validado',
+    };
+    const { error } = await supabase.from('caja_rendiciones').insert(payload);
+    if (error) {
+      showToast(`No se pudo registrar rendicion: ${error.message}`, 'red');
+      return;
+    }
+    await logAudit('registrar_rendicion', `Rendicion a gerencia por ${formatPEN(monto)}`, payload);
+    setRendicionForm(emptyRendicionForm);
+    showToast('Rendicion registrada.');
+    loadData();
+  };
+
+  const cerrarTurno = async (turno) => {
+    const { error } = await supabase
+      .from('caja_turnos')
+      .update({ estado: 'cerrado', saldo_final: totals.saldoEsperado, cerrado_at: new Date().toISOString() })
+      .eq('id', turno.id);
+    if (error) {
+      showToast(`No se pudo cerrar turno: ${error.message}`, 'red');
+      return;
+    }
+    await logAudit('cerrar_turno', `Cierre ${turno.turno}: ${formatPEN(totals.saldoEsperado)}`, turno);
+    showToast('Turno cerrado y auditado.');
+    loadData();
+  };
+
+  return (
+    <div className="min-h-screen space-y-6 bg-[#f8fafc] p-4 md:p-6">
+      {toast && (
+        <div className={`fixed right-4 top-4 z-50 rounded-2xl border px-4 py-3 text-sm font-bold shadow-xl ${
+          toast.tone === 'red' ? 'border-red-100 bg-red-50 text-red-700' : 'border-emerald-100 bg-emerald-50 text-emerald-700'
+        }`}>
+          {toast.message}
+        </div>
+      )}
+
+      <section className="apple-card p-5 md:p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-blue-700">
+              <Wallet size={13} /> Centro financiero operativo
+            </div>
+            <h1 className="mt-3 text-3xl font-black tracking-tight text-slate-950 md:text-4xl">Caja y Pagos</h1>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
+              Apertura de turno, ingresos, egresos, arqueo, rendicion, conciliacion, historico y reportes con trazabilidad.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={loadData} className="btn-apple-secondary">
+              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> Actualizar
+            </button>
+            <button onClick={() => { setMovementForm({ ...emptyMovementForm, tipo: 'ingreso' }); setModal('movimiento'); }} className="btn-apple-primary">
+              <Plus size={16} /> Nuevo ingreso
+            </button>
+            <button onClick={() => { setMovementForm({ ...emptyMovementForm, tipo: 'egreso', categoria: 'Operativo' }); setModal('movimiento'); }} className="btn-apple-secondary">
+              <TrendingDown size={16} /> Nuevo egreso
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <div className="apple-card overflow-x-auto p-2">
+        <div className="flex min-w-max gap-1">
+          {CAJA_TABS.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              onClick={() => navigate(`/caja/${id}`)}
+              className={`inline-flex h-10 items-center gap-2 rounded-2xl px-3 text-xs font-black uppercase tracking-[0.08em] transition ${
+                activeTab === id ? 'bg-[#020873] text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+              }`}
+            >
+              <Icon size={15} /> {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {activeTab === 'dashboard' && (
+        <>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <Kpi icon={TrendingUp} label="Ingresos de hoy" value={formatPEN(totals.ingresos)} detail={`${formatPEN(totals.efectivoIngresos)} efectivo / ${formatPEN(totals.digital)} digital`} tone="green" />
+            <Kpi icon={TrendingDown} label="Egresos pagados" value={formatPEN(totals.egresos)} detail="Salidas autorizadas y pagadas" tone="red" />
+            <Kpi icon={Banknote} label="Saldo fisico esperado" value={formatPEN(totals.saldoEsperado)} detail={`Rendido a gerencia: ${formatPEN(totals.rendido)}`} tone="blue" />
+            <Kpi icon={AlertTriangle} label="Alertas activas" value={activeWarnings.length} detail={activeWarnings[0] || 'Sin alertas criticas'} tone={activeWarnings.length ? 'amber' : 'green'} />
+          </div>
+
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+            <div className="apple-card p-5">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-black text-slate-900">Estado de turnos</h2>
+                  <p className="text-xs font-medium text-slate-500">El turno noche debe tomar el saldo final del turno manana.</p>
+                </div>
+                <span className="badge badge-blue">{turnos.length || 0} turnos</span>
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                {TURNOS.map((turno) => {
+                  const row = turnos.find((item) => item.turno === turno.id);
+                  const turnoMovs = allMovements.filter((item) => normalizeTurno(item.turno) === turno.id);
+                  const ingresosTurno = sumBy(turnoMovs.filter((item) => item.tipo === 'ingreso'), (item) => item.monto);
+                  const egresosTurno = sumBy(turnoMovs.filter((item) => item.tipo === 'egreso'), (item) => item.monto);
+                  return (
+                    <div key={turno.id} className="rounded-3xl border border-slate-100 bg-slate-50 p-4">
+                      <div className="mb-3 flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-black text-slate-900">{turno.label}</p>
+                          <p className="text-xs font-medium text-slate-500">{row?.responsable || 'Sin responsable'}</p>
+                        </div>
+                        <span className={`badge ${badgeByStatus(row?.estado || 'pendiente')}`}>{row?.estado || 'pendiente'}</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 text-xs">
+                        <div className="rounded-2xl bg-white p-3">
+                          <p className="font-black text-slate-400">Inicial</p>
+                          <p className="font-black text-slate-900">{formatPEN(row?.saldo_inicial || 0)}</p>
+                        </div>
+                        <div className="rounded-2xl bg-white p-3">
+                          <p className="font-black text-slate-400">Ingresos</p>
+                          <p className="font-black text-emerald-700">{formatPEN(ingresosTurno)}</p>
+                        </div>
+                        <div className="rounded-2xl bg-white p-3">
+                          <p className="font-black text-slate-400">Egresos</p>
+                          <p className="font-black text-red-700">{formatPEN(egresosTurno)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="apple-card p-5">
+              <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
+                <ShieldCheck size={19} className="text-blue-600" /> Alertas y controles
+              </h2>
+              <div className="space-y-3">
+                {(activeWarnings.length ? activeWarnings : ['Caja operando sin alertas criticas.']).map((warning) => (
+                  <div key={warning} className={`rounded-2xl border p-4 text-sm font-semibold leading-5 ${
+                    activeWarnings.length ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                  }`}>
+                    {warning}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {activeTab === 'turnos' && (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+          <div className="apple-card p-5">
+            <h2 className="mb-4 text-lg font-black text-slate-900">Apertura de turno</h2>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <Field label="Fecha"><input className="erp-input" type="date" value={shiftForm.fecha} onChange={(e) => setShiftForm({ ...shiftForm, fecha: e.target.value })} /></Field>
+              <Field label="Turno"><select className="erp-input" value={shiftForm.turno} onChange={(e) => setShiftForm({ ...shiftForm, turno: e.target.value })}>{TURNOS.map((item) => <option key={item.id} value={item.id}>{item.short}</option>)}</select></Field>
+              <Field label="Responsable"><input className="erp-input" value={shiftForm.responsable} onChange={(e) => setShiftForm({ ...shiftForm, responsable: e.target.value })} placeholder="Nombre de cajera" /></Field>
+              <Field label="DNI responsable"><input className="erp-input" value={shiftForm.dni_responsable} onChange={(e) => setShiftForm({ ...shiftForm, dni_responsable: e.target.value })} placeholder="DNI" /></Field>
+              <Field label="Saldo inicial"><input className="erp-input" type="number" value={shiftForm.saldo_inicial} onChange={(e) => setShiftForm({ ...shiftForm, saldo_inicial: e.target.value })} /></Field>
+              <Field label="Caja asignada"><input className="erp-input" value={shiftForm.caja_nombre} onChange={(e) => setShiftForm({ ...shiftForm, caja_nombre: e.target.value })} /></Field>
+            </div>
+            <button onClick={abrirTurno} className="btn-apple-primary mt-5 w-full justify-center"><Save size={16} /> Abrir turno</button>
+          </div>
+
+          <div className="apple-card overflow-hidden">
+            <div className="border-b border-slate-100 p-5">
+              <h2 className="text-lg font-black text-slate-900">Turnos del dia</h2>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="erp-table">
+                <thead><tr><th>Fecha</th><th>Turno</th><th>Responsable</th><th>Inicial</th><th>Final</th><th>Estado</th><th>Accion</th></tr></thead>
+                <tbody>
+                  {turnos.length === 0 ? <tr><td colSpan={7} className="py-8 text-center text-slate-400">Sin turnos abiertos.</td></tr> : turnos.map((turno) => (
+                    <tr key={turno.id}>
+                      <td>{turno.fecha}</td>
+                      <td className="font-bold text-slate-900">{turno.turno}</td>
+                      <td>{turno.responsable}</td>
+                      <td>{formatPEN(turno.saldo_inicial)}</td>
+                      <td>{formatPEN(turno.saldo_final)}</td>
+                      <td><span className={`badge ${badgeByStatus(turno.estado)}`}>{turno.estado}</span></td>
+                      <td>{turno.estado === 'abierto' && <button onClick={() => cerrarTurno(turno)} className="btn-apple-secondary h-9">Cerrar</button>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {(activeTab === 'ingresos' || activeTab === 'egresos' || activeTab === 'historico') && (
+        <div className="apple-card overflow-hidden">
+          <div className="flex flex-col gap-3 border-b border-slate-100 p-5 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-lg font-black text-slate-900">{activeTab === 'egresos' ? 'Egresos pagados' : activeTab === 'ingresos' ? 'Ingresos validados' : 'Historico de movimientos'}</h2>
+              <p className="text-xs font-medium text-slate-500">Filtros por concepto, responsable, comprobante u operacion.</p>
+            </div>
+            <label className="relative w-full md:max-w-sm">
+              <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input className="erp-input pl-9" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar movimiento" />
+            </label>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="erp-table min-w-[1100px]">
+              <thead><tr><th>Fecha</th><th>Tipo</th><th>Concepto</th><th>Metodo</th><th>Operacion</th><th>Comprobante</th><th>Turno</th><th>Responsable</th><th>Monto</th><th>Estado</th></tr></thead>
+              <tbody>
+                {filteredMovements
+                  .filter((item) => activeTab === 'historico' || item.tipo === (activeTab === 'ingresos' ? 'ingreso' : 'egreso'))
+                  .map((item) => (
+                    <tr key={item.id}>
+                      <td className="text-xs font-semibold text-slate-500">{item.created_at ? new Date(item.created_at).toLocaleString('es-PE') : '-'}</td>
+                      <td><span className={`badge ${item.tipo === 'ingreso' ? 'badge-green' : 'badge-red'}`}>{item.tipo}</span></td>
+                      <td className="font-bold text-slate-900">{item.concepto || '-'}</td>
+                      <td>{item.metodo_pago || '-'}</td>
+                      <td className="font-mono text-xs">{item.numero_operacion || '-'}</td>
+                      <td>{item.tipo_comprobante || '-'} {item.numero_comprobante || ''}</td>
+                      <td>{normalizeTurno(item.turno)}</td>
+                      <td>{item.responsable || '-'}</td>
+                      <td className={`font-black ${item.tipo === 'ingreso' ? 'text-emerald-700' : 'text-red-700'}`}>{formatPEN(item.monto)}</td>
+                      <td><span className={`badge ${badgeByStatus(item.estado)}`}>{item.estado || 'validado'}</span></td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'arqueo' && (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_0.8fr]">
+          <div className="apple-card p-5">
+            <h2 className="mb-4 text-lg font-black text-slate-900">Arqueo fisico por denominacion</h2>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              {DENOMINATIONS.map((value) => (
+                <Field key={value} label={`S/ ${value}`}>
+                  <input className="erp-input" type="number" min="0" value={arqueoCounts[String(value)]} onChange={(e) => setArqueoCounts({ ...arqueoCounts, [String(value)]: e.target.value })} />
+                </Field>
+              ))}
+            </div>
+            <button onClick={registrarArqueo} className="btn-apple-primary mt-5 w-full justify-center"><ClipboardCheck size={16} /> Guardar arqueo</button>
+          </div>
+          <div className="space-y-4">
+            <Kpi icon={Banknote} label="Monto fisico" value={formatPEN(arqueoFisico)} detail="Calculado por denominaciones" tone="blue" />
+            <Kpi icon={Wallet} label="Saldo esperado" value={formatPEN(totals.saldoEsperado)} detail="Saldo inicial + efectivo - egresos - rendicion" tone="slate" />
+            <Kpi icon={AlertTriangle} label="Diferencia" value={formatPEN(arqueoFisico - totals.saldoEsperado)} detail="Debe quedar en cero o autorizado" tone={Math.abs(arqueoFisico - totals.saldoEsperado) > 1 ? 'red' : 'green'} />
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'rendicion' && (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.85fr_1.15fr]">
+          <div className="apple-card p-5">
+            <h2 className="mb-4 text-lg font-black text-slate-900">Rendicion a gerencia</h2>
+            <div className="grid grid-cols-1 gap-3">
+              <Field label="Monto"><input className="erp-input" type="number" value={rendicionForm.monto} onChange={(e) => setRendicionForm({ ...rendicionForm, monto: e.target.value })} /></Field>
+              <Field label="Entrega"><input className="erp-input" value={rendicionForm.responsable_entrega} onChange={(e) => setRendicionForm({ ...rendicionForm, responsable_entrega: e.target.value })} placeholder="Caja" /></Field>
+              <Field label="Recibe"><input className="erp-input" value={rendicionForm.responsable_recibe} onChange={(e) => setRendicionForm({ ...rendicionForm, responsable_recibe: e.target.value })} placeholder="Gerencia" /></Field>
+              <Field label="Medio"><select className="erp-input" value={rendicionForm.medio} onChange={(e) => setRendicionForm({ ...rendicionForm, medio: e.target.value })}>{PAYMENT_METHODS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></Field>
+              <Field label="Observacion"><input className="erp-input" value={rendicionForm.observacion} onChange={(e) => setRendicionForm({ ...rendicionForm, observacion: e.target.value })} /></Field>
+            </div>
+            <button onClick={registrarRendicion} className="btn-apple-primary mt-5 w-full justify-center"><Landmark size={16} /> Registrar rendicion</button>
+          </div>
+          <div className="apple-card overflow-hidden">
+            <div className="border-b border-slate-100 p-5"><h2 className="text-lg font-black text-slate-900">Rendiciones del dia</h2></div>
+            <table className="erp-table">
+              <thead><tr><th>Fecha</th><th>Monto</th><th>Entrega</th><th>Recibe</th><th>Estado</th></tr></thead>
+              <tbody>{rendiciones.length === 0 ? <tr><td colSpan={5} className="py-8 text-center text-slate-400">Sin rendiciones.</td></tr> : rendiciones.map((item) => (
+                <tr key={item.id}><td>{item.created_at ? new Date(item.created_at).toLocaleString('es-PE') : item.fecha}</td><td className="font-black text-blue-700">{formatPEN(item.monto)}</td><td>{item.responsable_entrega}</td><td>{item.responsable_recibe}</td><td><span className={`badge ${badgeByStatus(item.estado)}`}>{item.estado}</span></td></tr>
+              ))}</tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'conciliacion' && (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.8fr_1.2fr]">
+          <div className="space-y-4">
+            <Kpi icon={CreditCard} label="Digital del dia" value={formatPEN(totals.digital)} detail="P.O.S., tarjeta, transferencia, Yape y Plin" tone="blue" />
+            <Kpi icon={AlertTriangle} label="Pendientes operacion" value={allMovements.filter((item) => DIGITAL_METHODS.has(item.metodo_pago) && !item.numero_operacion).length} detail="No deben quedar pagos digitales sin numero" tone="amber" />
+          </div>
+          <div className="apple-card overflow-hidden">
+            <div className="border-b border-slate-100 p-5"><h2 className="text-lg font-black text-slate-900">Operaciones digitales</h2></div>
+            <table className="erp-table">
+              <thead><tr><th>Fecha</th><th>Metodo</th><th>Operacion</th><th>Monto</th><th>Estado</th></tr></thead>
+              <tbody>
+                {allMovements.filter((item) => DIGITAL_METHODS.has(item.metodo_pago)).map((item) => (
+                  <tr key={item.id}><td>{item.created_at ? new Date(item.created_at).toLocaleString('es-PE') : '-'}</td><td>{item.metodo_pago}</td><td className="font-mono text-xs">{item.numero_operacion || 'Sin operacion'}</td><td>{formatPEN(item.monto)}</td><td><span className={`badge ${item.numero_operacion ? 'badge-green' : 'badge-amber'}`}>{item.numero_operacion ? 'conciliable' : 'observado'}</span></td></tr>
+                ))}
+                {conciliaciones.map((item) => (
+                  <tr key={`conc-${item.id}`}><td>{item.fecha_operacion}</td><td>{item.metodo_pago}</td><td>{item.numero_operacion}</td><td>{formatPEN(item.monto)}</td><td><span className={`badge ${badgeByStatus(item.estado)}`}>{item.estado}</span></td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'reportes' && (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <div className="apple-card p-5">
+            <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900"><Download size={19} className="text-blue-600" /> Reportes listos</h2>
+            {['Reporte diario por turno', 'Reporte mensual de flujo de caja', 'Historico de movimientos filtrado', 'Arqueo y rendicion a gerencia', 'Conciliacion digital por canal'].map((item) => (
+              <div key={item} className="mb-3 flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 p-4 last:mb-0">
+                <span className="font-bold text-slate-700">{item}</span>
+                <span className="badge badge-blue">Preparado</span>
+              </div>
+            ))}
+          </div>
+          <div className="apple-card p-5">
+            <h2 className="mb-4 text-lg font-black text-slate-900">Resumen gerencial</h2>
+            <div className="space-y-3">
+              <div className="rounded-2xl bg-slate-50 p-4"><p className="text-xs font-black uppercase text-slate-400">Balance neto</p><p className="text-2xl font-black text-slate-900">{formatPEN(totals.saldo)}</p></div>
+              <div className="rounded-2xl bg-slate-50 p-4"><p className="text-xs font-black uppercase text-slate-400">Efectivo vs digital</p><p className="text-2xl font-black text-slate-900">{pctOf(totals.digital, totals.ingresos, 1)}% digital</p></div>
+              <div className="rounded-2xl bg-slate-50 p-4"><p className="text-xs font-black uppercase text-slate-400">Riesgo operativo</p><p className="text-2xl font-black text-slate-900">{activeWarnings.length ? 'Revisar' : 'Controlado'}</p></div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'parametros' && (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <div className="apple-card p-5">
+            <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900"><Settings size={19} className="text-blue-600" /> Parametros operativos</h2>
+            {[
+              ['Tipos documento', '01 DNI, 06 RUC'],
+              ['Metodos pago', PAYMENT_METHODS.map((item) => item.label).join(', ')],
+              ['Regla efectivo', 'Monto alto en efectivo requiere rendicion sugerida'],
+              ['Comprobante', 'Validar duplicados por tipo, serie, numero y monto'],
+              ['Auditoria', 'Toda anulacion, cierre o correccion queda registrada'],
+            ].map(([label, value]) => (
+              <div key={label} className="mb-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 last:mb-0">
+                <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-400">{label}</p>
+                <p className="mt-1 text-sm font-bold text-slate-700">{value}</p>
+              </div>
+            ))}
+          </div>
+          <div className="apple-card p-5">
+            <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900"><KeyRound size={19} className="text-blue-600" /> Controles desde Drive</h2>
+            <div className="space-y-3">
+              {PAYMENT_CONTROL_RULES.map((rule) => (
+                <div key={rule} className="flex gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm font-semibold leading-5 text-blue-900">
+                  <CheckCircle2 size={17} className="mt-0.5 shrink-0 text-blue-600" />
+                  {rule}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {auditoria.length > 0 && (
+        <div className="apple-card overflow-hidden">
+          <div className="border-b border-slate-100 p-5">
+            <h2 className="flex items-center gap-2 text-lg font-black text-slate-900"><Archive size={19} className="text-blue-600" /> Auditoria reciente</h2>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="erp-table">
+              <thead><tr><th>Fecha</th><th>Usuario</th><th>Accion</th><th>Detalle</th></tr></thead>
+              <tbody>{auditoria.slice(0, 8).map((item) => (
+                <tr key={item.id}><td>{item.created_at ? new Date(item.created_at).toLocaleString('es-PE') : '-'}</td><td>{item.actor_email || 'sistema'}</td><td><span className="badge badge-blue">{item.action}</span></td><td>{item.detail}</td></tr>
+              ))}</tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {modal === 'movimiento' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-3 backdrop-blur-sm">
+          <div className="max-h-[92vh] w-full max-w-4xl overflow-hidden rounded-[24px] bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+              <div>
+                <h2 className="text-lg font-black text-slate-900">{movementForm.tipo === 'ingreso' ? 'Nuevo ingreso' : 'Nuevo egreso'}</h2>
+                <p className="text-xs font-medium text-slate-500">Validacion de turno, comprobante, metodo y operacion.</p>
+              </div>
+              <button onClick={() => setModal(null)} className="rounded-full p-2 text-slate-400 hover:bg-slate-50"><X size={20} /></button>
+            </div>
+            <div className="max-h-[72vh] overflow-y-auto p-5">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <Field label="Tipo"><select className="erp-input" value={movementForm.tipo} onChange={(e) => setMovementForm({ ...movementForm, tipo: e.target.value })}><option value="ingreso">Ingreso</option><option value="egreso">Egreso</option></select></Field>
+                <Field label="Turno"><select className="erp-input" value={movementForm.turno} onChange={(e) => setMovementForm({ ...movementForm, turno: e.target.value })}>{TURNOS.map((item) => <option key={item.id} value={item.id}>{item.short}</option>)}</select></Field>
+                {movementForm.tipo === 'ingreso' && (
+                  <Field label="Inscripcion" wide>
+                    <select className="erp-input" value={movementForm.inscripcion_id} onChange={(e) => setMovementForm({ ...movementForm, inscripcion_id: e.target.value })}>
+                      <option value="">Seleccionar inscripcion</option>
+                      {inscripciones.map((ins) => <option key={ins.id} value={ins.id}>{ins.programa} - ID {ins.id}</option>)}
+                    </select>
+                  </Field>
+                )}
+                <Field label="Concepto" wide><input className="erp-input" value={movementForm.concepto} onChange={(e) => setMovementForm({ ...movementForm, concepto: e.target.value })} placeholder="Pago, devolucion, gasto o rendicion" /></Field>
+                <Field label="Monto"><input className="erp-input" type="number" min="0" step="0.01" value={movementForm.monto} onChange={(e) => setMovementForm({ ...movementForm, monto: e.target.value })} /></Field>
+                <Field label="Metodo"><select className="erp-input" value={movementForm.metodo_pago} onChange={(e) => setMovementForm({ ...movementForm, metodo_pago: e.target.value })}>{PAYMENT_METHODS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></Field>
+                <Field label="Canal P.O.S."><input className="erp-input" value={movementForm.canal_pos} onChange={(e) => setMovementForm({ ...movementForm, canal_pos: e.target.value })} placeholder="Visa, Izipay, Niubiz" /></Field>
+                <Field label="Numero operacion"><input className="erp-input" value={movementForm.numero_operacion} onChange={(e) => setMovementForm({ ...movementForm, numero_operacion: e.target.value })} placeholder="Obligatorio en digital" /></Field>
+                <Field label="Tipo documento"><select className="erp-input" value={movementForm.tipo_documento} onChange={(e) => setMovementForm({ ...movementForm, tipo_documento: e.target.value })}><option value="01">01 DNI</option><option value="06">06 RUC</option></select></Field>
+                <Field label="Documento cliente"><input className="erp-input" value={movementForm.documento_cliente} onChange={(e) => setMovementForm({ ...movementForm, documento_cliente: e.target.value })} /></Field>
+                <Field label="Comprobante"><select className="erp-input" value={movementForm.tipo_comprobante} onChange={(e) => setMovementForm({ ...movementForm, tipo_comprobante: e.target.value })}><option value="boleta">Boleta</option><option value="factura">Factura</option><option value="recibo">Recibo</option><option value="interno">Interno</option></select></Field>
+                <Field label="Numero comprobante"><input className="erp-input" value={movementForm.numero_comprobante} onChange={(e) => setMovementForm({ ...movementForm, numero_comprobante: e.target.value })} /></Field>
+                <Field label="Area"><input className="erp-input" value={movementForm.area} onChange={(e) => setMovementForm({ ...movementForm, area: e.target.value })} /></Field>
+                <Field label="Categoria"><input className="erp-input" value={movementForm.categoria} onChange={(e) => setMovementForm({ ...movementForm, categoria: e.target.value })} /></Field>
+                <Field label="Responsable"><input className="erp-input" value={movementForm.responsable} onChange={(e) => setMovementForm({ ...movementForm, responsable: e.target.value })} placeholder="Cajera / proveedor / area" /></Field>
+                <Field label="URL voucher"><input className="erp-input" value={movementForm.comprobante_url} onChange={(e) => setMovementForm({ ...movementForm, comprobante_url: e.target.value })} /></Field>
+                <Field label="Observacion" wide><input className="erp-input" value={movementForm.observacion} onChange={(e) => setMovementForm({ ...movementForm, observacion: e.target.value })} /></Field>
+              </div>
+              {DIGITAL_METHODS.has(movementForm.metodo_pago) && !movementForm.numero_operacion && (
+                <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-800">
+                  Todo pago digital exige numero de operacion para conciliacion.
+                </div>
+              )}
+              {duplicateVoucher && (
+                <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
+                  Comprobante duplicado detectado en pagos de hoy.
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-4">
+              <button onClick={() => setModal(null)} className="btn-apple-secondary">Cancelar</button>
+              <button onClick={registrarMovimiento} disabled={saving} className="btn-apple-primary"><Save size={16} /> {saving ? 'Guardando...' : 'Guardar'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

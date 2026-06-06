@@ -2,7 +2,7 @@ import { HashRouter, Routes, Route, Navigate, useLocation } from 'react-router-d
 import { useEffect, useState } from 'react';
 import { supabase } from './lib/supabase';
 import Layout from './components/Layout';
-import { SALES_PERMISSIONS, getFirstAllowedRoute, hasAnyPermission, isAdminUser } from './lib/access';
+import { CASH_PERMISSIONS, SALES_PERMISSIONS, getFirstAllowedRoute, hasAnyPermission, isAdminUser } from './lib/access';
 
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -133,7 +133,7 @@ export default function App() {
     { path: '/dashboard', component: <Dashboard /> },
     { path: '/inscripciones', component: <Inscripciones />, requiredPermissions: ['Inscripciones'] },
     { path: '/ventas/*', component: <Ventas />, requiredPermissions: SALES_PERMISSIONS },
-    { path: '/caja', component: <Caja />, requiredPermissions: ['Caja', 'Caja y Pagos'] },
+    { path: '/caja/*', component: <Caja />, requiredPermissions: CASH_PERMISSIONS },
     { path: '/marketing', component: <Marketing />, requiredPermissions: ['Marketing', 'marketing_dashboard'] },
     { path: '/marketing/dashboard', component: <Marketing />, requiredPermissions: ['Marketing', 'marketing_dashboard'] },
     { path: '/marketing/planeacion', component: <TabPlaneacionEstrategica />, requiredPermissions: ['Marketing', 'marketing_planeacion'] },

@@ -10,11 +10,12 @@ import {
   Briefcase, Package, ClipboardList, TrendingUp,
   Menu, ChevronRight, LogOut, ChevronLeft,
   ShieldCheck, DollarSign, ChevronDown,
-  Clock, Calendar, AlertCircle, FileText, UserPlus,
+  Clock, Calendar, CalendarClock, AlertCircle, FileText, UserPlus,
   Target, Megaphone, CalendarDays, Palette,
   FolderOpen, Bot, BarChart3, Building2, MessageSquare,
   Trophy, Activity, Plus, MessageCircle, Gift, KeyRound,
-  Upload, Settings, ClipboardCheck, Bell, Database
+  Upload, Settings, ClipboardCheck, Bell, Database, TrendingDown,
+  CreditCard, Landmark
 } from 'lucide-react';
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -364,7 +365,24 @@ const NAV_GRUPOS = [
           { path: '/ventas/administracion', nombre: 'Configuración', icon: Settings, permiso: 'ventas_administracion' },
         ],
       },
-      { path: '/caja',          nombre: 'Caja y Pagos', icon: Wallet, permiso: 'Caja' },
+      {
+        nombre: 'Caja y Pagos',
+        icon: Wallet,
+        permiso: 'Caja',
+        permisos: ['Caja', 'Caja y Pagos', 'caja_dashboard', 'caja_turnos', 'caja_ingresos', 'caja_egresos', 'caja_arqueo', 'caja_rendicion', 'caja_conciliacion', 'caja_historico', 'caja_reportes', 'caja_parametros'],
+        subItems: [
+          { path: '/caja/dashboard',    nombre: 'Dashboard', icon: BarChart3, permiso: 'caja_dashboard' },
+          { path: '/caja/turnos',       nombre: 'Turnos', icon: CalendarClock, permiso: 'caja_turnos' },
+          { path: '/caja/ingresos',     nombre: 'Ingresos', icon: TrendingUp, permiso: 'caja_ingresos' },
+          { path: '/caja/egresos',      nombre: 'Egresos', icon: TrendingDown, permiso: 'caja_egresos' },
+          { path: '/caja/arqueo',       nombre: 'Arqueo', icon: ClipboardCheck, permiso: 'caja_arqueo' },
+          { path: '/caja/rendicion',    nombre: 'Rendicion', icon: Landmark, permiso: 'caja_rendicion' },
+          { path: '/caja/conciliacion', nombre: 'Conciliacion', icon: CreditCard, permiso: 'caja_conciliacion' },
+          { path: '/caja/historico',    nombre: 'Historico', icon: Database, permiso: 'caja_historico' },
+          { path: '/caja/reportes',     nombre: 'Reportes', icon: FileText, permiso: 'caja_reportes' },
+          { path: '/caja/parametros',   nombre: 'Parametros', icon: Settings, permiso: 'caja_parametros' },
+        ],
+      },
     ],
   },
   {
