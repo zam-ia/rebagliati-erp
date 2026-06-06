@@ -25,6 +25,23 @@ import {
   Wallet,
   X,
 } from 'lucide-react';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Line,
+  LineChart,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { supabase } from '../lib/supabase';
 import { addDaysISO, formatPEN, pctOf, sumBy, toNumber, toPositiveNumber, todayISO } from '../lib/finance';
 import { PAYMENT_CONTROL_RULES } from '../lib/driveInsights';
@@ -58,6 +75,7 @@ const PAYMENT_METHODS = [
 
 const DENOMINATIONS = [200, 100, 50, 20, 10, 5, 2, 1, 0.5, 0.2, 0.1];
 const DIGITAL_METHODS = new Set(PAYMENT_METHODS.filter((item) => item.type === 'digital').map((item) => item.id));
+const METHOD_COLORS = ['#05C7F2', '#020873', '#16a34a', '#f59e0b', '#ef4444', '#64748b'];
 
 const emptyMovementForm = {
   tipo: 'ingreso',
@@ -111,6 +129,35 @@ const badgeByStatus = (status = '') => {
   return 'badge-blue';
 };
 
+const sanitizeText = (value = '', max = 180) => String(value || '').trim().replace(/\s+/g, ' ').slice(0, max);
+
+const escapeHtml = (value = '') => sanitizeText(value, 500)
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#039;');
+
+const methodLabel = (value = '') => PAYMENT_METHODS.find((item) => item.id === value)?.label || value || 'No definido';
+
+const movementDate = (item) => item.fecha_movimiento || item.created_at || item.fecha || new Date().toISOString();
+
+const dateKey = (value) => new Date(value).toISOString().slice(0, 10);
+
+const dayShort = (value) => new Date(`${value}T00:00:00`).toLocaleDateString('es-PE', { day: '2-digit', month: 'short' });
+
+const downloadBlob = (content, filename, type) => {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
+
 function Kpi({ icon: Icon, label, value, detail, tone = 'blue' }) {
   const toneClass = {
     blue: 'bg-blue-50 text-blue-700',
@@ -156,10 +203,13 @@ export default function Caja() {
   const [inscripciones, setInscripciones] = useState([]);
   const [turnos, setTurnos] = useState([]);
   const [movimientos, setMovimientos] = useState([]);
+  const [historicalMovements, setHistoricalMovements] = useState([]);
   const [arqueos, setArqueos] = useState([]);
   const [rendiciones, setRendiciones] = useState([]);
   const [conciliaciones, setConciliaciones] = useState([]);
   const [auditoria, setAuditoria] = useState([]);
+  const [dataIssues, setDataIssues] = useState([]);
+  const [reportScope, setReportScope] = useState('7d');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [modal, setModal] = useState(null);
@@ -194,13 +244,17 @@ export default function Caja() {
     setLoading(true);
     const hoy = todayISO();
     const manana = addDaysISO(hoy, 1);
+    const inicioHistorico = addDaysISO(hoy, -29);
 
     const [
       pagosResponse,
       egresosResponse,
+      pagosHistoricosResponse,
+      egresosHistoricosResponse,
       inscripcionesResponse,
       turnosResponse,
       movimientosResponse,
+      movimientosHistoricosResponse,
       arqueosResponse,
       rendicionesResponse,
       conciliacionesResponse,
@@ -208,24 +262,74 @@ export default function Caja() {
     ] = await Promise.all([
       supabase.from('pagos').select('*, inscripciones(programa, participante_id)').gte('created_at', hoy).lt('created_at', manana).order('created_at', { ascending: false }),
       supabase.from('egresos').select('*').eq('estado', 'Pagado').gte('fecha', hoy).lt('fecha', manana).order('fecha', { ascending: false }),
+      supabase.from('pagos').select('*, inscripciones(programa, participante_id)').gte('created_at', inicioHistorico).lt('created_at', manana).order('created_at', { ascending: false }).limit(800),
+      supabase.from('egresos').select('*').eq('estado', 'Pagado').gte('fecha', inicioHistorico).lt('fecha', manana).order('fecha', { ascending: false }).limit(800),
       supabase.from('inscripciones').select('id, programa, monto_total, monto_pagado, estado').in('estado', ['pendiente', 'parcial']).limit(80),
       supabase.from('caja_turnos').select('*').eq('fecha', hoy).order('turno'),
       supabase.from('caja_movimientos').select('*').gte('fecha_movimiento', hoy).lt('fecha_movimiento', manana).order('created_at', { ascending: false }),
+      supabase.from('caja_movimientos').select('*').gte('fecha_movimiento', inicioHistorico).lt('fecha_movimiento', manana).order('created_at', { ascending: false }).limit(1000),
       supabase.from('caja_arqueos').select('*').gte('created_at', hoy).lt('created_at', manana).order('created_at', { ascending: false }),
       supabase.from('caja_rendiciones').select('*').gte('created_at', hoy).lt('created_at', manana).order('created_at', { ascending: false }),
       supabase.from('caja_conciliaciones').select('*').gte('fecha_operacion', hoy).lt('fecha_operacion', manana).order('fecha_operacion', { ascending: false }),
       supabase.from('caja_auditoria').select('*').order('created_at', { ascending: false }).limit(30),
     ]);
 
+    const issueList = [
+      ['pagos', pagosResponse.error],
+      ['egresos', egresosResponse.error],
+      ['inscripciones', inscripcionesResponse.error],
+      ['caja_turnos', turnosResponse.error],
+      ['caja_movimientos', movimientosResponse.error],
+      ['caja_arqueos', arqueosResponse.error],
+      ['caja_rendiciones', rendicionesResponse.error],
+      ['caja_conciliaciones', conciliacionesResponse.error],
+      ['caja_auditoria', auditoriaResponse.error],
+    ].filter(([, error]) => error).map(([table, error]) => `${table}: ${error.message}`);
+
+    const historicalLegacy = [
+      ...((pagosHistoricosResponse.error ? [] : pagosHistoricosResponse.data) || []).map((pago) => ({
+        id: `pago-${pago.id}`,
+        tipo: 'ingreso',
+        concepto: pago.inscripciones?.programa || 'Pago de inscripcion',
+        monto: toNumber(pago.monto),
+        metodo_pago: pago.metodo_pago,
+        turno: normalizeTurno(pago.turno),
+        responsable: pago.cajera || 'Caja',
+        tipo_comprobante: pago.tipo_comprobante,
+        numero_comprobante: pago.numero_comprobante,
+        numero_operacion: pago.numero_operacion || '',
+        created_at: pago.created_at,
+        estado: 'validado',
+        source: 'pagos',
+      })),
+      ...((egresosHistoricosResponse.error ? [] : egresosHistoricosResponse.data) || []).map((egreso) => ({
+        id: `egreso-${egreso.id}`,
+        tipo: 'egreso',
+        concepto: egreso.concepto,
+        monto: toNumber(egreso.monto),
+        metodo_pago: egreso.metodo_pago || 'efectivo',
+        turno: normalizeTurno(egreso.turno),
+        responsable: egreso.proveedor || egreso.area || 'Caja',
+        tipo_comprobante: egreso.categoria,
+        numero_comprobante: '',
+        numero_operacion: '',
+        created_at: egreso.created_at || egreso.fecha,
+        estado: egreso.estado || 'Pagado',
+        source: 'egresos',
+      })),
+    ];
+
     setPagos(pagosResponse.error ? [] : (pagosResponse.data || []));
     setEgresos(egresosResponse.error ? [] : (egresosResponse.data || []));
     setInscripciones(inscripcionesResponse.error ? [] : (inscripcionesResponse.data || []));
     setTurnos(turnosResponse.error ? [] : (turnosResponse.data || []));
     setMovimientos(movimientosResponse.error ? [] : (movimientosResponse.data || []));
+    setHistoricalMovements(movimientosHistoricosResponse.error || !movimientosHistoricosResponse.data?.length ? historicalLegacy : (movimientosHistoricosResponse.data || []));
     setArqueos(arqueosResponse.error ? [] : (arqueosResponse.data || []));
     setRendiciones(rendicionesResponse.error ? [] : (rendicionesResponse.data || []));
     setConciliaciones(conciliacionesResponse.error ? [] : (conciliacionesResponse.data || []));
     setAuditoria(auditoriaResponse.error ? [] : (auditoriaResponse.data || []));
+    setDataIssues(issueList);
     setLoading(false);
   }, []);
 
@@ -271,6 +375,9 @@ export default function Caja() {
   ], [egresos, pagos]);
 
   const allMovements = movimientos.length ? movimientos : legacyMovements;
+  const usingLegacy = !movimientos.length && legacyMovements.length > 0;
+  const hasMixedSources = movimientos.length > 0 && legacyMovements.length > 0;
+  const reportMovements = historicalMovements.length ? historicalMovements : allMovements;
   const filteredMovements = allMovements.filter((item) => {
     const term = search.trim().toLowerCase();
     if (!term) return true;
@@ -306,13 +413,62 @@ export default function Caja() {
 
   const activeWarnings = useMemo(() => {
     const warnings = [];
-    if (!turnos.length) warnings.push('No hay turno abierto registrado para hoy.');
-    if (totals.efectivoIngresos > 700 && totals.rendido === 0) warnings.push('Efectivo alto sin rendicion a gerencia.');
-    if (Math.abs(totals.diferencia) > 1) warnings.push(`Diferencia de arqueo: ${formatPEN(totals.diferencia)}.`);
+    if (!turnos.length) warnings.push({ id: 'sin-turno', message: 'No hay turno abierto registrado para hoy.', tab: 'turnos' });
+    if (totals.efectivoIngresos > 700 && totals.rendido === 0) warnings.push({ id: 'rendicion', message: 'Efectivo alto sin rendicion a gerencia.', tab: 'rendicion' });
+    if (Math.abs(totals.diferencia) > 1) warnings.push({ id: 'arqueo', message: `Diferencia de arqueo: ${formatPEN(totals.diferencia)}.`, tab: 'arqueo' });
     const digitalSinOperacion = allMovements.filter((item) => DIGITAL_METHODS.has(item.metodo_pago) && !item.numero_operacion).length;
-    if (digitalSinOperacion) warnings.push(`${digitalSinOperacion} pagos digitales sin numero de operacion.`);
+    if (digitalSinOperacion) warnings.push({ id: 'digital', message: `${digitalSinOperacion} pagos digitales sin numero de operacion.`, tab: 'conciliacion' });
+    if (usingLegacy) warnings.push({ id: 'legacy', message: 'Mostrando datos legacy porque caja_movimientos aun no tiene registros.', tab: 'parametros' });
+    if (dataIssues.length) warnings.push({ id: 'data', message: `${dataIssues.length} consultas requieren revision tecnica.`, tab: 'parametros' });
     return warnings;
-  }, [allMovements, totals, turnos.length]);
+  }, [allMovements, dataIssues.length, totals, turnos.length, usingLegacy]);
+
+  const recentMovements = useMemo(() => (
+    [...allMovements]
+      .sort((a, b) => new Date(movementDate(b)).getTime() - new Date(movementDate(a)).getTime())
+      .slice(0, 5)
+  ), [allMovements]);
+
+  const chartRangeDays = reportScope === '30d' ? 30 : 7;
+
+  const trendData = useMemo(() => {
+    const start = addDaysISO(todayISO(), -(chartRangeDays - 1));
+    const buckets = Array.from({ length: chartRangeDays }, (_, index) => {
+      const key = addDaysISO(start, index);
+      return { key, dia: dayShort(key), ingresos: 0, egresos: 0, neto: 0 };
+    });
+    const byDate = new Map(buckets.map((item) => [item.key, item]));
+    reportMovements.forEach((item) => {
+      const key = dateKey(movementDate(item));
+      const bucket = byDate.get(key);
+      if (!bucket) return;
+      if (item.tipo === 'ingreso') bucket.ingresos += toNumber(item.monto);
+      if (item.tipo === 'egreso') bucket.egresos += toNumber(item.monto);
+      bucket.neto = bucket.ingresos - bucket.egresos;
+    });
+    return buckets;
+  }, [chartRangeDays, reportMovements]);
+
+  const methodData = useMemo(() => PAYMENT_METHODS
+    .map((method) => ({
+      name: method.label,
+      value: sumBy(allMovements.filter((item) => item.tipo === 'ingreso' && item.metodo_pago === method.id), (item) => item.monto),
+    }))
+    .filter((item) => item.value > 0), [allMovements]);
+
+  const turnoData = useMemo(() => TURNOS.map((turno) => {
+    const rows = allMovements.filter((item) => normalizeTurno(item.turno) === turno.id);
+    return {
+      turno: turno.short,
+      ingresos: sumBy(rows.filter((item) => item.tipo === 'ingreso'), (item) => item.monto),
+      egresos: sumBy(rows.filter((item) => item.tipo === 'egreso'), (item) => item.monto),
+    };
+  }), [allMovements]);
+
+  const scopedReportMovements = useMemo(() => {
+    const start = new Date(`${addDaysISO(todayISO(), -(chartRangeDays - 1))}T00:00:00`).getTime();
+    return reportMovements.filter((item) => new Date(movementDate(item)).getTime() >= start);
+  }, [chartRangeDays, reportMovements]);
 
   const arqueoFisico = useMemo(() => DENOMINATIONS.reduce((sum, value) => {
     const count = toNumber(arqueoCounts[String(value)]);
@@ -325,10 +481,119 @@ export default function Caja() {
     return pagos.some((pago) => String(pago.numero_comprobante || '').trim() === number);
   }, [movementForm.numero_comprobante, pagos]);
 
+  const openMovementModal = (tipo) => {
+    setMovementForm({ ...emptyMovementForm, tipo, categoria: tipo === 'egreso' ? 'Operativo' : 'Matricula' });
+    setModal('movimiento');
+  };
+
+  const closeModal = () => {
+    if (saving) return;
+    setModal(null);
+    setMovementForm(emptyMovementForm);
+  };
+
+  const exportExcel = () => {
+    const rows = scopedReportMovements.map((item) => `
+      <tr>
+        <td>${new Date(movementDate(item)).toLocaleString('es-PE')}</td>
+        <td>${escapeHtml(item.tipo)}</td>
+        <td>${escapeHtml(item.concepto)}</td>
+        <td>${escapeHtml(methodLabel(item.metodo_pago))}</td>
+        <td>${escapeHtml(item.numero_operacion)}</td>
+        <td>${escapeHtml(`${item.tipo_comprobante || ''} ${item.numero_comprobante || ''}`)}</td>
+        <td>${normalizeTurno(item.turno)}</td>
+        <td>${escapeHtml(item.responsable)}</td>
+        <td>${toNumber(item.monto).toFixed(2)}</td>
+        <td>${escapeHtml(item.estado)}</td>
+      </tr>
+    `).join('');
+    const html = `
+      <html>
+        <head><meta charset="utf-8" /></head>
+        <body>
+          <table border="1">
+            <tr><th colspan="10">Reporte Caja y Pagos - ${todayISO()}</th></tr>
+            <tr><th>Ingresos</th><td>${totals.ingresos.toFixed(2)}</td><th>Egresos</th><td>${totals.egresos.toFixed(2)}</td><th>Saldo esperado</th><td>${totals.saldoEsperado.toFixed(2)}</td><th>Alertas</th><td>${activeWarnings.length}</td></tr>
+          </table>
+          <br />
+          <table border="1">
+            <thead><tr><th>Fecha</th><th>Tipo</th><th>Concepto</th><th>Metodo</th><th>Operacion</th><th>Comprobante</th><th>Turno</th><th>Responsable</th><th>Monto</th><th>Estado</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </body>
+      </html>
+    `;
+    downloadBlob(html, `reporte-caja-${todayISO()}.xls`, 'application/vnd.ms-excel;charset=utf-8');
+    showToast('Reporte Excel generado.');
+  };
+
+  const exportPdf = () => {
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'pt' });
+    doc.setTextColor(2, 8, 115);
+    doc.setFontSize(18);
+    doc.text('Reporte Caja y Pagos', 40, 42);
+    doc.setFontSize(9);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Fecha: ${new Date().toLocaleString('es-PE')} | Rango: ${reportScope === '30d' ? '30 dias' : '7 dias'}`, 40, 60);
+    autoTable(doc, {
+      startY: 78,
+      head: [['Indicador', 'Valor', 'Detalle']],
+      body: [
+        ['Ingresos', formatPEN(totals.ingresos), `${formatPEN(totals.efectivoIngresos)} efectivo / ${formatPEN(totals.digital)} digital`],
+        ['Egresos', formatPEN(totals.egresos), 'Salidas autorizadas y pagadas'],
+        ['Saldo esperado', formatPEN(totals.saldoEsperado), `Rendido: ${formatPEN(totals.rendido)}`],
+        ['Alertas', activeWarnings.length, activeWarnings[0]?.message || 'Sin alertas criticas'],
+      ],
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [2, 8, 115] },
+    });
+    autoTable(doc, {
+      startY: doc.lastAutoTable.finalY + 18,
+      head: [['Fecha', 'Tipo', 'Concepto', 'Metodo', 'Operacion', 'Turno', 'Monto', 'Estado']],
+      body: scopedReportMovements.slice(0, 80).map((item) => [
+        new Date(movementDate(item)).toLocaleString('es-PE'),
+        item.tipo || '',
+        sanitizeText(item.concepto, 70),
+        methodLabel(item.metodo_pago),
+        item.numero_operacion || '',
+        normalizeTurno(item.turno),
+        formatPEN(item.monto),
+        item.estado || '',
+      ]),
+      styles: { fontSize: 7, cellPadding: 4 },
+      headStyles: { fillColor: [5, 199, 242], textColor: [2, 8, 115] },
+    });
+    doc.save(`reporte-caja-${todayISO()}.pdf`);
+    showToast('Reporte PDF generado.');
+  };
+
+  const printReport = () => {
+    window.print();
+  };
+
+  const sendReportEmail = () => {
+    const subject = encodeURIComponent(`Reporte Caja y Pagos ${todayISO()}`);
+    const body = encodeURIComponent([
+      'Resumen Caja y Pagos',
+      `Ingresos: ${formatPEN(totals.ingresos)}`,
+      `Egresos: ${formatPEN(totals.egresos)}`,
+      `Saldo esperado: ${formatPEN(totals.saldoEsperado)}`,
+      `Alertas: ${activeWarnings.map((item) => item.message).join(' | ') || 'Sin alertas criticas'}`,
+      '',
+      'Para adjuntar archivo, usa Exportar PDF o Excel desde el ERP.',
+    ].join('\n'));
+    window.location.href = `mailto:?subject=${subject}&body=${body}`;
+  };
+
   const registrarMovimiento = async () => {
     const monto = toPositiveNumber(movementForm.monto);
+    const concepto = sanitizeText(movementForm.concepto || (movementForm.tipo === 'ingreso' ? 'Pago de inscripcion' : 'Egreso de caja'), 120);
     if (!Number.isFinite(monto)) {
       showToast('El monto debe ser mayor a cero.', 'red');
+      return;
+    }
+    if (concepto.length < 3) {
+      showToast('El concepto debe tener al menos 3 caracteres.', 'red');
       return;
     }
     if (movementForm.tipo === 'ingreso' && !movementForm.inscripcion_id) {
@@ -350,20 +615,20 @@ export default function Caja() {
       tipo: movementForm.tipo,
       fecha_movimiento: now,
       turno: movementForm.turno,
-      concepto: movementForm.concepto || (movementForm.tipo === 'ingreso' ? 'Pago de inscripcion' : 'Egreso de caja'),
-      area: movementForm.area,
-      categoria: movementForm.categoria,
+      concepto,
+      area: sanitizeText(movementForm.area, 80),
+      categoria: sanitizeText(movementForm.categoria, 80),
       monto,
       metodo_pago: movementForm.metodo_pago,
-      canal_pos: movementForm.canal_pos || null,
-      numero_operacion: movementForm.numero_operacion || null,
+      canal_pos: sanitizeText(movementForm.canal_pos, 80) || null,
+      numero_operacion: sanitizeText(movementForm.numero_operacion, 80) || null,
       tipo_documento: movementForm.tipo_documento,
-      documento_cliente: movementForm.documento_cliente || null,
+      documento_cliente: sanitizeText(movementForm.documento_cliente, 30) || null,
       tipo_comprobante: movementForm.tipo_comprobante,
-      numero_comprobante: movementForm.numero_comprobante || null,
-      responsable: movementForm.responsable || 'Caja',
-      comprobante_url: movementForm.comprobante_url || null,
-      observacion: movementForm.observacion || null,
+      numero_comprobante: sanitizeText(movementForm.numero_comprobante, 60) || null,
+      responsable: sanitizeText(movementForm.responsable, 80) || 'Caja',
+      comprobante_url: sanitizeText(movementForm.comprobante_url, 240) || null,
+      observacion: sanitizeText(movementForm.observacion, 240) || null,
       estado: movementForm.tipo === 'ingreso' ? 'validado' : 'pagado',
     };
 
@@ -485,6 +750,8 @@ export default function Caja() {
   };
 
   const cerrarTurno = async (turno) => {
+    const confirmed = window.confirm(`Cerrar ${turno.turno} con saldo esperado ${formatPEN(totals.saldoEsperado)}?`);
+    if (!confirmed) return;
     const { error } = await supabase
       .from('caja_turnos')
       .update({ estado: 'cerrado', saldo_final: totals.saldoEsperado, cerrado_at: new Date().toISOString() })
@@ -523,15 +790,23 @@ export default function Caja() {
             <button onClick={loadData} className="btn-apple-secondary">
               <RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> Actualizar
             </button>
-            <button onClick={() => { setMovementForm({ ...emptyMovementForm, tipo: 'ingreso' }); setModal('movimiento'); }} className="btn-apple-primary">
+            <button onClick={() => openMovementModal('ingreso')} className="btn-apple-primary">
               <Plus size={16} /> Nuevo ingreso
             </button>
-            <button onClick={() => { setMovementForm({ ...emptyMovementForm, tipo: 'egreso', categoria: 'Operativo' }); setModal('movimiento'); }} className="btn-apple-secondary">
+            <button onClick={() => openMovementModal('egreso')} className="btn-apple-secondary">
               <TrendingDown size={16} /> Nuevo egreso
             </button>
           </div>
         </div>
       </section>
+
+      {(usingLegacy || hasMixedSources || dataIssues.length > 0) && (
+        <div className="rounded-3xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-semibold leading-6 text-amber-900">
+          {usingLegacy && 'Caja esta mostrando datos legacy de pagos/egresos porque caja_movimientos aun no tiene registros. '}
+          {hasMixedSources && 'Hay registros en tablas legacy y operativas; el tablero usa caja_movimientos para evitar duplicados. '}
+          {dataIssues.length > 0 && `Revision tecnica pendiente: ${dataIssues.slice(0, 2).join(' | ')}`}
+        </div>
+      )}
 
       <div className="apple-card overflow-x-auto p-2">
         <div className="flex min-w-max gap-1">
@@ -555,7 +830,55 @@ export default function Caja() {
             <Kpi icon={TrendingUp} label="Ingresos de hoy" value={formatPEN(totals.ingresos)} detail={`${formatPEN(totals.efectivoIngresos)} efectivo / ${formatPEN(totals.digital)} digital`} tone="green" />
             <Kpi icon={TrendingDown} label="Egresos pagados" value={formatPEN(totals.egresos)} detail="Salidas autorizadas y pagadas" tone="red" />
             <Kpi icon={Banknote} label="Saldo fisico esperado" value={formatPEN(totals.saldoEsperado)} detail={`Rendido a gerencia: ${formatPEN(totals.rendido)}`} tone="blue" />
-            <Kpi icon={AlertTriangle} label="Alertas activas" value={activeWarnings.length} detail={activeWarnings[0] || 'Sin alertas criticas'} tone={activeWarnings.length ? 'amber' : 'green'} />
+            <Kpi icon={AlertTriangle} label="Alertas activas" value={activeWarnings.length} detail={activeWarnings[0]?.message || 'Sin alertas criticas'} tone={activeWarnings.length ? 'amber' : 'green'} />
+          </div>
+
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+            <div className="apple-card p-5">
+              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-lg font-black text-slate-900">Tendencia de flujo</h2>
+                  <p className="text-xs font-medium text-slate-500">Ingresos, egresos y neto operativo por dia.</p>
+                </div>
+                <select className="erp-input h-10 w-full sm:w-36" value={reportScope} onChange={(e) => setReportScope(e.target.value)}>
+                  <option value="7d">7 dias</option>
+                  <option value="30d">30 dias</option>
+                </select>
+              </div>
+              <div className="h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={trendData} margin={{ left: 0, right: 12, top: 8, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="dia" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(value) => `S/${Number(value).toLocaleString('es-PE')}`} width={72} />
+                    <Tooltip formatter={(value) => formatPEN(value)} labelStyle={{ color: '#020873', fontWeight: 800 }} />
+                    <Legend />
+                    <Line type="monotone" dataKey="ingresos" name="Ingresos" stroke="#05C7F2" strokeWidth={3} dot={false} />
+                    <Line type="monotone" dataKey="egresos" name="Egresos" stroke="#ef4444" strokeWidth={3} dot={false} />
+                    <Line type="monotone" dataKey="neto" name="Neto" stroke="#020873" strokeWidth={3} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="apple-card p-5">
+              <h2 className="mb-4 text-lg font-black text-slate-900">Metodos de pago</h2>
+              <div className="h-72">
+                {methodData.length ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={methodData} dataKey="value" nameKey="name" innerRadius={58} outerRadius={92} paddingAngle={3}>
+                        {methodData.map((entry, index) => <Cell key={entry.name} fill={METHOD_COLORS[index % METHOD_COLORS.length]} />)}
+                      </Pie>
+                      <Tooltip formatter={(value) => formatPEN(value)} />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex h-full items-center justify-center rounded-3xl bg-slate-50 text-sm font-bold text-slate-400">Sin ingresos para graficar.</div>
+                )}
+              </div>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.2fr_0.8fr]">
@@ -607,13 +930,54 @@ export default function Caja() {
                 <ShieldCheck size={19} className="text-blue-600" /> Alertas y controles
               </h2>
               <div className="space-y-3">
-                {(activeWarnings.length ? activeWarnings : ['Caja operando sin alertas criticas.']).map((warning) => (
-                  <div key={warning} className={`rounded-2xl border p-4 text-sm font-semibold leading-5 ${
+                {(activeWarnings.length ? activeWarnings : [{ id: 'ok', message: 'Caja operando sin alertas criticas.', tab: 'dashboard' }]).map((warning) => (
+                  <button key={warning.id} type="button" onClick={() => navigate(`/caja/${warning.tab}`)} className={`w-full rounded-2xl border p-4 text-left text-sm font-semibold leading-5 transition hover:-translate-y-0.5 ${
                     activeWarnings.length ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-700'
                   }`}>
-                    {warning}
-                  </div>
+                    {warning.message}
+                  </button>
                 ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.85fr_1.15fr]">
+            <div className="apple-card p-5">
+              <h2 className="mb-4 text-lg font-black text-slate-900">Comparativo por turno</h2>
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={turnoData} margin={{ left: 0, right: 10, top: 8, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="turno" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(value) => `S/${Number(value).toLocaleString('es-PE')}`} width={72} />
+                    <Tooltip formatter={(value) => formatPEN(value)} />
+                    <Legend />
+                    <Bar dataKey="ingresos" name="Ingresos" fill="#05C7F2" radius={[8, 8, 0, 0]} />
+                    <Bar dataKey="egresos" name="Egresos" fill="#ef4444" radius={[8, 8, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="apple-card overflow-hidden">
+              <div className="border-b border-slate-100 p-5">
+                <h2 className="text-lg font-black text-slate-900">Ultimos movimientos</h2>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="erp-table">
+                  <thead><tr><th>Fecha</th><th>Concepto</th><th>Metodo</th><th>Monto</th><th>Estado</th></tr></thead>
+                  <tbody>
+                    {recentMovements.length === 0 ? <tr><td colSpan={5} className="py-8 text-center text-slate-400">Sin movimientos.</td></tr> : recentMovements.map((item) => (
+                      <tr key={item.id}>
+                        <td className="text-xs font-semibold text-slate-500">{new Date(movementDate(item)).toLocaleString('es-PE')}</td>
+                        <td className="font-bold text-slate-900">{item.concepto || '-'}</td>
+                        <td>{methodLabel(item.metodo_pago)}</td>
+                        <td className={`font-black ${item.tipo === 'ingreso' ? 'text-emerald-700' : 'text-red-700'}`}>{formatPEN(item.monto)}</td>
+                        <td><span className={`badge ${badgeByStatus(item.estado)}`}>{item.estado || 'validado'}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
@@ -769,22 +1133,80 @@ export default function Caja() {
       )}
 
       {activeTab === 'reportes' && (
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.8fr_1.2fr]">
           <div className="apple-card p-5">
-            <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900"><Download size={19} className="text-blue-600" /> Reportes listos</h2>
-            {['Reporte diario por turno', 'Reporte mensual de flujo de caja', 'Historico de movimientos filtrado', 'Arqueo y rendicion a gerencia', 'Conciliacion digital por canal'].map((item) => (
-              <div key={item} className="mb-3 flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 p-4 last:mb-0">
-                <span className="font-bold text-slate-700">{item}</span>
-                <span className="badge badge-blue">Preparado</span>
-              </div>
-            ))}
+            <div className="mb-5 flex items-center gap-2">
+              <Download size={19} className="text-blue-600" />
+              <h2 className="text-lg font-black text-slate-900">Generador de reportes</h2>
+            </div>
+            <div className="grid grid-cols-1 gap-3">
+              <Field label="Rango">
+                <select className="erp-input" value={reportScope} onChange={(e) => setReportScope(e.target.value)}>
+                  <option value="7d">Ultimos 7 dias</option>
+                  <option value="30d">Ultimos 30 dias</option>
+                </select>
+              </Field>
+              <button onClick={exportPdf} className="btn-apple-primary justify-center"><FileText size={16} /> Exportar PDF</button>
+              <button onClick={exportExcel} className="btn-apple-secondary justify-center"><Download size={16} /> Exportar Excel</button>
+              <button onClick={printReport} className="btn-apple-secondary justify-center"><Archive size={16} /> Imprimir</button>
+              <button onClick={sendReportEmail} className="btn-apple-secondary justify-center"><CreditCard size={16} /> Enviar por correo</button>
+            </div>
+            <div className="mt-5 space-y-3">
+              {[
+                ['Balance neto', formatPEN(totals.saldo)],
+                ['Digital sobre ingresos', `${pctOf(totals.digital, totals.ingresos, 1)}%`],
+                ['Movimientos exportables', scopedReportMovements.length],
+                ['Riesgo operativo', activeWarnings.length ? 'Revisar' : 'Controlado'],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-2xl bg-slate-50 p-4">
+                  <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-400">{label}</p>
+                  <p className="mt-1 text-2xl font-black text-slate-900">{value}</p>
+                </div>
+              ))}
+            </div>
           </div>
-          <div className="apple-card p-5">
-            <h2 className="mb-4 text-lg font-black text-slate-900">Resumen gerencial</h2>
-            <div className="space-y-3">
-              <div className="rounded-2xl bg-slate-50 p-4"><p className="text-xs font-black uppercase text-slate-400">Balance neto</p><p className="text-2xl font-black text-slate-900">{formatPEN(totals.saldo)}</p></div>
-              <div className="rounded-2xl bg-slate-50 p-4"><p className="text-xs font-black uppercase text-slate-400">Efectivo vs digital</p><p className="text-2xl font-black text-slate-900">{pctOf(totals.digital, totals.ingresos, 1)}% digital</p></div>
-              <div className="rounded-2xl bg-slate-50 p-4"><p className="text-xs font-black uppercase text-slate-400">Riesgo operativo</p><p className="text-2xl font-black text-slate-900">{activeWarnings.length ? 'Revisar' : 'Controlado'}</p></div>
+
+          <div className="space-y-6">
+            <div className="apple-card p-5">
+              <h2 className="mb-4 text-lg font-black text-slate-900">Vista previa del reporte</h2>
+              <div className="h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={trendData} margin={{ left: 0, right: 12, top: 8, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="dia" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(value) => `S/${Number(value).toLocaleString('es-PE')}`} width={72} />
+                    <Tooltip formatter={(value) => formatPEN(value)} />
+                    <Legend />
+                    <Bar dataKey="ingresos" name="Ingresos" fill="#05C7F2" radius={[8, 8, 0, 0]} />
+                    <Bar dataKey="egresos" name="Egresos" fill="#ef4444" radius={[8, 8, 0, 0]} />
+                    <Bar dataKey="neto" name="Neto" fill="#020873" radius={[8, 8, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="apple-card overflow-hidden">
+              <div className="border-b border-slate-100 p-5">
+                <h2 className="text-lg font-black text-slate-900">Movimientos incluidos</h2>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="erp-table min-w-[900px]">
+                  <thead><tr><th>Fecha</th><th>Tipo</th><th>Concepto</th><th>Metodo</th><th>Monto</th><th>Estado</th></tr></thead>
+                  <tbody>
+                    {scopedReportMovements.slice(0, 12).map((item) => (
+                      <tr key={item.id}>
+                        <td>{new Date(movementDate(item)).toLocaleString('es-PE')}</td>
+                        <td><span className={`badge ${item.tipo === 'ingreso' ? 'badge-green' : 'badge-red'}`}>{item.tipo}</span></td>
+                        <td className="font-bold text-slate-900">{item.concepto || '-'}</td>
+                        <td>{methodLabel(item.metodo_pago)}</td>
+                        <td className="font-black text-slate-900">{formatPEN(item.monto)}</td>
+                        <td><span className={`badge ${badgeByStatus(item.estado)}`}>{item.estado || 'validado'}</span></td>
+                      </tr>
+                    ))}
+                    {scopedReportMovements.length === 0 && <tr><td colSpan={6} className="py-8 text-center text-slate-400">Sin movimientos para exportar.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>
@@ -839,16 +1261,16 @@ export default function Caja() {
 
       {modal === 'movimiento' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-3 backdrop-blur-sm">
-          <div className="max-h-[92vh] w-full max-w-4xl overflow-hidden rounded-[24px] bg-white shadow-2xl">
+          <div role="dialog" aria-modal="true" className="max-h-[92vh] w-full max-w-4xl overflow-hidden rounded-[24px] bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
               <div>
                 <h2 className="text-lg font-black text-slate-900">{movementForm.tipo === 'ingreso' ? 'Nuevo ingreso' : 'Nuevo egreso'}</h2>
                 <p className="text-xs font-medium text-slate-500">Validacion de turno, comprobante, metodo y operacion.</p>
               </div>
-              <button onClick={() => setModal(null)} className="rounded-full p-2 text-slate-400 hover:bg-slate-50"><X size={20} /></button>
+              <button onClick={closeModal} aria-label="Cerrar modal" className="rounded-full p-2 text-slate-400 hover:bg-slate-50"><X size={20} /></button>
             </div>
             <div className="max-h-[72vh] overflow-y-auto p-5">
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <fieldset disabled={saving} className="grid grid-cols-1 gap-3 disabled:opacity-70 md:grid-cols-2">
                 <Field label="Tipo"><select className="erp-input" value={movementForm.tipo} onChange={(e) => setMovementForm({ ...movementForm, tipo: e.target.value })}><option value="ingreso">Ingreso</option><option value="egreso">Egreso</option></select></Field>
                 <Field label="Turno"><select className="erp-input" value={movementForm.turno} onChange={(e) => setMovementForm({ ...movementForm, turno: e.target.value })}>{TURNOS.map((item) => <option key={item.id} value={item.id}>{item.short}</option>)}</select></Field>
                 {movementForm.tipo === 'ingreso' && (
@@ -873,7 +1295,7 @@ export default function Caja() {
                 <Field label="Responsable"><input className="erp-input" value={movementForm.responsable} onChange={(e) => setMovementForm({ ...movementForm, responsable: e.target.value })} placeholder="Cajera / proveedor / area" /></Field>
                 <Field label="URL voucher"><input className="erp-input" value={movementForm.comprobante_url} onChange={(e) => setMovementForm({ ...movementForm, comprobante_url: e.target.value })} /></Field>
                 <Field label="Observacion" wide><input className="erp-input" value={movementForm.observacion} onChange={(e) => setMovementForm({ ...movementForm, observacion: e.target.value })} /></Field>
-              </div>
+              </fieldset>
               {DIGITAL_METHODS.has(movementForm.metodo_pago) && !movementForm.numero_operacion && (
                 <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-800">
                   Todo pago digital exige numero de operacion para conciliacion.
@@ -886,7 +1308,7 @@ export default function Caja() {
               )}
             </div>
             <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-4">
-              <button onClick={() => setModal(null)} className="btn-apple-secondary">Cancelar</button>
+              <button onClick={closeModal} disabled={saving} className="btn-apple-secondary">Cancelar</button>
               <button onClick={registrarMovimiento} disabled={saving} className="btn-apple-primary"><Save size={16} /> {saving ? 'Guardando...' : 'Guardar'}</button>
             </div>
           </div>
