@@ -247,6 +247,170 @@ const CRITICAL_PERMISSIONS = new Set([
   'ventas_entregables',
 ]);
 
+const AREA_MODULE_GOVERNANCE = [
+  {
+    id: 'comercial',
+    area: 'Ventas',
+    title: 'Area Comercial',
+    description: 'Controla leads, KOMMO, seguimiento comercial, promesas de pago, eventos 360, ranking, comisiones, incidencias y reportes comerciales.',
+    ownerRole: 'Jefe de ventas',
+    supervisorRole: 'Supervisor comercial',
+    color: 'blue',
+    modules: [
+      {
+        name: 'Ventas',
+        submodules: [
+          { key: 'ventas_dashboard', risk: 'medio', actions: ['ver', 'editar', 'exportar'] },
+          { key: 'ventas_kommo', risk: 'alto', actions: ['ver', 'crear', 'editar', 'reasignar'] },
+          { key: 'ventas_seguimiento', risk: 'medio', actions: ['ver', 'crear', 'editar', 'exportar'] },
+          { key: 'ventas_promesas', risk: 'alto', actions: ['ver', 'crear', 'editar', 'liberar'] },
+          { key: 'ventas_eventos', risk: 'medio', actions: ['ver', 'editar'] },
+          { key: 'ventas_ranking', risk: 'medio', actions: ['ver', 'exportar'] },
+          { key: 'ventas_comisiones', risk: 'critico', actions: ['ver', 'editar', 'aprobar', 'exportar'] },
+          { key: 'ventas_alertas', risk: 'alto', actions: ['ver', 'editar'] },
+          { key: 'ventas_entregables', risk: 'alto', actions: ['ver', 'exportar', 'aprobar'] },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'caja',
+    area: 'Caja',
+    title: 'Caja y Pagos',
+    description: 'Controla ingresos, egresos, apertura y cierre de turno, arqueo fisico, rendicion a gerencia, conciliacion y reportes de caja.',
+    ownerRole: 'Responsable financiero',
+    supervisorRole: 'Caja operativo',
+    color: 'cyan',
+    modules: [
+      {
+        name: 'Caja y Pagos',
+        submodules: [
+          { key: 'caja_dashboard', risk: 'medio', actions: ['ver', 'exportar'] },
+          { key: 'caja_turnos', risk: 'alto', actions: ['ver', 'crear', 'cerrar', 'reabrir'] },
+          { key: 'caja_ingresos', risk: 'alto', actions: ['ver', 'crear', 'editar'] },
+          { key: 'caja_egresos', risk: 'alto', actions: ['ver', 'crear', 'editar', 'aprobar'] },
+          { key: 'caja_arqueo', risk: 'critico', actions: ['ver', 'crear', 'cerrar'] },
+          { key: 'caja_rendicion', risk: 'critico', actions: ['ver', 'crear', 'aprobar'] },
+          { key: 'caja_conciliacion', risk: 'critico', actions: ['ver', 'editar', 'aprobar'] },
+          { key: 'caja_historico', risk: 'medio', actions: ['ver', 'exportar'] },
+          { key: 'caja_reportes', risk: 'medio', actions: ['ver', 'exportar'] },
+          { key: 'caja_parametros', risk: 'critico', actions: ['ver', 'editar'] },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'marketing',
+    area: 'Marketing',
+    title: 'Area de Marketing',
+    description: 'Gestiona campanas, UTMs, fuentes, plantillas comerciales, biblioteca de contenidos, rendimiento de leads y soporte comercial.',
+    ownerRole: 'Marketing administrador',
+    supervisorRole: 'Marketing lectura',
+    color: 'purple',
+    modules: [
+      {
+        name: 'Marketing',
+        submodules: [
+          { key: 'marketing_dashboard', risk: 'medio', actions: ['ver', 'exportar'] },
+          { key: 'marketing_campanas', risk: 'alto', actions: ['ver', 'crear', 'editar', 'exportar'] },
+          { key: 'marketing_metricas', risk: 'medio', actions: ['ver', 'exportar'] },
+          { key: 'marketing_planeacion', risk: 'medio', actions: ['ver', 'crear', 'editar'] },
+          { key: 'marketing_crm', risk: 'alto', actions: ['ver', 'editar'] },
+          { key: 'ventas_marketing', risk: 'medio', actions: ['ver', 'editar', 'exportar'] },
+          { key: 'ventas_biblioteca', risk: 'medio', actions: ['ver', 'crear', 'editar'] },
+          { key: 'ventas_grupos', risk: 'medio', actions: ['ver', 'editar'] },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'academico',
+    area: 'Academico',
+    title: 'Coordinacion Academica',
+    description: 'Visualiza y actualiza informacion academica relacionada a eventos, cronogramas, certificados, accesos y validaciones para ventas.',
+    ownerRole: 'Academico',
+    supervisorRole: 'Academico',
+    color: 'green',
+    modules: [
+      {
+        name: 'Gestion Academica',
+        submodules: [
+          { key: 'ventas_eventos', risk: 'medio', actions: ['ver', 'editar'] },
+          { key: 'ventas_coordinacion', risk: 'alto', actions: ['ver', 'editar', 'responder'] },
+          { key: 'ventas_biblioteca', risk: 'medio', actions: ['ver'] },
+          { key: 'ventas_entregables', risk: 'medio', actions: ['ver'] },
+          { key: 'Reportes', risk: 'medio', actions: ['ver', 'exportar'] },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'direccion',
+    area: 'Direccion',
+    title: 'Direccion y Gerencia',
+    description: 'Acceso ejecutivo para revisar indicadores, reportes, finanzas, resultados comerciales, auditoria y decisiones criticas.',
+    ownerRole: 'Direccion',
+    supervisorRole: 'Administrador general',
+    color: 'indigo',
+    modules: [
+      {
+        name: 'Gerencia',
+        submodules: [
+          { key: 'Dashboard', risk: 'medio', actions: ['ver'] },
+          { key: 'Ventas', risk: 'medio', actions: ['ver', 'exportar'] },
+          { key: 'Finanzas', risk: 'critico', actions: ['ver', 'exportar', 'aprobar'] },
+          { key: 'Reportes', risk: 'alto', actions: ['ver', 'exportar'] },
+          { key: 'ventas_comisiones', risk: 'critico', actions: ['ver', 'aprobar'] },
+          { key: 'ventas_entregables', risk: 'alto', actions: ['ver', 'aprobar'] },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'sistemas',
+    area: 'Sistemas',
+    title: 'Sistemas / Administracion ERP',
+    description: 'Administra usuarios, permisos, modulos, submodulos, seguridad, auditoria, integraciones y configuracion tecnica del sistema.',
+    ownerRole: 'Superadministrador tecnico',
+    supervisorRole: 'Administrador general',
+    color: 'slate',
+    modules: [
+      {
+        name: 'Administracion ERP',
+        submodules: [
+          { key: 'Administrar Usuarios', risk: 'critico', actions: ['ver', 'crear', 'editar', 'eliminar', 'aprobar'] },
+          { key: 'admin usuarios', risk: 'critico', actions: ['ver', 'crear', 'editar', 'eliminar'] },
+          { key: 'ventas_importador', risk: 'critico', actions: ['ver', 'crear', 'editar'] },
+          { key: 'ventas_administracion', risk: 'critico', actions: ['ver', 'editar'] },
+          { key: 'caja_parametros', risk: 'critico', actions: ['ver', 'editar'] },
+          { key: 'Reportes', risk: 'alto', actions: ['ver', 'exportar'] },
+        ],
+      },
+    ],
+  },
+];
+
+const ACTION_LABELS = {
+  ver: 'Ver',
+  crear: 'Crear',
+  editar: 'Editar',
+  eliminar: 'Eliminar',
+  aprobar: 'Aprobar',
+  exportar: 'Exportar',
+  reasignar: 'Reasignar',
+  liberar: 'Liberar',
+  cerrar: 'Cerrar',
+  reabrir: 'Reabrir',
+  responder: 'Responder',
+};
+
+const RISK_TONE = {
+  bajo: 'green',
+  medio: 'blue',
+  alto: 'amber',
+  critico: 'red',
+};
+
 const FORM_INPUT_CLASS = 'h-10 w-full rounded-full border border-black/10 bg-white px-4 text-sm font-normal text-slate-800 outline-none transition placeholder:text-slate-300 focus:border-[#05C7F2] focus:ring-4 focus:ring-[#05C7F2]/15';
 const PRIMARY_BUTTON_CLASS = 'inline-flex h-10 items-center justify-center gap-2 rounded-full bg-[#020873] px-5 text-sm font-medium text-white shadow-[0_4px_16px_rgba(0,0,0,0.08),0_2px_6px_rgba(0,0,0,0.04)] transition hover:bg-[#03115f] active:scale-[0.97] disabled:opacity-60';
 const SECONDARY_BUTTON_CLASS = 'inline-flex h-11 items-center justify-center gap-2 rounded-full border border-black/10 bg-white px-4 text-sm font-medium text-slate-700 transition hover:border-[#05C7F2] hover:text-[#020873] active:scale-[0.97]';
@@ -1044,9 +1208,245 @@ function RolesView({ roles }) {
 }
 
 function AccessMatrix({ modulosTree, roles }) {
+  const [selectedArea, setSelectedArea] = useState('Todas');
+  const [selectedRisk, setSelectedRisk] = useState('Todos');
+  const [expandedArea, setExpandedArea] = useState(AREA_MODULE_GOVERNANCE[0]?.id || null);
+  const [viewMode, setViewMode] = useState('gobierno');
+
+  const filteredAreas = AREA_MODULE_GOVERNANCE.filter((area) => {
+    const areaMatch = selectedArea === 'Todas' || area.area === selectedArea;
+    const riskMatch = selectedRisk === 'Todos' || area.modules.some((module) =>
+      module.submodules.some((submodule) => submodule.risk === selectedRisk),
+    );
+    return areaMatch && riskMatch;
+  });
+
+  const getRolesForSubmodule = (submoduleKey) =>
+    roles.filter((role) =>
+      role.permissions.includes(submoduleKey) ||
+      role.permissions.includes(formatModuleName(submoduleKey)),
+    );
+
+  const getAreaStats = (area) => {
+    const submodules = area.modules.flatMap((module) => module.submodules);
+    const critical = submodules.filter((submodule) => submodule.risk === 'critico').length;
+    const high = submodules.filter((submodule) => submodule.risk === 'alto').length;
+    const assignedRoles = new Set();
+
+    submodules.forEach((submodule) => {
+      getRolesForSubmodule(submodule.key).forEach((role) => assignedRoles.add(role.id));
+    });
+
+    return {
+      modules: area.modules.length,
+      submodules: submodules.length,
+      critical,
+      high,
+      roles: assignedRoles.size,
+    };
+  };
+
+  return (
+    <div className="space-y-5">
+      <section className="rounded-[24px] border border-black/5 bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.06),0_1px_2px_rgba(0,0,0,0.04)]">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <h2 className="text-xl font-semibold tracking-tight text-slate-950">Gestion por area y modulo</h2>
+            <p className="mt-1 max-w-3xl text-sm font-normal leading-6 text-slate-500">
+              Esta vista ordena accesos del ERP por area, modulo, submodulo, rol y nivel de riesgo. Mantiene el modelo actual de puede ver, pero deja preparado el gobierno por acciones.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="inline-flex rounded-full border border-black/10 bg-slate-50 p-1">
+              {[
+                ['gobierno', 'Gobierno'],
+                ['tecnica', 'Matriz tecnica'],
+              ].map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setViewMode(id)}
+                  className={`h-9 rounded-full px-4 text-xs font-semibold transition ${
+                    viewMode === id ? 'bg-[#020873] text-white shadow-sm' : 'text-slate-500 hover:text-[#020873]'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <select
+              value={selectedArea}
+              onChange={(event) => setSelectedArea(event.target.value)}
+              className="h-10 rounded-full border border-black/10 bg-white px-4 text-sm font-medium text-slate-600 outline-none transition focus:border-[#05C7F2] focus:ring-4 focus:ring-[#05C7F2]/15"
+            >
+              {['Todas', ...AREA_MODULE_GOVERNANCE.map((area) => area.area)].map((area) => (
+                <option key={area}>{area}</option>
+              ))}
+            </select>
+
+            <select
+              value={selectedRisk}
+              onChange={(event) => setSelectedRisk(event.target.value)}
+              className="h-10 rounded-full border border-black/10 bg-white px-4 text-sm font-medium text-slate-600 outline-none transition focus:border-[#05C7F2] focus:ring-4 focus:ring-[#05C7F2]/15"
+            >
+              {['Todos', 'medio', 'alto', 'critico'].map((risk) => (
+                <option key={risk} value={risk}>
+                  {risk === 'Todos' ? 'Todos los riesgos' : `Riesgo ${risk}`}
+                </option>
+              ))}
+            </select>
+
+            <button onClick={() => exportAccessMatrix(filteredAreas, roles)} className={SECONDARY_BUTTON_CLASS}>
+              <Download size={16} /> Exportar matriz
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {viewMode === 'tecnica' ? (
+        <TechnicalAccessMatrix modulosTree={modulosTree} roles={roles} />
+      ) : (
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          {filteredAreas.map((area) => {
+            const stats = getAreaStats(area);
+            const isExpanded = expandedArea === area.id;
+
+            return (
+              <section
+                key={area.id}
+                className="overflow-hidden rounded-[24px] border border-black/5 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.06),0_1px_2px_rgba(0,0,0,0.04)]"
+              >
+                <button
+                  type="button"
+                  onClick={() => setExpandedArea(isExpanded ? null : area.id)}
+                  className="flex w-full flex-col gap-4 border-b border-slate-100 p-5 text-left transition hover:bg-slate-50/70"
+                >
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div className="flex items-start gap-3">
+                      <div className={`flex h-12 w-12 items-center justify-center rounded-2xl ${getAreaIconClass(area.color)}`}>
+                        <Layers size={20} />
+                      </div>
+
+                      <div>
+                        <h3 className="text-lg font-semibold text-slate-950">{area.title}</h3>
+                        <p className="mt-1 text-sm font-normal leading-6 text-slate-500">{area.description}</p>
+                      </div>
+                    </div>
+
+                    <Badge tone={area.color === 'slate' ? 'slate' : 'blue'}>{isExpanded ? 'Ocultar' : 'Ver detalle'}</Badge>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+                    <InfoTile label="Modulos" value={stats.modules} />
+                    <InfoTile label="Submodulos" value={stats.submodules} />
+                    <InfoTile label="Roles" value={stats.roles} />
+                    <InfoTile label="Criticos" value={stats.critical} />
+                    <InfoTile label="Alto riesgo" value={stats.high} />
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Badge tone="blue">Responsable: {area.ownerRole}</Badge>
+                    <Badge tone="green">Supervisor: {area.supervisorRole}</Badge>
+                    {stats.critical > 0 && <Badge tone="red">{stats.critical} permisos criticos</Badge>}
+                  </div>
+                </button>
+
+                {isExpanded && (
+                  <div className="space-y-4 p-5">
+                    {area.modules.map((module) => (
+                      <div key={`${area.id}-${module.name}`} className="overflow-hidden rounded-[20px] border border-black/5">
+                        <div className="flex items-center justify-between gap-3 bg-slate-50 px-4 py-3">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-950">{formatModuleName(module.name)}</p>
+                            <p className="text-xs font-semibold text-slate-400">{module.submodules.length} submodulos configurados</p>
+                          </div>
+
+                          <button type="button" className="rounded-full bg-white px-3 py-2 text-xs font-semibold text-[#020873] ring-1 ring-black/10 transition hover:ring-[#05C7F2]">
+                            Configurar modulo
+                          </button>
+                        </div>
+
+                        <div className="divide-y divide-slate-100">
+                          {module.submodules.map((submodule) => {
+                            const relatedRoles = getRolesForSubmodule(submodule.key);
+                            const isCritical = CRITICAL_PERMISSIONS.has(submodule.key) || submodule.risk === 'critico';
+
+                            return (
+                              <div key={submodule.key} className="grid grid-cols-1 gap-4 px-4 py-4 xl:grid-cols-[minmax(0,1fr)_220px_160px]">
+                                <div>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <p className="text-sm font-semibold text-slate-800">{formatModuleName(submodule.key)}</p>
+                                    <Badge tone={RISK_TONE[submodule.risk] || 'blue'}>Riesgo {submodule.risk}</Badge>
+                                    {isCritical && <Badge tone="red">Permiso sensible</Badge>}
+                                  </div>
+
+                                  <div className="mt-2 flex flex-wrap gap-1.5">
+                                    {submodule.actions.map((action) => (
+                                      <span key={`${submodule.key}-${action}`} className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500">
+                                        {ACTION_LABELS[action] || action}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Roles con acceso</p>
+
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {relatedRoles.length > 0 ? (
+                                      relatedRoles.slice(0, 4).map((role) => (
+                                        <Badge key={`${submodule.key}-${role.id}`} tone="blue">{role.title}</Badge>
+                                      ))
+                                    ) : (
+                                      <Badge tone="red">Sin rol asignado</Badge>
+                                    )}
+
+                                    {relatedRoles.length > 4 && <Badge tone="blue">+{relatedRoles.length - 4}</Badge>}
+                                  </div>
+                                </div>
+
+                                <div className="flex flex-col gap-2">
+                                  <button type="button" className="h-9 rounded-full border border-black/10 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:border-[#05C7F2] hover:text-[#020873]">
+                                    Ver permisos
+                                  </button>
+
+                                  <button type="button" className="h-9 rounded-full bg-[#020873] px-3 text-xs font-semibold text-white transition hover:bg-[#03115f]">
+                                    Editar acceso
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                      <button type="button" className={SECONDARY_BUTTON_CLASS}><Eye size={16} /> Ver usuarios del area</button>
+                      <button type="button" className={SECONDARY_BUTTON_CLASS}><ShieldCheck size={16} /> Revisar roles</button>
+                      <button type="button" className={PRIMARY_BUTTON_CLASS}><KeyRound size={16} /> Configurar accesos</button>
+                    </div>
+                  </div>
+                )}
+              </section>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TechnicalAccessMatrix({ modulosTree, roles }) {
   const visibleModules = modulosTree.length ? modulosTree : [{ id: 'fallback-ventas', nombre: 'Ventas', children: [] }];
   return (
     <div className="overflow-hidden rounded-[24px] border border-black/5 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.06),0_1px_2px_rgba(0,0,0,0.04)]">
+      <div className="border-b border-slate-100 p-5">
+        <h2 className="text-lg font-semibold text-slate-950">Matriz tecnica</h2>
+        <p className="mt-1 text-sm font-medium text-slate-500">Vista plana por rol y modulo para administracion tecnica del sistema.</p>
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -1077,6 +1477,51 @@ function AccessMatrix({ modulosTree, roles }) {
       </div>
     </div>
   );
+}
+
+function getAreaIconClass(color) {
+  const classes = {
+    blue: 'bg-blue-50 text-[#020873]',
+    cyan: 'bg-cyan-50 text-cyan-700',
+    purple: 'bg-purple-50 text-purple-700',
+    green: 'bg-emerald-50 text-emerald-700',
+    indigo: 'bg-indigo-50 text-indigo-700',
+    slate: 'bg-slate-100 text-slate-700',
+  };
+
+  return classes[color] || classes.blue;
+}
+
+function exportAccessMatrix(areas, roles) {
+  const rows = ['Area,Modulo,Submodulo,Riesgo,Acciones,Roles'];
+  areas.forEach((area) => {
+    area.modules.forEach((module) => {
+      module.submodules.forEach((submodule) => {
+        const relatedRoles = roles
+          .filter((role) => role.permissions.includes(submodule.key) || role.permissions.includes(formatModuleName(submodule.key)))
+          .map((role) => role.title)
+          .join(' | ');
+        rows.push([
+          area.title,
+          formatModuleName(module.name),
+          formatModuleName(submodule.key),
+          submodule.risk,
+          submodule.actions.map((action) => ACTION_LABELS[action] || action).join(' | '),
+          relatedRoles || 'Sin rol asignado',
+        ].map((value) => `"${String(value).replaceAll('"', '""')}"`).join(','));
+      });
+    });
+  });
+
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `matriz-accesos-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }
 
 function RequestsView() {
