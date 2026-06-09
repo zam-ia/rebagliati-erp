@@ -107,7 +107,7 @@ const ACCESS_ROLES = [
     position: 'Direccion ejecutiva',
     area: 'Direccion',
     level: 'Direccion',
-    permissions: ['Dashboard', 'Ventas', 'ventas_dashboard', 'ventas_ranking', 'ventas_metas', 'ventas_eventos', 'ventas_marketing', 'ventas_comisiones', 'ventas_entregables', 'ventas_alertas', 'Finanzas', 'Reportes'],
+    permissions: ['Dashboard', 'Ventas', 'ventas_dashboard', 'ventas_pizarra', 'ventas_ranking', 'ventas_metas', 'ventas_eventos', 'ventas_marketing', 'ventas_comisiones', 'ventas_entregables', 'ventas_alertas', 'Finanzas', 'Reportes'],
   },
   {
     id: 'jefe_ventas',
@@ -115,7 +115,7 @@ const ACCESS_ROLES = [
     position: 'Jefe de ventas',
     area: 'Ventas',
     level: 'Jefatura',
-    permissions: ['Ventas', 'ventas_dashboard', 'ventas_seguimiento', 'ventas_nueva_venta', 'ventas_ranking', 'ventas_metas', 'ventas_kommo', 'ventas_eventos', 'ventas_marketing', 'ventas_checklist', 'ventas_grupos', 'ventas_promesas', 'ventas_comisiones', 'ventas_biblioteca', 'ventas_show', 'ventas_coordinacion', 'ventas_plantillas', 'ventas_entregables', 'ventas_accesos', 'ventas_alertas', 'ventas_importador', 'ventas_administracion'],
+    permissions: ['Ventas', 'ventas_dashboard', 'ventas_pizarra', 'ventas_seguimiento', 'ventas_nueva_venta', 'ventas_ranking', 'ventas_metas', 'ventas_kommo', 'ventas_eventos', 'ventas_marketing', 'ventas_checklist', 'ventas_grupos', 'ventas_promesas', 'ventas_comisiones', 'ventas_biblioteca', 'ventas_show', 'ventas_coordinacion', 'ventas_plantillas', 'ventas_entregables', 'ventas_accesos', 'ventas_alertas', 'ventas_importador', 'ventas_administracion'],
   },
   {
     id: 'supervisor_comercial',
@@ -123,7 +123,7 @@ const ACCESS_ROLES = [
     position: 'Supervisor comercial',
     area: 'Ventas',
     level: 'Supervision',
-    permissions: ['Ventas', 'ventas_dashboard', 'ventas_seguimiento', 'ventas_ranking', 'ventas_metas', 'ventas_kommo', 'ventas_eventos', 'ventas_checklist', 'ventas_grupos', 'ventas_promesas', 'ventas_show', 'ventas_alertas'],
+    permissions: ['Ventas', 'ventas_dashboard', 'ventas_pizarra', 'ventas_seguimiento', 'ventas_ranking', 'ventas_metas', 'ventas_kommo', 'ventas_eventos', 'ventas_checklist', 'ventas_grupos', 'ventas_promesas', 'ventas_show', 'ventas_alertas'],
   },
   {
     id: 'ejecutivo_ventas',
@@ -185,6 +185,7 @@ const ACCESS_ROLES = [
 
 const MODULE_LABELS = {
   ventas_dashboard: 'Panel diario',
+  ventas_pizarra: 'Pizarra digital',
   ventas_seguimiento: 'Seguimiento comercial',
   ventas_nueva_venta: 'Ventas e inscripciones',
   ventas_ranking: 'Ranking y productividad',
@@ -261,6 +262,7 @@ const AREA_MODULE_GOVERNANCE = [
         name: 'Ventas',
         submodules: [
           { key: 'ventas_dashboard', risk: 'medio', actions: ['ver', 'editar', 'exportar'] },
+          { key: 'ventas_pizarra', risk: 'alto', actions: ['ver', 'editar', 'reasignar', 'exportar'] },
           { key: 'ventas_kommo', risk: 'alto', actions: ['ver', 'crear', 'editar', 'reasignar'] },
           { key: 'ventas_seguimiento', risk: 'medio', actions: ['ver', 'crear', 'editar', 'exportar'] },
           { key: 'ventas_promesas', risk: 'alto', actions: ['ver', 'crear', 'editar', 'liberar'] },

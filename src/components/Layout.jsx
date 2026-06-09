@@ -346,6 +346,7 @@ const NAV_GRUPOS = [
         permisos: SALES_PERMISSIONS,
         subItems: [
           { path: '/ventas/resumen',        nombre: 'Panel diario', icon: Activity, permiso: 'ventas_dashboard' },
+          { path: '/ventas/pizarra',        nombre: 'Pizarra digital', icon: ClipboardList, permiso: 'ventas_pizarra' },
           { path: '/ventas/kommo',          nombre: 'Leads y KOMMO', icon: MessageCircle, permiso: 'ventas_kommo' },
           { path: '/ventas/seguimiento',    nombre: 'Seguimiento', icon: ClipboardList, permiso: 'ventas_seguimiento' },
           { path: '/ventas/promesas',       nombre: 'Promesas', icon: Clock, permiso: 'ventas_promesas' },

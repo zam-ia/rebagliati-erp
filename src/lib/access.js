@@ -3,6 +3,7 @@ export const ADMIN_EMAIL = 'admin@rebagliati.com';
 export const SALES_PERMISSIONS = [
   'Ventas',
   'ventas_dashboard',
+  'ventas_pizarra',
   'ventas_seguimiento',
   'ventas_nueva_venta',
   'ventas_ranking',
