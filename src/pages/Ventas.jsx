@@ -158,6 +158,13 @@ const DEFAULT_WAPEROS = [
   { id: '654', linea: '654', responsable: 'Mariana', estado: 'Observado' },
 ];
 
+const DEFAULT_SOCIAL_BOARD = [
+  { canal: 'FB', C: 1, D: 0, Obst: 0, mensaje: 'Campana activa' },
+  { canal: 'IG', C: 0, D: 0, Obst: 0, mensaje: 'Historias del dia' },
+  { canal: 'TikTok', C: 90, D: 0, Obst: 0, mensaje: 'Video promocional' },
+  { canal: 'API', C: 691, D: 577, Obst: 670, mensaje: 'Carga automatica' },
+];
+
 const DEFAULT_CUTS = [
   { id: 'apertura', hora: '8:00 am', responsable: 'Patt', valor: 224, estado: 'Hecho' },
   { id: 'medio', hora: '12:30 pm', responsable: 'Renato', valor: 7, estado: 'Revision' },
@@ -174,6 +181,12 @@ const loadLocalJson = (key, fallback) => {
   } catch {
     return fallback;
   }
+};
+
+const loadLocalNumber = (key, fallback) => {
+  if (typeof localStorage === 'undefined') return fallback;
+  const value = Number(localStorage.getItem(key));
+  return Number.isFinite(value) && value > 0 ? value : fallback;
 };
 
 const newExecutiveInitial = {
@@ -469,7 +482,9 @@ const [leadSourceForm, setLeadSourceForm] = useState(emptyLeadSourceForm);
   const [newExecutive, setNewExecutive] = useState(newExecutiveInitial);
   const [pizarraUsers] = useState(() => loadLocalJson('ventas_pizarra_users', DEFAULT_PIZARRA_USERS));
   const [pizarraWaperos] = useState(() => loadLocalJson('ventas_pizarra_waperos', DEFAULT_WAPEROS));
+  const [pizarraSocial, setPizarraSocial] = useState(() => loadLocalJson('ventas_pizarra_social', DEFAULT_SOCIAL_BOARD));
   const [pizarraCuts, setPizarraCuts] = useState(() => loadLocalJson('ventas_pizarra_cuts', DEFAULT_CUTS));
+  const [pizarraMonthlyGoal, setPizarraMonthlyGoal] = useState(() => loadLocalNumber('ventas_meta_mensual', 1800));
   const formWebhookUrl = `${import.meta.env.VITE_SUPABASE_URL || ''}/functions/v1/google-form-leads`;
   const kommoWebhookUrl = `${import.meta.env.VITE_SUPABASE_URL || ''}/functions/v1/kommo-webhook`;
 
@@ -620,8 +635,16 @@ const [leadSourceForm, setLeadSourceForm] = useState(emptyLeadSourceForm);
   }, [pizarraWaperos]);
 
   useEffect(() => {
+    localStorage.setItem('ventas_pizarra_social', JSON.stringify(pizarraSocial));
+  }, [pizarraSocial]);
+
+  useEffect(() => {
     localStorage.setItem('ventas_pizarra_cuts', JSON.stringify(pizarraCuts));
   }, [pizarraCuts]);
+
+  useEffect(() => {
+    localStorage.setItem('ventas_meta_mensual', String(pizarraMonthlyGoal || 1800));
+  }, [pizarraMonthlyGoal]);
 
   useEffect(() => {
     const loadModulePermissions = async () => {
@@ -695,6 +718,7 @@ const [leadSourceForm, setLeadSourceForm] = useState(emptyLeadSourceForm);
   const globalProgress = globalGoal > 0 ? pctOf(metrics.total, globalGoal) : pctOf(metrics.total, 1800);
   const dailyGoal = Math.max(Math.ceil((globalGoal || 1800) / 30), 1);
   const dailyRequired = Math.max(Math.ceil(((globalGoal || 1800) - metrics.total) / 8), 0);
+  const pizarraEffectiveMonthlyGoal = pizarraMonthlyGoal || globalGoal || 1800;
   const todaySales = useMemo(
     () => sales.filter((sale) => sale.sale_date === todayISO()).reduce((sum, sale) => sum + toPositiveNumber(sale.quantity), 0),
     [sales],
@@ -720,9 +744,11 @@ const [leadSourceForm, setLeadSourceForm] = useState(emptyLeadSourceForm);
     pendingContact: leadRows.filter((lead) => !lead.fecha_contacto).length,
   }), [leadRows]);
   const pizarraStats = useMemo(() => {
+    const socialTotal = pizarraSocial.reduce((sum, row) => sum + Number(row.C || 0) + Number(row.D || 0) + Number(row.Obst || 0), 0);
     const pendingCuts = pizarraCuts.filter((item) => item.estado !== 'Hecho').length;
     const availableWsp = pizarraWaperos.filter((item) => item.estado !== 'Bloqueado').length;
     return {
+      socialTotal,
       pendingCuts,
       availableWsp,
       unassigned: kommoMetrics.unassignedMessages,
@@ -731,7 +757,14 @@ const [leadSourceForm, setLeadSourceForm] = useState(emptyLeadSourceForm);
       promises: promiseMetrics.total,
       expiredPromises: promiseMetrics.expired,
     };
-  }, [kommoMetrics, pizarraCuts, pizarraWaperos, promiseMetrics]);
+  }, [kommoMetrics, pizarraCuts, pizarraSocial, pizarraWaperos, promiseMetrics]);
+
+  const pizarraSocialTotals = useMemo(() => pizarraSocial.reduce((totals, row) => ({
+    C: totals.C + Number(row.C || 0),
+    D: totals.D + Number(row.D || 0),
+    Obst: totals.Obst + Number(row.Obst || 0),
+    total: totals.total + Number(row.C || 0) + Number(row.D || 0) + Number(row.Obst || 0),
+  }), { C: 0, D: 0, Obst: 0, total: 0 }), [pizarraSocial]);
 
   const pizarraUserRows = useMemo(() => pizarraUsers.map((slot, index) => {
     const rank = ranking[index] || {};
@@ -751,6 +784,16 @@ const [leadSourceForm, setLeadSourceForm] = useState(emptyLeadSourceForm);
 
   const updateCut = (id, field, value) => {
     setPizarraCuts((current) => current.map((item) => (item.id === id ? { ...item, [field]: field === 'valor' ? Number(value) || 0 : value } : item)));
+  };
+
+  const updateSocial = (canal, field, value) => {
+    setPizarraSocial((current) => current.map((item) => {
+      if (item.canal !== canal) return item;
+      return {
+        ...item,
+        [field]: ['C', 'D', 'Obst'].includes(field) ? Number(value) || 0 : value,
+      };
+    }));
   };
   const eventAnalytics = useMemo(() => {
     const grouped = new Map();
@@ -889,6 +932,39 @@ const [leadSourceForm, setLeadSourceForm] = useState(emptyLeadSourceForm);
       ...current,
     ].slice(0, 25));
   }, []);
+
+  const handleAddManualPromise = () => {
+    const lead = window.prompt('Nombre del lead:');
+    if (!lead?.trim()) return;
+
+    const amountText = window.prompt('Monto S/:');
+    const amount = Number(amountText);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      alert('Ingresa un monto valido para registrar la promesa.');
+      return;
+    }
+
+    const newPromise = {
+      id: `manual-${Date.now()}`,
+      lead: lead.trim(),
+      amount,
+      originalExecutive: 'Manual',
+      currentExecutive: 'Por asignar',
+      executive: 'Por asignar',
+      status: 'pendiente',
+      risk: 'Alta',
+      dueDate: new Date().toISOString().slice(0, 10),
+    };
+
+    setPaymentPromises((current) => [newPromise, ...current]);
+    appendLocalAudit({
+      action: 'promesa_manual',
+      entity_type: 'ventas_promesas_pago',
+      entity_id: newPromise.id,
+      detail: `Nueva promesa manual: ${newPromise.lead} S/${amount.toLocaleString('es-PE')}`,
+      after_data: newPromise,
+    });
+  };
 
   const logSalesAction = useCallback(async ({ action, entityType, entityId, detail, afterData }) => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -1281,6 +1357,57 @@ const handleSave = async () => {
             </div>
           </section>
 
+          <section className="grid grid-cols-1 gap-3 lg:grid-cols-[0.9fr_1.2fr_0.9fr]">
+            <div className="apple-card p-4">
+              <label className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Meta mensual</label>
+              <div className="mt-2 flex items-center gap-2">
+                <input
+                  type="number"
+                  min="1"
+                  value={pizarraEffectiveMonthlyGoal}
+                  onChange={(event) => setPizarraMonthlyGoal(Number(event.target.value) || 1800)}
+                  className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-xl font-black text-slate-950 outline-none focus:border-[#05C7F2]"
+                />
+                <span className="rounded-full bg-cyan-50 px-3 py-2 text-xs font-black text-[#020873]">
+                  {pctOf(metrics.total, pizarraEffectiveMonthlyGoal)}%
+                </span>
+              </div>
+              <p className="mt-2 text-xs font-medium text-slate-500">Objetivo operativo para lectura de pizarra.</p>
+            </div>
+
+            <div className="apple-card p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Redes sociales</p>
+                  <p className="mt-1 text-2xl font-black text-slate-950">{pizarraSocialTotals.total.toLocaleString('es-PE')}</p>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="rounded-2xl bg-slate-50 px-3 py-2">
+                    <p className="text-[10px] font-black text-slate-400">C</p>
+                    <p className="font-black text-slate-950">{pizarraSocialTotals.C}</p>
+                  </div>
+                  <div className="rounded-2xl bg-slate-50 px-3 py-2">
+                    <p className="text-[10px] font-black text-slate-400">D</p>
+                    <p className="font-black text-slate-950">{pizarraSocialTotals.D}</p>
+                  </div>
+                  <div className="rounded-2xl bg-slate-50 px-3 py-2">
+                    <p className="text-[10px] font-black text-slate-400">Obst</p>
+                    <p className="font-black text-slate-950">{pizarraSocialTotals.Obst}</p>
+                  </div>
+                </div>
+              </div>
+              <p className="mt-2 text-xs font-medium text-slate-500">Resumen compacto de mensajes por canal.</p>
+            </div>
+
+            <div className="apple-card p-4">
+              <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Promesa manual</p>
+              <button type="button" onClick={handleAddManualPromise} className="btn-apple-primary mt-2 w-full justify-center">
+                <Plus size={16} /> Agregar promesa
+              </button>
+              <p className="mt-2 text-xs font-medium text-slate-500">Queda registrada en auditoria local de ventas.</p>
+            </div>
+          </section>
+
           <div className="grid grid-cols-1 gap-5 2xl:grid-cols-[1.35fr_0.65fr]">
             <section className="apple-card overflow-hidden">
               <div className="flex flex-col gap-2 border-b border-slate-100 p-5 md:flex-row md:items-center md:justify-between">
@@ -1353,6 +1480,73 @@ const handleSave = async () => {
             </section>
           </div>
 
+          <section className="grid grid-cols-1 gap-5 xl:grid-cols-[1.1fr_0.9fr]">
+            <div className="apple-card overflow-hidden">
+              <div className="border-b border-slate-100 p-5">
+                <h2 className="text-lg font-black text-slate-900">Registro de redes</h2>
+                <p className="mt-1 text-xs font-medium text-slate-500">Cursos, diplomados, Obstetricia y mensaje activo por canal.</p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="erp-table min-w-[720px]">
+                  <thead>
+                    <tr>
+                      <th>Canal</th>
+                      <th>C</th>
+                      <th>D</th>
+                      <th>Obst</th>
+                      <th>Total</th>
+                      <th>Mensaje</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pizarraSocial.map((row) => (
+                      <tr key={row.canal}>
+                        <td className="font-black text-slate-950">{row.canal}</td>
+                        {['C', 'D', 'Obst'].map((field) => (
+                          <td key={field}>
+                            <input
+                              type="number"
+                              value={row[field]}
+                              onChange={(event) => updateSocial(row.canal, field, event.target.value)}
+                              className="h-9 w-16 rounded-xl border border-slate-200 bg-white px-2 text-center text-sm font-black text-slate-900 outline-none focus:border-[#05C7F2]"
+                            />
+                          </td>
+                        ))}
+                        <td className="font-black text-[#020873]">{Number(row.C || 0) + Number(row.D || 0) + Number(row.Obst || 0)}</td>
+                        <td>
+                          <input
+                            type="text"
+                            value={row.mensaje || ''}
+                            onChange={(event) => updateSocial(row.canal, 'mensaje', event.target.value)}
+                            className="h-9 w-56 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none focus:border-[#05C7F2]"
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="apple-card overflow-hidden">
+              <div className="border-b border-slate-100 p-5">
+                <h2 className="text-lg font-black text-slate-900">Lineas especiales</h2>
+                <p className="mt-1 text-xs font-medium text-slate-500">Numeros operativos para API, WhatsApp y asignacion rapida.</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3 p-4">
+                {pizarraWaperos.filter((item) => ['443', '772', '920', '654'].includes(item.id)).map((item) => (
+                  <article key={item.id} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-lg font-black text-slate-950">{item.linea}</p>
+                      <span className={`rounded-full px-2.5 py-1 text-[10px] font-black ${item.estado === 'Observado' ? 'bg-amber-50 text-amber-700' : item.estado === 'Bloqueado' ? 'bg-red-50 text-red-700' : item.estado === 'Por asignar' ? 'bg-slate-100 text-slate-600' : 'bg-emerald-50 text-emerald-700'}`}>{item.estado}</span>
+                    </div>
+                    <p className="mt-2 truncate text-sm font-bold text-slate-600">{item.responsable}</p>
+                  </article>
+                ))}
+              </div>
+            </div>
+          </section>
+
           <section className="apple-card overflow-hidden">
             <div className="flex flex-col gap-2 border-b border-slate-100 p-5 md:flex-row md:items-center md:justify-between">
               <div>
@@ -1369,7 +1563,12 @@ const handleSave = async () => {
                       <p className="text-sm font-black text-slate-950">{cut.hora}</p>
                       <p className="mt-1 text-xs font-bold text-slate-500">{cut.responsable}</p>
                     </div>
-                    <p className="text-xl font-black text-[#020873]">{Number(cut.valor || 0).toLocaleString('es-PE')}</p>
+                    <input
+                      type="number"
+                      value={cut.valor}
+                      onChange={(event) => updateCut(cut.id, 'valor', event.target.value)}
+                      className="h-10 w-20 rounded-2xl border border-slate-200 bg-white px-2 text-center text-lg font-black text-[#020873] outline-none focus:border-[#05C7F2]"
+                    />
                   </div>
                   <select value={cut.estado} onChange={(event) => updateCut(cut.id, 'estado', event.target.value)} className="mt-3 h-9 w-full rounded-full border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-[#05C7F2]">
                     {['Pendiente', 'Revision', 'Hecho'].map((status) => <option key={status}>{status}</option>)}
