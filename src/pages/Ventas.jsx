@@ -391,20 +391,75 @@ function FunnelChart({ data }) {
   );
 }
 
-function ExecutiveBars({ rows, onSelect }) {
+const getInitials = (name = '') => name
+  .split(/\s+/)
+  .filter(Boolean)
+  .slice(0, 2)
+  .map((item) => item[0]?.toUpperCase())
+  .join('') || 'EX';
+
+const goalTone = (progress) => {
+  if (progress >= 100) return { ring: '#10b981', soft: 'bg-emerald-50 text-emerald-700', label: 'Meta lograda' };
+  if (progress >= 80) return { ring: '#05C7F2', soft: 'bg-cyan-50 text-[#020873]', label: 'En ritmo' };
+  if (progress >= 50) return { ring: '#f59e0b', soft: 'bg-amber-50 text-amber-700', label: 'Por reforzar' };
+  return { ring: '#ef4444', soft: 'bg-red-50 text-red-700', label: 'Critico' };
+};
+
+function ExecutiveGoalCards({ rows, onSelect, limit = 8 }) {
+  const orderedRows = rows
+    .filter((row) => row.executive && row.executive !== 'Sin ejecutivo')
+    .sort((a, b) => (b.goalProgress || 0) - (a.goalProgress || 0));
+
   return (
-    <div className="space-y-3">
-      {rows.slice(0, 7).map((row) => {
-        const progress = row.goal ? row.goalProgress : pctOf(row.total, Math.max(rows[0]?.total || 1, 1), 1);
-        const tone = progress >= 90 ? 'bg-emerald-500' : progress >= 70 ? 'bg-amber-500' : 'bg-red-500';
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+      {orderedRows.slice(0, limit).map((row, index) => {
+        const progress = row.goal > 0 ? row.goalProgress : 0;
+        const ringProgress = Math.min(Math.max(progress, 0), 100);
+        const tone = goalTone(progress);
         return (
-          <button key={row.executive_id} onClick={() => onSelect?.(row.executive_id)} className="block w-full rounded-2xl p-2 text-left transition hover:bg-slate-50">
-            <div className="mb-1 flex justify-between gap-3 text-xs font-bold text-slate-500">
-              <span>{row.executive}</span>
-              <span>{row.total} / {row.goal || 's.m.'}</span>
-            </div>
-            <div className="h-3 overflow-hidden rounded-full bg-slate-100">
-              <div className={`h-full rounded-full ${tone}`} style={{ width: `${Math.min(progress, 100)}%` }} />
+          <button
+            key={row.executive_id}
+            type="button"
+            onClick={() => onSelect?.(row.executive_id)}
+            className="group overflow-hidden rounded-[26px] border border-slate-100 bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-xl"
+          >
+            <div className="relative min-h-[190px] p-5">
+              <div className="absolute inset-0 opacity-[0.055]" style={{ background: 'linear-gradient(90deg, transparent 0 35%, #020873 35% 36%, transparent 36% 64%, #020873 64% 65%, transparent 65%), radial-gradient(circle at center, #020873 0 8%, transparent 9%)' }} />
+              <div className="relative flex items-center gap-5">
+                <div
+                  className="grid h-32 w-32 shrink-0 place-items-center rounded-full p-3"
+                  style={{ background: `conic-gradient(${tone.ring} ${ringProgress * 3.6}deg, #e5e7eb 0deg)` }}
+                >
+                  <div className="grid h-full w-full place-items-center rounded-full bg-white">
+                    <div className="grid h-20 w-20 place-items-center rounded-full bg-[#020873] text-2xl font-black text-white shadow-inner">
+                      {getInitials(row.executive)}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">#{index + 1}</span>
+                    <span className={`rounded-full px-3 py-1 text-[11px] font-black ${tone.soft}`}>{tone.label}</span>
+                  </div>
+                  <p className="mt-3 text-4xl font-black tracking-tight text-[#020873]">{progress.toFixed(3)}%</p>
+                  <div className="my-3 h-1 w-40 max-w-full rounded-full bg-slate-200" />
+                  <h3 className="text-xl font-black uppercase leading-6 text-[#020873]">{row.executive}</h3>
+                  <p className="mt-1 text-xs font-bold text-slate-500">{row.team}</p>
+                  <p className="mt-3 text-sm font-black text-slate-900">
+                    {Number(row.total || 0).toLocaleString('es-PE')} de {row.goal ? Number(row.goal).toLocaleString('es-PE') : 'sin meta'} ventas
+                  </p>
+                </div>
+              </div>
+
+              <div className="relative mt-4 grid grid-cols-3 gap-2">
+                {SALES_CATEGORIES.map((category) => (
+                  <div key={category} className="rounded-2xl bg-slate-50 p-3 text-center">
+                    <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">{category}</p>
+                    <p className="mt-1 text-lg font-black text-slate-950">{row[category]}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           </button>
         );
@@ -583,12 +638,18 @@ const [leadSourceForm, setLeadSourceForm] = useState(emptyLeadSourceForm);
       }
 
       const realExecutives = executivesResponse.data || [];
+      const currentPeriodId = periodResponse.data?.id || null;
+      const loadedGoals = goalsResponse.data || [];
+      const periodGoals = currentPeriodId
+        ? loadedGoals.filter((item) => String(item.period_id || '') === String(currentPeriodId))
+        : loadedGoals;
+
       if (realExecutives.length === 0) {
         setUsingDemo(false);
         setExecutives([]);
-        setPeriodId(periodResponse.data?.id || null);
+        setPeriodId(currentPeriodId);
         setSales(salesResponse.data || []);
-        setGoals(goalsResponse.data || []);
+        setGoals(periodGoals);
         setChecklists([]);
         setGroups(groupsResponse.data || []);
         setKommoQueue(kommoResponse.error ? DEMO_KOMMO_QUEUE : normalizeKommoQueue(kommoResponse.data));
@@ -601,9 +662,9 @@ const [leadSourceForm, setLeadSourceForm] = useState(emptyLeadSourceForm);
 
       setUsingDemo(false);
       setExecutives(realExecutives);
-      setPeriodId(periodResponse.data?.id || null);
+      setPeriodId(currentPeriodId);
       setSales(salesResponse.data || []);
-      setGoals(goalsResponse.data || []);
+      setGoals(periodGoals);
       setChecklists((checklistResponse.data || []).map((item) => ({
         ...item,
         executive_name: realExecutives.find((exec) => exec.id === item.executive_id)?.short_name || 'Sin ejecutivo',
@@ -981,6 +1042,99 @@ const [leadSourceForm, setLeadSourceForm] = useState(emptyLeadSourceForm);
     const { error } = await supabase.from('ventas_auditoria').insert(entry);
     if (error) appendLocalAudit(entry);
   }, [appendLocalAudit]);
+
+  const ensureCurrentSalesPeriod = useCallback(async () => {
+    if (periodId) return periodId;
+
+    const now = new Date();
+    const { start } = currentMonthRange();
+    const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10);
+    const payload = {
+      year: now.getFullYear(),
+      month: now.getMonth() + 1,
+      start_date: start,
+      end_date: endDate,
+      status: 'open',
+    };
+
+    const { data, error } = await supabase
+      .from('ventas_periodos')
+      .upsert(payload, { onConflict: 'year,month' })
+      .select('id')
+      .single();
+
+    if (error) throw error;
+    setPeriodId(data.id);
+    return data.id;
+  }, [periodId]);
+
+  const handleUpdateExecutiveGoal = useCallback(async (row, value) => {
+    const executiveId = Number(row.executive_id);
+    if (!Number.isFinite(executiveId)) {
+      alert('Primero vincula esta venta a un ejecutivo valido para asignar meta.');
+      return;
+    }
+
+    const target = Number(value);
+    if (!Number.isFinite(target) || target < 0) {
+      alert('Ingresa una meta valida.');
+      return;
+    }
+
+    const applyLocalGoal = (periodValue = periodId) => {
+      setGoals((current) => {
+        const existing = current.find((item) => String(item.executive_id) === String(row.executive_id));
+        const nextGoal = {
+          ...(existing || {}),
+          executive_id: executiveId,
+          period_id: periodValue,
+          target_total: target,
+        };
+        return existing
+          ? current.map((item) => (String(item.executive_id) === String(row.executive_id) ? nextGoal : item))
+          : [...current, nextGoal];
+      });
+    };
+
+    if (usingDemo) {
+      applyLocalGoal();
+      appendLocalAudit({
+        action: 'actualizar_meta_demo',
+        entity_type: 'ventas_metas',
+        entity_id: String(row.executive_id),
+        detail: `Meta demo actualizada para ${row.executive}: ${target}`,
+      });
+      return;
+    }
+
+    try {
+      const currentPeriod = await ensureCurrentSalesPeriod();
+      const payload = {
+        period_id: currentPeriod,
+        executive_id: executiveId,
+        target_total: target,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { data, error } = await supabase
+        .from('ventas_metas')
+        .upsert(payload, { onConflict: 'period_id,executive_id' })
+        .select('*')
+        .single();
+
+      if (error) throw error;
+      applyLocalGoal(currentPeriod);
+      await logSalesAction({
+        action: 'actualizar_meta_ejecutivo',
+        entityType: 'ventas_metas',
+        entityId: data?.id || row.executive_id,
+        detail: `Meta actualizada para ${row.executive}: ${target}`,
+        afterData: data || payload,
+      });
+    } catch (error) {
+      alert(`No se pudo actualizar la meta: ${error.message}`);
+    }
+  }, [appendLocalAudit, ensureCurrentSalesPeriod, logSalesAction, periodId, usingDemo]);
 
   const handleHrPersonChange = (value) => {
     const person = hrPeople.find((item) => item.key === value);
@@ -1694,7 +1848,7 @@ const handleSave = async () => {
           </ChartCard>
 
           <ChartCard title="Ranking visual por ejecutivo">
-            <ExecutiveBars rows={ranking} onSelect={() => goToModule('ranking')} />
+            <ExecutiveGoalCards rows={ranking} limit={2} onSelect={() => goToModule('ranking')} />
           </ChartCard>
         </div>
       )}
@@ -1811,7 +1965,22 @@ const handleSave = async () => {
         </div>
       )}
 
-      {shouldShow('ranking') && <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.6fr_1fr]">
+      {shouldShow('ranking') && (
+        <>
+          <section className="apple-card overflow-hidden">
+            <div className="flex flex-col gap-3 border-b border-slate-100 p-5 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h2 className="text-lg font-black text-slate-900">Metas individuales por ejecutivo</h2>
+                <p className="text-xs font-medium text-slate-500">Comparativo visual de avance real contra meta asignada para cada ejecutivo.</p>
+              </div>
+              <span className="badge badge-blue">{ranking.filter((row) => row.goal > 0).length} con meta activa</span>
+            </div>
+            <div className="p-5">
+              <ExecutiveGoalCards rows={ranking} onSelect={() => goToModule('metas')} />
+            </div>
+          </section>
+
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.6fr_1fr]">
         <div className="apple-card overflow-hidden">
           <div className="flex flex-col gap-3 border-b border-slate-100 p-5 md:flex-row md:items-center md:justify-between">
             <div>
@@ -1920,7 +2089,9 @@ const handleSave = async () => {
             </div>
           </div>
         </div>
-      </div>}
+          </div>
+        </>
+      )}
 
       {(shouldShow('kommo') || shouldShow('reportes')) && <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         {shouldShow('kommo') && <div className="apple-card overflow-hidden">
@@ -2568,55 +2739,82 @@ const handleSave = async () => {
       </div>}
 
       {shouldShow('metas') && (
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.85fr_1.15fr]">
-          <div className="apple-card p-5">
-            <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
-              <Target size={19} className="text-blue-600" /> Metas y proyeccion
-            </h2>
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                ['Meta mensual', globalGoal || 180, 'Cantidad objetivo'],
-                ['Avance actual', `${globalProgress}%`, 'Ventas / meta'],
-                ['Brecha faltante', Math.max((globalGoal || 180) - metrics.total, 0), 'Registros pendientes'],
-                ['Venta diaria req.', dailyRequired || 0, 'Proyeccion 8 dias'],
-              ].map(([label, value, detail]) => (
-                <div key={label} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-                  <p className="text-[11px] font-black uppercase tracking-wider text-slate-400">{label}</p>
-                  <p className="mt-2 text-2xl font-black text-slate-900">{value}</p>
-                  <p className="mt-1 text-xs font-medium text-slate-500">{detail}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="apple-card overflow-hidden">
+        <div className="space-y-6">
+          <section className="apple-card overflow-hidden">
             <div className="border-b border-slate-100 p-5">
               <h2 className="flex items-center gap-2 text-lg font-black text-slate-900">
-                <BarChart3 size={19} className="text-blue-600" /> Metas por ejecutivo
+                <Target size={19} className="text-blue-600" /> Tablero de metas individuales
               </h2>
+              <p className="mt-1 text-xs font-medium text-slate-500">Cada ejecutivo se mide contra su propia meta mensual asignada.</p>
             </div>
-            <div className="overflow-x-auto">
-              <table className="erp-table">
-                <thead>
-                  <tr>
-                    <th>Ejecutivo</th>
-                    <th>Meta</th>
-                    <th>Avance</th>
-                    <th>Brecha</th>
-                    <th>Estado</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ranking.map((row) => (
-                    <tr key={`goal-${row.executive_id}`}>
-                      <td className="font-bold text-slate-900">{row.executive}</td>
-                      <td>{row.goal || 'Sin meta'}</td>
-                      <td>{row.goalProgress}%</td>
-                      <td>{row.goal ? Math.max(row.goal - row.total, 0) : '-'}</td>
-                      <td><span className={`badge ${row.goalProgress < 65 ? 'badge-red' : row.goalProgress < 80 ? 'badge-amber' : 'badge-green'}`}>{row.goalProgress < 65 ? 'Critico' : row.risk}</span></td>
+            <div className="p-5">
+              <ExecutiveGoalCards rows={ranking} onSelect={() => goToModule('ranking')} />
+            </div>
+          </section>
+
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.85fr_1.15fr]">
+            <div className="apple-card p-5">
+              <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-900">
+                <Target size={19} className="text-blue-600" /> Metas y proyeccion
+              </h2>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  ['Meta mensual', globalGoal || 180, 'Cantidad objetivo'],
+                  ['Avance actual', `${globalProgress}%`, 'Ventas / meta'],
+                  ['Brecha faltante', Math.max((globalGoal || 180) - metrics.total, 0), 'Registros pendientes'],
+                  ['Venta diaria req.', dailyRequired || 0, 'Proyeccion 8 dias'],
+                ].map(([label, value, detail]) => (
+                  <div key={label} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                    <p className="text-[11px] font-black uppercase tracking-wider text-slate-400">{label}</p>
+                    <p className="mt-2 text-2xl font-black text-slate-900">{value}</p>
+                    <p className="mt-1 text-xs font-medium text-slate-500">{detail}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="apple-card overflow-hidden">
+              <div className="border-b border-slate-100 p-5">
+                <h2 className="flex items-center gap-2 text-lg font-black text-slate-900">
+                  <BarChart3 size={19} className="text-blue-600" /> Metas por ejecutivo
+                </h2>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="erp-table">
+                  <thead>
+                    <tr>
+                      <th>Ejecutivo</th>
+                      <th>Meta</th>
+                      <th>Avance</th>
+                      <th>Brecha</th>
+                      <th>Estado</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {ranking.map((row) => (
+                      <tr key={`goal-${row.executive_id}`}>
+                        <td className="font-bold text-slate-900">{row.executive}</td>
+                        <td>
+                          <input
+                            type="number"
+                            min="0"
+                            defaultValue={row.goal || ''}
+                            onBlur={(event) => handleUpdateExecutiveGoal(row, event.target.value || 0)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') event.currentTarget.blur();
+                            }}
+                            disabled={!Number.isFinite(Number(row.executive_id))}
+                            className="h-9 w-24 rounded-xl border border-slate-200 bg-white px-3 text-center text-sm font-black text-slate-900 outline-none focus:border-[#05C7F2]"
+                            placeholder="0"
+                          />
+                        </td>
+                        <td>{row.goalProgress}%</td>
+                        <td>{row.goal ? Math.max(row.goal - row.total, 0) : '-'}</td>
+                        <td><span className={`badge ${row.goalProgress < 65 ? 'badge-red' : row.goalProgress < 80 ? 'badge-amber' : 'badge-green'}`}>{row.goalProgress < 65 ? 'Critico' : row.risk}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>

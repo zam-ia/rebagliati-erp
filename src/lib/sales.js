@@ -266,31 +266,47 @@ export const normalizeCommissionModel = (row) => {
 export const buildSalesRanking = (sales = [], executives = [], goals = []) => {
   const executiveMap = new Map(executives.map((item) => [String(item.id), item]));
   const goalMap = new Map(goals.map((item) => [String(item.executive_id), item]));
-
-  const rows = sales.reduce((acc, sale) => {
-    const id = String(sale.executive_id || sale.executive?.id || sale.ventas_ejecutivos?.id || 'sin-id');
-    const executive = executiveMap.get(id) || sale.executive || sale.ventas_ejecutivos || {};
+  const ensureRow = (acc, id, fallback = {}) => {
     if (!acc[id]) {
+      const executive = executiveMap.get(id) || fallback.executive || {};
+      const goal = goalMap.get(id) || fallback.goal || {};
       acc[id] = {
         executive_id: id,
-        executive: executive.short_name || executive.full_name || sale.executive_name || 'Sin ejecutivo',
-        team: executive.team || executive.turno || 'Sin equipo',
+        executive: executive.short_name || executive.full_name || fallback.executive_name || 'Sin ejecutivo',
+        team: executive.team || executive.turno || fallback.team || 'Sin equipo',
         C: 0,
         CM: 0,
         D: 0,
         total: 0,
         weighted: 0,
-        goal: toNumber(goalMap.get(id)?.target_total),
+        goal: toNumber(goal.target_total),
       };
     }
+    return acc[id];
+  };
+
+  const rows = sales.reduce((acc, sale) => {
+    const id = String(sale.executive_id || sale.executive?.id || sale.ventas_ejecutivos?.id || 'sin-id');
+    const executive = executiveMap.get(id) || sale.executive || sale.ventas_ejecutivos || {};
+    const row = ensureRow(acc, id, { executive, executive_name: sale.executive_name });
 
     const category = SALES_CATEGORIES.includes(sale.category) ? sale.category : 'C';
     const quantity = toNumber(sale.quantity);
-    acc[id][category] += quantity;
-    acc[id].total += quantity;
-    acc[id].weighted += quantity * CATEGORY_WEIGHTS[category];
+    row[category] += quantity;
+    row.total += quantity;
+    row.weighted += quantity * CATEGORY_WEIGHTS[category];
     return acc;
   }, {});
+
+  executives.forEach((executive) => {
+    ensureRow(rows, String(executive.id), { executive });
+  });
+
+  goals.forEach((goal) => {
+    const id = String(goal.executive_id || 'sin-id');
+    ensureRow(rows, id, { goal });
+    rows[id].goal = toNumber(goal.target_total);
+  });
 
   return Object.values(rows)
     .map((row) => ({
