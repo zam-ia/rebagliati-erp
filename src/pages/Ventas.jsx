@@ -158,13 +158,6 @@ const DEFAULT_WAPEROS = [
   { id: '654', linea: '654', responsable: 'Mariana', estado: 'Observado' },
 ];
 
-const DEFAULT_SOCIAL_BOARD = [
-  { canal: 'FB', C: 1, D: 0, Obst: 0 },
-  { canal: 'IG', C: 0, D: 0, Obst: 0 },
-  { canal: 'TikTok', C: 90, D: 0, Obst: 0 },
-  { canal: 'API', C: 691, D: 577, Obst: 670 },
-];
-
 const DEFAULT_CUTS = [
   { id: 'apertura', hora: '8:00 am', responsable: 'Patt', valor: 224, estado: 'Hecho' },
   { id: 'medio', hora: '12:30 pm', responsable: 'Renato', valor: 7, estado: 'Revision' },
@@ -474,9 +467,8 @@ const [savingKommoConfig, setSavingKommoConfig] = useState(false);
 const [leadSourceForm, setLeadSourceForm] = useState(emptyLeadSourceForm);
   const [kommoForm, setKommoForm] = useState(emptyKommoForm);
   const [newExecutive, setNewExecutive] = useState(newExecutiveInitial);
-  const [pizarraUsers, setPizarraUsers] = useState(() => loadLocalJson('ventas_pizarra_users', DEFAULT_PIZARRA_USERS));
-  const [pizarraWaperos, setPizarraWaperos] = useState(() => loadLocalJson('ventas_pizarra_waperos', DEFAULT_WAPEROS));
-  const [pizarraSocial, setPizarraSocial] = useState(() => loadLocalJson('ventas_pizarra_social', DEFAULT_SOCIAL_BOARD));
+  const [pizarraUsers] = useState(() => loadLocalJson('ventas_pizarra_users', DEFAULT_PIZARRA_USERS));
+  const [pizarraWaperos] = useState(() => loadLocalJson('ventas_pizarra_waperos', DEFAULT_WAPEROS));
   const [pizarraCuts, setPizarraCuts] = useState(() => loadLocalJson('ventas_pizarra_cuts', DEFAULT_CUTS));
   const formWebhookUrl = `${import.meta.env.VITE_SUPABASE_URL || ''}/functions/v1/google-form-leads`;
   const kommoWebhookUrl = `${import.meta.env.VITE_SUPABASE_URL || ''}/functions/v1/kommo-webhook`;
@@ -628,10 +620,6 @@ const [leadSourceForm, setLeadSourceForm] = useState(emptyLeadSourceForm);
   }, [pizarraWaperos]);
 
   useEffect(() => {
-    localStorage.setItem('ventas_pizarra_social', JSON.stringify(pizarraSocial));
-  }, [pizarraSocial]);
-
-  useEffect(() => {
     localStorage.setItem('ventas_pizarra_cuts', JSON.stringify(pizarraCuts));
   }, [pizarraCuts]);
 
@@ -732,11 +720,9 @@ const [leadSourceForm, setLeadSourceForm] = useState(emptyLeadSourceForm);
     pendingContact: leadRows.filter((lead) => !lead.fecha_contacto).length,
   }), [leadRows]);
   const pizarraStats = useMemo(() => {
-    const socialTotal = pizarraSocial.reduce((sum, row) => sum + Number(row.C || 0) + Number(row.D || 0) + Number(row.Obst || 0), 0);
     const pendingCuts = pizarraCuts.filter((item) => item.estado !== 'Hecho').length;
     const availableWsp = pizarraWaperos.filter((item) => item.estado !== 'Bloqueado').length;
     return {
-      socialTotal,
       pendingCuts,
       availableWsp,
       unassigned: kommoMetrics.unassignedMessages,
@@ -745,7 +731,7 @@ const [leadSourceForm, setLeadSourceForm] = useState(emptyLeadSourceForm);
       promises: promiseMetrics.total,
       expiredPromises: promiseMetrics.expired,
     };
-  }, [kommoMetrics, pizarraCuts, pizarraSocial, pizarraWaperos, promiseMetrics]);
+  }, [kommoMetrics, pizarraCuts, pizarraWaperos, promiseMetrics]);
 
   const pizarraUserRows = useMemo(() => pizarraUsers.map((slot, index) => {
     const rank = ranking[index] || {};
@@ -762,18 +748,6 @@ const [leadSourceForm, setLeadSourceForm] = useState(emptyLeadSourceForm);
       riesgo: progress >= 90 ? 'En ritmo' : progress >= 60 ? 'Atencion' : 'Critico',
     };
   }), [dailyGoal, kommoMetrics.unassignedMessages, paymentPromises, pizarraUsers, ranking]);
-
-  const updatePizarraUser = (id, field, value) => {
-    setPizarraUsers((current) => current.map((item) => (item.id === id ? { ...item, [field]: value } : item)));
-  };
-
-  const updateWapero = (id, field, value) => {
-    setPizarraWaperos((current) => current.map((item) => (item.id === id ? { ...item, [field]: value } : item)));
-  };
-
-  const updateSocial = (canal, field, value) => {
-    setPizarraSocial((current) => current.map((item) => (item.canal === canal ? { ...item, [field]: Number(value) || 0 } : item)));
-  };
 
   const updateCut = (id, field, value) => {
     setPizarraCuts((current) => current.map((item) => (item.id === id ? { ...item, [field]: field === 'valor' ? Number(value) || 0 : value } : item)));
@@ -1275,178 +1249,104 @@ const handleSave = async () => {
       )}
 
       {shouldShow('pizarra') && (
-        <div className="space-y-6">
-          <section className="overflow-hidden rounded-[28px] bg-[#07111f] text-white shadow-[0_24px_80px_rgba(2,8,115,0.18)]">
-            <div className="relative p-5 md:p-7">
-              <div className="absolute inset-0 opacity-70" style={{ background: 'radial-gradient(circle at 20% 10%, rgba(5,199,242,0.28), transparent 28%), radial-gradient(circle at 78% 22%, rgba(242,242,242,0.18), transparent 32%), linear-gradient(135deg, rgba(2,8,115,0.88), rgba(7,17,31,0.96))' }} />
-              <div className="relative z-10">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div>
-                    <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.16em] text-cyan-100">
-                      <ClipboardList size={13} /> Pizarra digital
-                    </div>
-                    <h2 className="mt-4 text-3xl font-black tracking-tight md:text-5xl">Rebagliati Diplomados</h2>
-                    <p className="mt-2 max-w-3xl text-sm font-medium leading-6 text-white/68">
-                      Control diario de usuarios comerciales, waperos, cortes, redes sociales, promesas y asignacion de leads.
-                    </p>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    {[
-                      ['Sin asignar', pizarraStats.unassigned, 'SLA 10 min'],
-                      ['Redes', pizarraStats.redUnread, 'Sin leer'],
-                      ['WSP activos', pizarraStats.availableWsp, 'Lineas operativas'],
-                      ['Promesas', pizarraStats.promises, `${pizarraStats.expiredPromises} vencidas`],
-                    ].map(([label, value, detail]) => (
-                      <div key={label} className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 backdrop-blur">
-                        <p className="text-[10px] font-black uppercase tracking-[0.15em] text-white/45">{label}</p>
-                        <p className="mt-1 text-3xl font-black text-[#05C7F2]">{value}</p>
-                        <p className="text-xs font-bold text-white/55">{detail}</p>
-                      </div>
-                    ))}
-                  </div>
+        <div className="space-y-5">
+          <section className="apple-card overflow-hidden">
+            <div className="flex flex-col gap-4 border-b border-slate-100 p-5 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex items-start gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#020873] text-white">
+                  <ClipboardList size={18} />
                 </div>
-
-                <div className="mt-6 grid grid-cols-1 gap-3 xl:grid-cols-6">
-                  {[
-                    ['Lead nuevo', leadStats.total || kommoMetrics.unassignedMessages, 'Ingreso total'],
-                    ['Contactados', Math.max((leadStats.total || 0) - leadStats.pendingContact, 0), 'Con accion'],
-                    ['Ganados', leadStats.won || metrics.total, 'Cierres'],
-                    ['Promesas', promiseMetrics.total, 'Reserva comision'],
-                    ['Incidencias', incidentMetrics.totalIncidents, 'Mes actual'],
-                    ['Cortes', pizarraCuts.length - pizarraStats.pendingCuts, `${pizarraCuts.length} programados`],
-                  ].map(([label, value, detail]) => (
-                    <div key={label} className="rounded-2xl border border-white/10 bg-black/24 p-4">
-                      <p className="text-xs font-black uppercase tracking-[0.12em] text-white/55">{label}</p>
-                      <p className="mt-3 text-4xl font-black text-white">+{Number(value || 0).toLocaleString('es-PE')}</p>
-                      <p className="mt-1 text-xs font-bold text-white/50">{detail}</p>
-                    </div>
-                  ))}
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-[#05C7F2]">Ventas 360</p>
+                  <h2 className="mt-1 text-2xl font-black tracking-tight text-slate-950 md:text-3xl">Pizarra digital</h2>
+                  <p className="mt-1 max-w-3xl text-sm font-medium leading-6 text-slate-500">
+                    Lectura diaria de asignacion, lineas WSP, promesas y cortes comerciales.
+                  </p>
                 </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:min-w-[620px]">
+                {[
+                  { label: 'Sin asignar', value: pizarraStats.unassigned, detail: `SLA ${pizarraStats.responseLimit} min`, tone: 'border-red-500 bg-red-50 text-red-700' },
+                  { label: 'WSP activos', value: pizarraStats.availableWsp, detail: `${pizarraWaperos.length} lineas`, tone: 'border-emerald-500 bg-emerald-50 text-emerald-700' },
+                  { label: 'Promesas', value: pizarraStats.promises, detail: `${pizarraStats.expiredPromises} vencidas`, tone: 'border-[#05C7F2] bg-cyan-50 text-[#020873]' },
+                  { label: 'Cortes pendientes', value: pizarraStats.pendingCuts, detail: `${pizarraCuts.length} programados`, tone: 'border-amber-500 bg-amber-50 text-amber-700' },
+                ].map((metric) => (
+                  <div key={metric.label} className={`rounded-2xl border-l-4 bg-white p-3 shadow-sm ${metric.tone}`}>
+                    <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">{metric.label}</p>
+                    <p className="mt-1 text-3xl font-black leading-none">{Number(metric.value || 0).toLocaleString('es-PE')}</p>
+                    <p className="mt-2 text-xs font-bold text-slate-500">{metric.detail}</p>
+                  </div>
+                ))}
               </div>
             </div>
           </section>
 
-          <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.35fr_0.65fr]">
+          <div className="grid grid-cols-1 gap-5 2xl:grid-cols-[1.35fr_0.65fr]">
             <section className="apple-card overflow-hidden">
-              <div className="flex flex-col gap-3 border-b border-slate-100 p-5 md:flex-row md:items-center md:justify-between">
+              <div className="flex flex-col gap-2 border-b border-slate-100 p-5 md:flex-row md:items-center md:justify-between">
                 <div>
                   <h2 className="text-lg font-black text-slate-900">Usuarios U1 - U6</h2>
-                  <p className="mt-1 text-xs font-medium text-slate-500">U significa usuario asignado. Cada bloque controla linea, responsables, lider, avance y pendientes.</p>
+                  <p className="mt-1 text-xs font-medium text-slate-500">Responsable, leads pendientes, meta diaria y riesgo operativo.</p>
                 </div>
-                <span className="badge badge-blue">Editable en esta maquina</span>
+                <span className="badge badge-blue">Vista ejecutiva</span>
               </div>
-              <div className="grid grid-cols-1 gap-4 p-5 lg:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3 p-4 lg:grid-cols-2">
                 {pizarraUserRows.map((slot) => (
-                  <div key={slot.id} className="rounded-3xl border border-slate-100 bg-slate-50 p-4">
-                    <div className="mb-4 flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#020873] text-base font-black text-white">{slot.id}</div>
-                        <div>
-                          <input value={slot.linea} onChange={(event) => updatePizarraUser(slot.id, 'linea', event.target.value)} className="h-8 w-28 rounded-full border border-slate-200 bg-white px-3 text-sm font-black text-slate-900 outline-none focus:border-[#05C7F2]" />
-                          <p className="mt-1 text-xs font-bold text-slate-400">{slot.riesgo}</p>
+                  <article key={slot.id} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#020873] text-sm font-black text-white">{slot.id}</div>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-black text-slate-950">{slot.responsables}</p>
+                          <p className="mt-1 text-xs font-bold text-slate-500">Responsable</p>
                         </div>
                       </div>
-                      <span className={`badge ${slot.riesgo === 'Critico' ? 'badge-red' : slot.riesgo === 'Atencion' ? 'badge-amber' : 'badge-green'}`}>{slot.progress}%</span>
+                      <span className={`badge ${slot.riesgo === 'Critico' ? 'badge-red' : slot.riesgo === 'Atencion' ? 'badge-amber' : 'badge-green'}`}>{slot.riesgo}</span>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                      <label className="space-y-1">
-                        <span className="erp-label">Responsables</span>
-                        <input value={slot.responsables} onChange={(event) => updatePizarraUser(slot.id, 'responsables', event.target.value)} className="erp-input" />
-                      </label>
-                      <label className="space-y-1">
-                        <span className="erp-label">Lider</span>
-                        <select value={slot.lider} onChange={(event) => updatePizarraUser(slot.id, 'lider', event.target.value)} className="erp-input">
-                          {['Renato', 'Patt', 'Antonella'].map((leader) => <option key={leader}>{leader}</option>)}
-                        </select>
-                      </label>
+                    <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                      <div className="rounded-2xl bg-white p-3">
+                        <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Pendientes</p>
+                        <p className="mt-1 text-xl font-black text-slate-950">{slot.pendientes}</p>
+                      </div>
+                      <div className="rounded-2xl bg-white p-3">
+                        <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Meta</p>
+                        <p className="mt-1 text-xl font-black text-slate-950">{slot.meta}</p>
+                      </div>
+                      <div className="rounded-2xl bg-white p-3">
+                        <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Promesas</p>
+                        <p className="mt-1 text-xl font-black text-[#020873]">{slot.promesas}</p>
+                      </div>
                     </div>
 
-                    <div className="mt-4 grid grid-cols-4 gap-2 text-center">
-                      {[
-                        ['Ventas', slot.ventas],
-                        ['Meta', slot.meta],
-                        ['Leads', slot.pendientes],
-                        ['Prom.', slot.promesas],
-                      ].map(([label, value]) => (
-                        <div key={label} className="rounded-2xl bg-white p-3">
-                          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">{label}</p>
-                          <p className="mt-1 text-lg font-black text-slate-900">{value}</p>
-                        </div>
-                      ))}
+                    <div className="mt-4 flex items-center justify-between text-xs font-black text-slate-500">
+                      <span>Cumplimiento</span>
+                      <span>{slot.progress}%</span>
                     </div>
-                    <div className="mt-4 h-2 overflow-hidden rounded-full bg-white">
-                      <div className="h-full rounded-full bg-[#05C7F2]" style={{ width: `${Math.min(slot.progress, 100)}%` }} />
+                    <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-white">
+                      <div className={`h-full rounded-full ${slot.riesgo === 'Critico' ? 'bg-red-500' : slot.riesgo === 'Atencion' ? 'bg-amber-500' : 'bg-[#05C7F2]'}`} style={{ width: `${Math.min(slot.progress, 100)}%` }} />
                     </div>
-                  </div>
+                  </article>
                 ))}
               </div>
             </section>
 
             <section className="apple-card overflow-hidden">
               <div className="border-b border-slate-100 p-5">
-                <h2 className="text-lg font-black text-slate-900">Waperos y lineas WSP</h2>
-                <p className="mt-1 text-xs font-medium text-slate-500">W1-W3 y numeros 443, 772, 920, 654.</p>
+                <h2 className="text-lg font-black text-slate-900">Waperos</h2>
+                <p className="mt-1 text-xs font-medium text-slate-500">Estado compacto de lineas y responsables.</p>
               </div>
-              <div className="space-y-3 p-5">
+              <div className="space-y-2 p-4">
                 {pizarraWaperos.map((item) => (
-                  <div key={item.id} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
-                    <div className="mb-2 flex items-center justify-between gap-2">
-                      <span className="rounded-xl bg-[#020873] px-3 py-1 text-xs font-black text-white">{item.id}</span>
-                      <select value={item.estado} onChange={(event) => updateWapero(item.id, 'estado', event.target.value)} className="h-8 rounded-full border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 outline-none">
-                        {['Disponible', 'Por asignar', 'Observado', 'Bloqueado'].map((status) => <option key={status}>{status}</option>)}
-                      </select>
+                  <div key={item.id} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#020873] text-xs font-black text-white">{item.id}</span>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-black text-slate-950">{item.responsable}</p>
+                        <p className="text-xs font-bold text-slate-500">{item.linea}</p>
+                      </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <input value={item.linea} onChange={(event) => updateWapero(item.id, 'linea', event.target.value)} className="erp-input h-9" />
-                      <input value={item.responsable} onChange={(event) => updateWapero(item.id, 'responsable', event.target.value)} className="erp-input h-9" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </div>
-
-          <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.8fr_1.2fr]">
-            <section className="apple-card overflow-hidden">
-              <div className="border-b border-slate-100 p-5">
-                <h2 className="text-lg font-black text-slate-900">Reporte de redes sociales</h2>
-                <p className="mt-1 text-xs font-medium text-slate-500">Cursos C, diplomados D y Obstetricia por canal.</p>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="erp-table">
-                  <thead><tr><th>Canal</th><th>C</th><th>D</th><th>Obst.</th><th>Total</th></tr></thead>
-                  <tbody>
-                    {pizarraSocial.map((row) => (
-                      <tr key={row.canal}>
-                        <td className="font-black text-slate-900">{row.canal}</td>
-                        {['C', 'D', 'Obst'].map((field) => (
-                          <td key={field}>
-                            <input type="number" value={row[field]} onChange={(event) => updateSocial(row.canal, field, event.target.value)} className="h-9 w-20 rounded-full border border-slate-200 bg-white px-3 text-center text-sm font-black text-slate-900 outline-none focus:border-[#05C7F2]" />
-                          </td>
-                        ))}
-                        <td className="font-black text-blue-700">{Number(row.C || 0) + Number(row.D || 0) + Number(row.Obst || 0)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-
-            <section className="apple-card overflow-hidden">
-              <div className="border-b border-slate-100 p-5">
-                <h2 className="text-lg font-black text-slate-900">Cortes comerciales del dia</h2>
-                <p className="mt-1 text-xs font-medium text-slate-500">Apertura, primer corte, relevo, tarde y cierre segun el plan de mejora.</p>
-              </div>
-              <div className="grid grid-cols-1 gap-3 p-5 md:grid-cols-5">
-                {pizarraCuts.map((cut) => (
-                  <div key={cut.id} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
-                    <input value={cut.hora} onChange={(event) => updateCut(cut.id, 'hora', event.target.value)} className="mb-2 h-8 w-full rounded-full border border-slate-200 bg-white px-3 text-xs font-black text-slate-900 outline-none" />
-                    <input value={cut.responsable} onChange={(event) => updateCut(cut.id, 'responsable', event.target.value)} className="mb-2 h-8 w-full rounded-full border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none" />
-                    <input type="number" value={cut.valor} onChange={(event) => updateCut(cut.id, 'valor', event.target.value)} className="mb-2 h-10 w-full rounded-2xl border border-slate-200 bg-white px-3 text-center text-xl font-black text-[#020873] outline-none" />
-                    <select value={cut.estado} onChange={(event) => updateCut(cut.id, 'estado', event.target.value)} className="h-8 w-full rounded-full border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 outline-none">
-                      {['Pendiente', 'Revision', 'Hecho'].map((status) => <option key={status}>{status}</option>)}
-                    </select>
+                    <span className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-black ${item.estado === 'Bloqueado' ? 'bg-red-50 text-red-700' : item.estado === 'Observado' ? 'bg-amber-50 text-amber-700' : item.estado === 'Por asignar' ? 'bg-slate-100 text-slate-600' : 'bg-emerald-50 text-emerald-700'}`}>{item.estado}</span>
                   </div>
                 ))}
               </div>
@@ -1454,26 +1354,69 @@ const handleSave = async () => {
           </div>
 
           <section className="apple-card overflow-hidden">
-            <div className="border-b border-slate-100 p-5">
-              <h2 className="text-lg font-black text-slate-900">Eventos criticos y accion inmediata</h2>
-              <p className="mt-1 text-xs font-medium text-slate-500">Vista de apoyo para Renato, Patt y Antonella durante cortes.</p>
+            <div className="flex flex-col gap-2 border-b border-slate-100 p-5 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h2 className="text-lg font-black text-slate-900">Cortes del dia</h2>
+                <p className="mt-1 text-xs font-medium text-slate-500">Seguimiento horizontal por hora, responsable y estado.</p>
+              </div>
+              <span className="badge badge-amber">{pizarraStats.pendingCuts} pendientes</span>
             </div>
-            <div className="grid grid-cols-1 gap-4 p-5 md:grid-cols-2 xl:grid-cols-4">
-              {pizarraEventRows.map((item) => (
-                <div key={item.key} className="rounded-3xl border border-slate-100 bg-slate-50 p-4">
-                  <div className="mb-3 flex items-start justify-between gap-2">
+            <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 xl:grid-cols-5">
+              {pizarraCuts.map((cut) => (
+                <article key={cut.id} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                  <div className="flex items-start justify-between gap-2">
                     <div>
-                      <p className="text-sm font-black text-slate-900">{item.codigo}</p>
-                      <p className="mt-1 text-xs font-medium leading-5 text-slate-500">{item.nombre}</p>
+                      <p className="text-sm font-black text-slate-950">{cut.hora}</p>
+                      <p className="mt-1 text-xs font-bold text-slate-500">{cut.responsable}</p>
                     </div>
-                    <span className={`badge ${item.alert === 'Escalar cierre' ? 'badge-green' : item.alert === 'Reforzar seguimiento' ? 'badge-amber' : 'badge-blue'}`}>{item.alert}</span>
+                    <p className="text-xl font-black text-[#020873]">{Number(cut.valor || 0).toLocaleString('es-PE')}</p>
                   </div>
-                  <div className="grid grid-cols-3 gap-2 text-center">
-                    <div className="rounded-2xl bg-white p-3"><p className="text-[10px] font-black text-slate-400">Leads</p><p className="font-black text-slate-900">{item.leads}</p></div>
-                    <div className="rounded-2xl bg-white p-3"><p className="text-[10px] font-black text-slate-400">Gan.</p><p className="font-black text-emerald-700">{item.ganados}</p></div>
-                    <div className="rounded-2xl bg-white p-3"><p className="text-[10px] font-black text-slate-400">Conv.</p><p className="font-black text-blue-700">{item.conversion}%</p></div>
+                  <select value={cut.estado} onChange={(event) => updateCut(cut.id, 'estado', event.target.value)} className="mt-3 h-9 w-full rounded-full border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-[#05C7F2]">
+                    {['Pendiente', 'Revision', 'Hecho'].map((status) => <option key={status}>{status}</option>)}
+                  </select>
+                  {cut.estado !== 'Hecho' && (
+                    <button type="button" onClick={() => updateCut(cut.id, 'estado', 'Hecho')} className="mt-2 h-9 w-full rounded-full bg-[#020873] px-3 text-xs font-black text-white transition hover:bg-[#05C7F2] hover:text-[#020873]">
+                      Marcar hecho
+                    </button>
+                  )}
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section className="apple-card overflow-hidden">
+            <div className="flex flex-col gap-2 border-b border-slate-100 p-5 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h2 className="text-lg font-black text-slate-900">Accion inmediata</h2>
+                <p className="mt-1 text-xs font-medium text-slate-500">Tres eventos criticos para seguimiento comercial.</p>
+              </div>
+              <span className="badge badge-blue">{pizarraEventRows.length} eventos evaluados</span>
+            </div>
+            <div className="grid grid-cols-1 gap-4 p-4 md:grid-cols-3">
+              {pizarraEventRows.slice(0, 3).map((item) => (
+                <article key={item.key} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-black text-slate-950">{item.codigo}</p>
+                      <p className="mt-1 line-clamp-2 text-xs font-medium leading-5 text-slate-500">{item.nombre}</p>
+                    </div>
+                    <span className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-black ${item.alert === 'Escalar cierre' ? 'bg-emerald-50 text-emerald-700' : item.alert === 'Reforzar seguimiento' ? 'bg-amber-50 text-amber-700' : 'bg-cyan-50 text-[#020873]'}`}>{item.alert}</span>
                   </div>
-                </div>
+                  <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                    <div className="rounded-2xl bg-white p-3">
+                      <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Leads</p>
+                      <p className="mt-1 text-lg font-black text-slate-950">{item.leads}</p>
+                    </div>
+                    <div className="rounded-2xl bg-white p-3">
+                      <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Gan.</p>
+                      <p className="mt-1 text-lg font-black text-emerald-700">{item.ganados}</p>
+                    </div>
+                    <div className="rounded-2xl bg-white p-3">
+                      <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Conv.</p>
+                      <p className="mt-1 text-lg font-black text-[#020873]">{item.conversion}%</p>
+                    </div>
+                  </div>
+                </article>
               ))}
             </div>
           </section>
