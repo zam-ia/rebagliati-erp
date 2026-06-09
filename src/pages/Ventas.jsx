@@ -239,7 +239,14 @@ const makeShortName = (value = '') => {
   return `${parts[0]} ${parts[1][0] || ''}.`;
 };
 
-const normalizeHrPeople = (employees = [], contractors = []) => {
+const normalizePersonName = (value = '') => value
+  .toLowerCase()
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/[^a-z0-9]+/g, ' ')
+  .trim();
+
+const normalizeHrPeople = (employees = [], contractors = [], { onlyCommercial = true } = {}) => {
   const normalize = (person, type) => {
     const fullName = `${person.nombre || ''} ${person.apellido || ''}`.trim();
     const role = person.cargo || person.modalidad || 'Sin cargo';
@@ -255,6 +262,7 @@ const normalizeHrPeople = (employees = [], contractors = []) => {
       area,
       phone: person.telefono || '',
       email: person.correo || '',
+      photoUrl: person.foto_url || '',
     };
   };
 
@@ -263,12 +271,39 @@ const normalizeHrPeople = (employees = [], contractors = []) => {
     ...contractors.map((person) => normalize(person, 'locador')),
   ];
 
-  return people
-    .filter((person) => {
+  const filteredPeople = onlyCommercial
+    ? people.filter((person) => {
       const searchable = `${person.fullName} ${person.role} ${person.area}`.toLowerCase();
       return ['ventas', 'comercial', 'ejecutivo', 'asesor'].some((word) => searchable.includes(word));
     })
+    : people;
+
+  return filteredPeople
     .sort((a, b) => a.fullName.localeCompare(b.fullName));
+};
+
+const enrichExecutivesWithHr = (executives = [], hrPeople = []) => {
+  const byLink = new Map(hrPeople.map((person) => [`${person.type}:${person.id}`, person]));
+  const byName = new Map(hrPeople.map((person) => [normalizePersonName(person.fullName), person]));
+
+  return executives.map((executive) => {
+    const linkedPerson = executive.hr_person_type && executive.hr_person_id
+      ? byLink.get(`${executive.hr_person_type}:${executive.hr_person_id}`)
+      : null;
+    const nameMatch = byName.get(normalizePersonName(executive.full_name))
+      || byName.get(normalizePersonName(executive.short_name));
+    const person = linkedPerson || nameMatch;
+
+    return {
+      ...executive,
+      hr_person_type: executive.hr_person_type || person?.type || null,
+      hr_person_id: executive.hr_person_id || person?.id || null,
+      hr_source_label: person?.sourceLabel || null,
+      hr_role: person?.role || null,
+      hr_area: person?.area || null,
+      photo_url: executive.photo_url || executive.foto_url || person?.photoUrl || '',
+    };
+  });
 };
 
 const actionQueue = [
@@ -431,9 +466,18 @@ function ExecutiveGoalCards({ rows, onSelect, limit = 8 }) {
                   style={{ background: `conic-gradient(${tone.ring} ${ringProgress * 3.6}deg, #e5e7eb 0deg)` }}
                 >
                   <div className="grid h-full w-full place-items-center rounded-full bg-white">
-                    <div className="grid h-20 w-20 place-items-center rounded-full bg-[#020873] text-2xl font-black text-white shadow-inner">
-                      {getInitials(row.executive)}
-                    </div>
+                    {row.photoUrl ? (
+                      <img
+                        src={row.photoUrl}
+                        alt={row.executive}
+                        className="h-24 w-24 rounded-full border-4 border-white object-cover shadow-inner"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="grid h-20 w-20 place-items-center rounded-full bg-[#020873] text-2xl font-black text-white shadow-inner">
+                        {getInitials(row.executive)}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -445,7 +489,7 @@ function ExecutiveGoalCards({ rows, onSelect, limit = 8 }) {
                   <p className="mt-3 text-4xl font-black tracking-tight text-[#020873]">{progress.toFixed(3)}%</p>
                   <div className="my-3 h-1 w-40 max-w-full rounded-full bg-slate-200" />
                   <h3 className="text-xl font-black uppercase leading-6 text-[#020873]">{row.executive}</h3>
-                  <p className="mt-1 text-xs font-bold text-slate-500">{row.team}</p>
+                  <p className="mt-1 text-xs font-bold text-slate-500">{row.team}{row.hrSource ? ` - ${row.hrSource}` : ''}</p>
                   <p className="mt-3 text-sm font-black text-slate-900">
                     {Number(row.total || 0).toLocaleString('es-PE')} de {row.goal ? Number(row.goal).toLocaleString('es-PE') : 'sin meta'} ventas
                   </p>
@@ -602,8 +646,8 @@ const [leadSourceForm, setLeadSourceForm] = useState(emptyLeadSourceForm);
         supabase.from('ventas_incidencias').select('*').gte('fecha', start).lt('fecha', end),
         supabase.from('ventas_entregables_mensuales').select('*').order('id', { ascending: true }),
         supabase.from('ventas_comisiones_modelos').select('*').eq('activo', true).order('created_at', { ascending: false }).limit(1).maybeSingle(),
-        supabase.from('empleados').select('id,nombre,apellido,cargo,area,telefono,correo,estado').order('apellido'),
-        supabase.from('locadores').select('id,nombre,apellido,modalidad,area,telefono,correo,estado').eq('estado', 'activo').order('apellido'),
+        supabase.from('empleados').select('id,nombre,apellido,cargo,area,telefono,correo,estado,foto_url').order('apellido'),
+        supabase.from('locadores').select('id,nombre,apellido,modalidad,area,telefono,correo,estado,foto_url').eq('estado', 'activo').order('apellido'),
         supabase.from('ventas_auditoria').select('*').order('created_at', { ascending: false }).limit(25),
       supabase.from('ventas_formularios_google').select('*').order('created_at', { ascending: false }),
       supabase.from('ventas_leads').select('*, ventas_ejecutivos(short_name, full_name)').order('created_at', { ascending: false }).limit(80),
@@ -611,6 +655,7 @@ const [leadSourceForm, setLeadSourceForm] = useState(emptyLeadSourceForm);
       supabase.from('kommo_configuracion').select('*').order('created_at', { ascending: false }),
     ]);
 
+      const allHrPeople = normalizeHrPeople(employeesResponse.data || [], contractorsResponse.data || [], { onlyCommercial: false });
       setHrPeople(normalizeHrPeople(employeesResponse.data || [], contractorsResponse.data || []));
       setAuditLogs(auditResponse.error ? [] : (auditResponse.data || []));
       setLeadSources(leadSourcesResponse.error ? [] : (leadSourcesResponse.data || []));
@@ -637,7 +682,7 @@ const [leadSourceForm, setLeadSourceForm] = useState(emptyLeadSourceForm);
         return;
       }
 
-      const realExecutives = executivesResponse.data || [];
+      const realExecutives = enrichExecutivesWithHr(executivesResponse.data || [], allHrPeople);
       const currentPeriodId = periodResponse.data?.id || null;
       const loadedGoals = goalsResponse.data || [];
       const periodGoals = currentPeriodId
@@ -3278,6 +3323,23 @@ const handleSave = async () => {
                     ))}
                   </select>
                 </label>
+                {selectedHrPerson && (
+                  <div className="md:col-span-2 rounded-2xl border border-blue-100 bg-white p-3">
+                    <div className="flex items-center gap-3">
+                      {selectedHrPerson.photoUrl ? (
+                        <img src={selectedHrPerson.photoUrl} alt={selectedHrPerson.fullName} className="h-12 w-12 rounded-2xl object-cover" />
+                      ) : (
+                        <div className="grid h-12 w-12 place-items-center rounded-2xl bg-[#020873] text-sm font-black text-white">
+                          {getInitials(selectedHrPerson.fullName)}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-black text-slate-900">{selectedHrPerson.fullName}</p>
+                        <p className="text-xs font-bold text-slate-500">{selectedHrPerson.role} - {selectedHrPerson.sourceLabel}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <label className="space-y-1.5">
                   <span className="erp-label">Nombre completo</span>
                   <input className="erp-input" value={newExecutive.full_name} onChange={(event) => setNewExecutive({ ...newExecutive, full_name: event.target.value, short_name: newExecutive.short_name || makeShortName(event.target.value) })} placeholder="Nombre del ejecutivo" />
@@ -3317,9 +3379,20 @@ const handleSave = async () => {
                   <p className="p-4 text-sm font-medium text-slate-500">Aun no hay ejecutivos activos. Crea el primero desde este panel.</p>
                 ) : executives.map((exec) => (
                   <div key={exec.id} className="flex items-center justify-between gap-3 border-b border-slate-50 px-4 py-3 last:border-b-0">
-                    <div>
-                      <p className="text-sm font-black text-slate-900">{exec.short_name || exec.full_name}</p>
-                      <p className="text-xs font-medium text-slate-500">{exec.full_name} - {exec.turno || exec.team || 'mixto'}</p>
+                    <div className="flex min-w-0 items-center gap-3">
+                      {exec.photo_url ? (
+                        <img src={exec.photo_url} alt={exec.full_name} className="h-10 w-10 shrink-0 rounded-2xl object-cover" />
+                      ) : (
+                        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-slate-100 text-xs font-black text-[#020873]">
+                          {getInitials(exec.short_name || exec.full_name)}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-black text-slate-900">{exec.short_name || exec.full_name}</p>
+                        <p className="truncate text-xs font-medium text-slate-500">
+                          {exec.full_name} - {exec.turno || exec.team || 'mixto'}{exec.hr_source_label ? ` - ${exec.hr_source_label}` : ''}
+                        </p>
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
                       {canManageSales && (
